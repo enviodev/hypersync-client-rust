@@ -22,69 +22,48 @@ async fn main() {
     let client = client::Client::new(client_config).unwrap();
 
     // The query to run
-    // TODO: change this to json
-    let query = Query {
-        // we only want to get the blocks that have the data we care about
-        include_all_blocks: false,
+    let query = serde_json::from_value(serde_json::json!( {
         // start from block 0 and go to the end of the chain (we don't specify a toBlock).
-        from_block: 0,
-        to_block: None,
+        "from_block": 0,
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
-        logs: vec![LogSelection {
-            address: vec![],
-            topics: ArrayVec::try_from([
+        "logs": [
+            {
                 // We want All ERC20 transfers so no address filter and only a filter for the first topic
-                vec![hex_literal::hex!(
-                    "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-                )
-                .try_into()
-                .unwrap()],
-                vec![],
-                vec![],
-                vec![],
-            ])
-            .unwrap(),
+            "topics": [
+                ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
+            ]
         }],
-        transactions: vec![],
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        field_selection: FieldSelection {
-            block: [
-                "hash".to_owned(),
-                "number".to_owned(),
-                "timestamp".to_owned(),
+        "field_selection": {
+            "block": [
+                "hash",
+                "number",
+                "timestamp",
+            ],
+            "log": [
+                "block_number",
+                "transaction_index",
+                "log_index",
+                "transaction_hash",
+                "data",
+                "address",
+                "topic0",
+                "topic1",
+                "topic2",
+                "topic3",
+            ],
+            "transaction": [
+                "block_number",
+                "transaction_index",
+                "hash",
+                "from",
+                "to",
+                "value",
+                "input",
             ]
-            .into_iter()
-            .collect(),
-            log: [
-                "block_number".to_owned(),
-                "transaction_index".to_owned(),
-                "log_index".to_owned(),
-                "transaction_hash".to_owned(),
-                "data".to_owned(),
-                "address".to_owned(),
-                "topic0".to_owned(),
-                "topic1".to_owned(),
-                "topic2".to_owned(),
-                "topic3".to_owned(),
-            ]
-            .into_iter()
-            .collect(),
-            transaction: [
-                "block_number".to_owned(),
-                "transaction_index".to_owned(),
-                "hash".to_owned(),
-                "from".to_owned(),
-                "to".to_owned(),
-                "value".to_owned(),
-                "input".to_owned(),
-            ]
-            .into_iter()
-            .collect(),
-        },
-        max_num_blocks: None,
-        max_num_transactions: None,
-        max_num_logs: None,
-    };
+        }
+    }))
+    .unwrap();
 
     println!("Running the query...");
 
