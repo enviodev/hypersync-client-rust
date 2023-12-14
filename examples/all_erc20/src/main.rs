@@ -13,7 +13,7 @@ use url::Url;
 
 #[tokio::main]
 async fn main() {
-    // create hypersync client using the mainner hypersync endpoint
+    // create hypersync client using the mainnet hypersync endpoint
     let client_config = client::Config {
         url: Url::parse("https://eth.hypersync.xyz").unwrap(),
         bearer_token: None,
@@ -21,13 +21,19 @@ async fn main() {
     };
     let client = client::Client::new(client_config).unwrap();
 
+    // The query to run
+    // TODO: change this to json
     let query = Query {
+        // we only want to get the blocks that have the data we care about
         include_all_blocks: false,
+        // start from block 0 and go to the end of the chain (we don't specify a toBlock).
         from_block: 0,
         to_block: None,
+        // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
         logs: vec![LogSelection {
             address: vec![],
             topics: ArrayVec::try_from([
+                // We want All ERC20 transfers so no address filter and only a filter for the first topic
                 vec![hex_literal::hex!(
                     "ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
                 )
@@ -40,6 +46,7 @@ async fn main() {
             .unwrap(),
         }],
         transactions: vec![],
+        // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         field_selection: FieldSelection {
             block: [
                 "hash".to_owned(),
@@ -102,7 +109,7 @@ async fn main() {
     // every log we get should be decodable by this abi but we don't know
     // the specific contract addresses since we are indexing all erc20 transfers.
     for log in &res.data.logs {
-        // returned data is in arrow format so we have to convert to string
+        // returned data is in arrow format so we have to convert to Address
         let col = log.column::<BinaryArray<i32>>("address").unwrap();
         for val in col.into_iter().flatten() {
             let address: Address = val.try_into().unwrap();
@@ -112,6 +119,7 @@ async fn main() {
 
     // convert hash set into a vector for decoder argument
     let abis: Vec<(Address, JsonAbi)> = abis.into_iter().collect();
+
     // Create a decoder with our mapping
     let decoder = client::Decoder::new(abis.as_slice()).unwrap();
 
