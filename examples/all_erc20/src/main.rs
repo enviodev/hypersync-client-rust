@@ -1,7 +1,6 @@
 use alloy_dyn_abi::{DecodedEvent, DynSolValue};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::Uint;
-use arrayvec::ArrayVec;
 use arrow2::array::BinaryArray;
 use hypersync_client::{
     client,

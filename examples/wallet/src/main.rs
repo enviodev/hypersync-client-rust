@@ -1,19 +1,12 @@
+use alloy_dyn_abi::{DecodedEvent, DynSolValue};
+use alloy_json_abi::JsonAbi;
+use alloy_primitives::Uint;
+use arrow2::array::BinaryArray;
+use hypersync_client::{self, client, net_types::Query};
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroU64,
-    ops::Add,
     str::FromStr,
-};
-
-use alloy_dyn_abi::{DecodedEvent, DynSolValue};
-use alloy_json_abi::JsonAbi;
-use alloy_primitives::{serde_hex, Uint};
-use arrayvec::ArrayVec;
-use arrow2::array::BinaryArray;
-use hypersync_client::{
-    self, client,
-    format::Hash,
-    net_types::{FieldSelection, LogSelection, Query, TransactionSelection},
 };
 use url::Url;
 
@@ -179,7 +172,7 @@ async fn main() {
 
     for address in &addresses {
         let address: alloy_primitives::Address =
-            alloy_primitives::Address::from_str(&address).unwrap();
+            alloy_primitives::Address::from_str(address).unwrap();
         let erc20_volume = total_erc20_volume.get(&address).unwrap();
         println!("total erc20 transfer volume for address {address} is {erc20_volume}")
     }
@@ -207,7 +200,7 @@ async fn main() {
         let tx_vals: Vec<Uint<512, 8>> = tx_val_col
             .iter()
             .flatten()
-            .map(|b| Uint::from_be_slice(b))
+            .map(Uint::from_be_slice)
             .collect();
 
         for (from, (to, tx_val)) in from_addresses.iter().zip(to_addresses.iter().zip(tx_vals)) {
@@ -219,7 +212,7 @@ async fn main() {
 
     for address in addresses {
         let address: alloy_primitives::Address =
-            alloy_primitives::Address::from_str(&address).unwrap();
+            alloy_primitives::Address::from_str(address).unwrap();
         let wei_volume = *total_wei_volume.get(&address).unwrap();
         println!("total wei transfer volume for address {address} is {wei_volume}")
     }
