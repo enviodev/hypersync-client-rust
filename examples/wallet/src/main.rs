@@ -26,11 +26,10 @@ fn address_to_topic(address: &str) -> String {
 #[tokio::main]
 async fn main() {
     let addresses = vec![
-        // TODO: might not have to do to_lower
-        "0xD1a923D70510814EaE7695A76326201cA06d080F".to_ascii_lowercase(),
-        "0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6".to_ascii_lowercase(),
-        "0xa0FBaEdC4C110f5A0c5E96c3eeAC9B5635b74CE7".to_ascii_lowercase(),
-        "0x32448eb389aBe39b20d5782f04a8d71a2b2e7189".to_ascii_lowercase(),
+        "0xD1a923D70510814EaE7695A76326201cA06d080F",
+        "0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6",
+        "0xa0FBaEdC4C110f5A0c5E96c3eeAC9B5635b74CE7",
+        "0x32448eb389aBe39b20d5782f04a8d71a2b2e7189",
     ];
 
     // pad our addresses so we can use them as a topic filter
