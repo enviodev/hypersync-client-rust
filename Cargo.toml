@@ -1,8 +1,13 @@
 [package]
-name = "hypersync-client-rust"
+name = "hypersync-client"
 version = "0.1.0"
 edition = "2021"
+description = "client library for envio.dev HyperSync"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+skar-client = "0.5.2"
+skar-format = "0.2.0"
+skar-net-types = "0.1.1"
