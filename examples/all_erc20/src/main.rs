@@ -1,13 +1,14 @@
-use alloy_dyn_abi::DecodedEvent;
+use alloy_dyn_abi::{DecodedEvent, DynSolValue};
 use alloy_json_abi::JsonAbi;
+use alloy_primitives::Uint;
 use arrayvec::ArrayVec;
 use arrow2::array::BinaryArray;
 use hypersync_client::{
     client,
     format::Address,
-    net_types::{FieldSelection, LogSelection, Query, TransactionSelection},
+    net_types::{FieldSelection, LogSelection, Query},
 };
-use std::num::NonZeroU64;
+use std::{collections::HashSet, num::NonZeroU64};
 use url::Url;
 
 #[tokio::main]
@@ -95,29 +96,22 @@ async fn main() {
     let abi = tokio::fs::read_to_string(path).await.unwrap();
     let abi: JsonAbi = serde_json::from_str(&abi).unwrap();
 
-    // vector of (contract address -> abi)
-    let mut abis = vec![];
+    // set of (address -> abi)
+    let mut abis = HashSet::new();
 
     // every log we get should be decodable by this abi but we don't know
     // the specific contract addresses since we are indexing all erc20 transfers.
     for log in &res.data.logs {
         // returned data is in arrow format so we have to convert to string
-        let _ = log
-            .column::<BinaryArray<i32>>("address")
-            .unwrap()
-            .iter()
-            .map(|val| {
-                if let Some(val) = val {
-                    // convert bytes to address type
-                    let address: Address = val.try_into().unwrap();
-                    // add to the association address -> abi
-                    abis.push((address, abi.clone()))
-                }
-            });
+        let col = log.column::<BinaryArray<i32>>("address").unwrap();
+        for val in col.into_iter().flatten() {
+            let address: Address = val.try_into().unwrap();
+            abis.insert((address, abi.clone()));
+        }
     }
 
-    println!("abis len: {}", abis.len());
-
+    // convert hash set into a vector for decoder argument
+    let abis: Vec<(Address, JsonAbi)> = abis.into_iter().collect();
     // Create a decoder with our mapping
     let decoder = client::Decoder::new(abis.as_slice()).unwrap();
 
@@ -125,15 +119,27 @@ async fn main() {
     let decoded_logs = decoder
         .decode_logs(&res.data.logs)
         .unwrap()
-        .unwrap_or_else(|| vec![]);
+        .unwrap_or_default();
 
     // filter out None
-    let decoded_logs: Vec<DecodedEvent> = decoded_logs.into_iter().filter_map(|v| v).collect();
+    let decoded_logs: Vec<DecodedEvent> = decoded_logs.into_iter().flatten().collect();
 
-    // lets count total volume, it is meaningless because of currency differences butgood as an example
-    let mut total_volume = 0;
+    // lets count total volume, it is meaningless because of currency differences but good as an example
+    // This needs to be larger than 256, otherwise it will overflow
+    let mut total_volume: Uint<512, 8> = Uint::from(0);
+
     for log in decoded_logs {
-        let volume = log.body.get(0).unwrap();
-        println!("volume: {volume:?}")
+        let maybe_volume = log.body.get(0).unwrap();
+        match maybe_volume {
+            DynSolValue::Uint(volume, _) => {
+                let volume: Uint<512, 8> = Uint::from(*volume);
+                total_volume += volume;
+            }
+            _ => panic!("not a Uint"),
+        }
     }
+
+    let total_blocks = res.next_block - query.from_block;
+
+    println!("total volume was {total_volume} in {total_blocks} blocks");
 }
