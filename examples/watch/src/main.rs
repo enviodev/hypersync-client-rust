@@ -1,13 +1,12 @@
 use alloy_dyn_abi::{DecodedEvent, DynSolValue};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::Uint;
-use arrow2::array::BinaryArray;
 use hypersync_client::{
     client,
     format::{self, Address, Hex},
-    net_types::{ArchiveHeight, FieldSelection, LogSelection, Query},
+    net_types::Query,
 };
-use std::{collections::HashSet, num::NonZeroU64};
+use std::num::NonZeroU64;
 use tokio::time::{sleep, Duration};
 use url::Url;
 

@@ -2,11 +2,7 @@ use alloy_dyn_abi::{DecodedEvent, DynSolValue};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::Uint;
 use arrow2::array::BinaryArray;
-use hypersync_client::{
-    client,
-    format::Address,
-    net_types::{FieldSelection, LogSelection, Query},
-};
+use hypersync_client::{client, format::Address};
 use std::{collections::HashSet, num::NonZeroU64};
 use url::Url;
 
