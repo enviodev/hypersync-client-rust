@@ -4,6 +4,8 @@ version = "0.0.2"
 edition = "2021"
 description = "client library for envio.dev HyperSync"
 license = "MIT"
+repository = "https://github.com/enviodev/hypersync-client-rust"
+homepage = "https://envio.dev/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
