@@ -1,5 +1,7 @@
-# hypersync-client-rust
+# hypersync-client
 Rust crate for Envio's HyperSync client
+
+`$ cargo add hypersync-client`
 
 ### Can find more examples in `examples/`
 
