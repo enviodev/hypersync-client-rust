@@ -1,5 +1,5 @@
 # hypersync-client
-Rust crate for Envio's HyperSync client
+Rust crate for [Envio's](https://envio.dev/) HyperSync client
 
 `$ cargo add hypersync-client`
 
