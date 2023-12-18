@@ -14,3 +14,8 @@
 *.pdb
 
 .vscode/
+
+# generated parquet data folder
+**/data
+
+ex/
