@@ -24,7 +24,7 @@ jobs:
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev liburing-dev
+          sudo apt-get install -y capnproto libcapnp-dev
     - name: Build
       run: cargo build
     - name: Test
@@ -38,7 +38,7 @@ jobs:
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev  liburing-dev
+          sudo apt-get install -y capnproto libcapnp-dev
     - name: Build
       run: cargo build --release
     - name: Test
@@ -52,7 +52,7 @@ jobs:
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev  liburing-dev
+          sudo apt-get install -y capnproto libcapnp-dev
     - name: Rustfmt
       run: cargo fmt --check
     - name: Clippy

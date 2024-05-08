@@ -1,4 +1,4 @@
-name: Publish a crate to crates.io 
+name: Publish to crates.io 
 
 permissions:
   contents: read
@@ -9,7 +9,12 @@ on:
       crate_name:
         description: "The crate name to publish"
         required: true
-        type: string
+        type: choice
+        options: 
+        - hypersync-format
+        - hypersync-schema
+        - hypersync-net-types
+        - hypersync-client
 
 jobs:
   publish_crates:
@@ -25,6 +30,11 @@ jobs:
           toolchain: ${{ matrix.rust }}
           profile: minimal
           override: true
+
+      - name: Install Dependencies
+      run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get install -y capnproto libcapnp-dev
 
       - uses: actions/checkout@v2
       - name: Run publish script
