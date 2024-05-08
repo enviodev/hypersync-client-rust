@@ -20,15 +20,11 @@ run-name: "Publish ${{ inputs.crate_name }} to crates.io"
 
 jobs:
   publish_crates:
-    name: Publish crates to crates.io 
+    name: Publish to crates.io 
     runs-on: ubuntu-latest
     steps:
-      - name: Install Rust ${{ matrix.rust }}
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ matrix.rust }}
-          profile: minimal
-          override: true
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
 
       - name: Install Dependencies
         run: |
