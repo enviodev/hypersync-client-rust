@@ -1,0 +1,59 @@
+[package]
+name = "hypersync-client"
+version = "0.2.0"
+edition = "2021"
+description = "client library for hypersync"
+license = "MPL-2.0"
+
+[dependencies]
+anyhow = "1"
+url = { version = "2", features = ["serde"] }
+polars-arrow = { version = "0.39", features = [
+  "io_ipc",
+  "io_ipc_compression",
+  "compute_take",
+  "compute_boolean",
+  "compute_comparison",
+] }
+polars-parquet = { version = "0.39", features = [
+  "compression",
+  "async",
+] }
+serde_json = "1"
+capnp = "0.19"
+serde = { version = "1", features = ["derive"] }
+futures = "0.3"
+arrayvec = { version = "0.7", features = ["serde"] }
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "fs",
+    "test-util",
+    "rt",
+    "macros",
+] }
+log = "0.4"
+fastrange-rs = "0.1"
+rand = "0.8"
+tokio-util = { version = "0.7.10", features = ["compat"] }
+alloy-dyn-abi = "0.7"
+alloy-json-abi = "0.7"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+num_cpus = "1"
+rayon = "1"
+faster-hex = "0.9"
+ruint = "1"
+
+hypersync-net-types = { path = "../hypersync-net-types", version = "0.1" }
+hypersync-format = { path = "../hypersync-format", version = "0.1" }
+hypersync-schema = { path = "../hypersync-schema", version = "0.1" }
+
+[dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = ["json", "rustls-tls"]
+
+[dev-dependencies]
+maplit = "1"
+hex-literal = "0.4"
+uuid = { version = "1", features = ["v4"] }
+env_logger = "0.11"

@@ -1,0 +1,18 @@
+[package]
+name = "hypersync-format"
+version = "0.1.0"
+edition = "2021"
+description = "evm format library"
+license = "MPL-2.0"
+
+[dependencies]
+arrayvec = { version = "0.7", features = ["serde"] }
+derive_more = "0.99"
+faster-hex = "0.9"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_test = "1"
+hex-literal = "0.4"
+serde_json = "1"
