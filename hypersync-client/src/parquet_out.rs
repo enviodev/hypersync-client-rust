@@ -28,7 +28,7 @@ use polars_parquet::{
 };
 use rayon::prelude::*;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_util::compat::TokioAsyncReadCompatExt;
+use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 
 use crate::{
     column_mapping, rayon_async, types::StreamConfig, ArrowBatch, ArrowChunk, Client, ParquetConfig,
@@ -277,10 +277,12 @@ async fn run_writer(
                 version: polars_parquet::parquet::write::Version::V2,
             };
 
-            let file = tokio::fs::File::create(&path)
-                .await
-                .context("create parquet file")?
-                .compat();
+            let file = tokio::io::BufWriter::new(
+                tokio::fs::File::create(&path)
+                    .await
+                    .context("create parquet file")?,
+            )
+            .compat();
 
             let parquet_schema = to_parquet_schema(&schema).context("to parquet schema")?;
 
