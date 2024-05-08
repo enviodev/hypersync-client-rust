@@ -28,7 +28,7 @@ use polars_parquet::{
 };
 use rayon::prelude::*;
 use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use crate::{
     column_mapping, rayon_async, types::StreamConfig, ArrowBatch, ArrowChunk, Client, ParquetConfig,
