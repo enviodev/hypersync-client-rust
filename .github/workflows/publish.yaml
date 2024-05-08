@@ -16,6 +16,8 @@ on:
         - hypersync-net-types
         - hypersync-client
 
+run-name: "Publish ${{ inputs.crate_name }} to crates.io"
+
 jobs:
   publish_crates:
     name: Publish crates to crates.io 
