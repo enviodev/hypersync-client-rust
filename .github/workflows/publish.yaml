@@ -21,9 +21,6 @@ run-name: "Publish ${{ inputs.crate_name }} to crates.io"
 jobs:
   publish_crates:
     name: Publish crates to crates.io 
-    strategy:
-      matrix:
-        rust: [stable]
     runs-on: ubuntu-latest
     steps:
       - name: Install Rust ${{ matrix.rust }}
