@@ -3,7 +3,16 @@ Rust crate for [Envio's](https://envio.dev/) HyperSync client
 
 `$ cargo add hypersync-client`
 
-### Can find more examples in `examples/`
+### Dependencies
+
+Need to install capnproto tool in order to build the library. It can be installed like this on Ubuntu, Windows and MacOS in order:
+```bash
+sudo apt-get install -y capnproto libcapnp-dev
+choco install capnproto
+brew install capnp
+```
+
+### Can find examples in `examples/`
 
 ### Example usage
 ```rust
