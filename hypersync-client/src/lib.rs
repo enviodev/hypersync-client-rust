@@ -44,7 +44,6 @@ impl Client {
         let http_client = reqwest::Client::builder()
             .no_gzip()
             .timeout(Duration::from_millis(cfg.http_req_timeout_millis.get()))
-            .pool_max_idle_per_host(0)
             .build()
             .unwrap();
 
