@@ -277,10 +277,12 @@ async fn run_writer(
                 version: polars_parquet::parquet::write::Version::V2,
             };
 
-            let file = tokio::fs::File::create(&path)
-                .await
-                .context("create parquet file")?
-                .compat();
+            let file = tokio::io::BufWriter::new(
+                tokio::fs::File::create(&path)
+                    .await
+                    .context("create parquet file")?,
+            )
+            .compat();
 
             let parquet_schema = to_parquet_schema(&schema).context("to parquet schema")?;
 
