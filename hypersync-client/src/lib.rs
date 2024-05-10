@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::{collections::BTreeSet, error::Error, time::Duration};
+use std::{cmp, collections::BTreeSet, error::Error, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use arrayvec::ArrayVec;
@@ -168,6 +168,7 @@ impl Client {
 
             let mut stream = futures::stream::iter(futs).buffered(config.concurrency);
 
+            // responces are unordered so old request could affect step size for fresher requests
             while let Some(resps) = stream.next().await {
                 let resps = match resps {
                     Ok(resps) => resps,
@@ -186,9 +187,9 @@ impl Client {
                         + traces * TRACE_COEFFICIENT as u64
                         + blocks * BLOCK_COEFFICIENT as u64;
                     if sum < TARGET_SIZE {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(x * 2));
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::min(x * 2, 200_000)));
                     } else {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(x / 2));
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::max(x / 2, 100)));
                     }
                     if tx.send(Ok(resp)).await.is_err() {
                         return;

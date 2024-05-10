@@ -41,4 +41,4 @@ pub const LOG_COEFFICIENT: usize = 1;
 pub const BLOCK_COEFFICIENT: usize = 1;
 pub const TRACE_COEFFICIENT: usize = 1;
 
-pub const TARGET_SIZE: u64 = 10000;
+pub const TARGET_SIZE: u64 = 50000;
