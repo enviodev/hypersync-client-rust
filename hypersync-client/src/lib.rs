@@ -264,6 +264,7 @@ impl Client {
 
         let bytes = res.bytes().await.context("read response body bytes")?;
 
+        // we could return len of bytes in here for statistics
         let res = tokio::task::block_in_place(|| {
             Self::parse_query_response::<Format>(&bytes).context("parse query response")
         })?;
