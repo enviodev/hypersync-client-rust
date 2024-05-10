@@ -1,4 +1,6 @@
-use std::{cmp, collections::BTreeSet, error::Error, time::Duration};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::{collections::BTreeSet, error::Error, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use arrayvec::ArrayVec;
@@ -10,7 +12,7 @@ use hypersync_net_types::{
 };
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
-
+mod block_iterator;
 mod column_mapping;
 pub mod config;
 mod decode;
@@ -19,6 +21,10 @@ mod rayon_async;
 mod transport_format;
 mod types;
 
+use crate::block_iterator::{
+    BlockIterator, BLOCK_COEFFICIENT, LOG_COEFFICIENT, TARGET_SIZE,
+    TRACE_COEFFICIENT, TX_COEFFICIENT,
+};
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::Config;
 pub use decode::Decoder;
@@ -125,7 +131,7 @@ impl Client {
         };
 
         let client = self.clone();
-        let step = usize::try_from(config.batch_size).unwrap();
+        let step = Arc::new(AtomicU64::new(config.batch_size));
         tokio::spawn(async move {
             let mut query = query;
             let initial_res = if config.retry {
@@ -152,16 +158,13 @@ impl Client {
                 }
             }
 
-            let futs = (query.from_block..to_block)
-                .step_by(step)
-                .map(move |start| {
-                    let end = cmp::min(start + config.batch_size, to_block);
-                    let mut query = query.clone();
-                    query.from_block = start;
-                    query.to_block = Some(end);
-
-                    Self::run_query_to_end(client.clone(), query, config.retry)
-                });
+            let it = BlockIterator::build(query.from_block, to_block, step.clone());
+            let futs = it.map(move |(start, end)| {
+                let mut query = query.clone();
+                query.from_block = start;
+                query.to_block = Some(end);
+                Self::run_query_to_end(client.clone(), query, config.retry)
+            });
 
             let mut stream = futures::stream::iter(futs).buffered(config.concurrency);
 
@@ -173,8 +176,20 @@ impl Client {
                         return;
                     }
                 };
-
                 for resp in resps {
+                    let transaction: u64 = resp.data.transactions.iter().map(|x| x.chunk.len() as u64).sum();
+                    let logs: u64 = resp.data.logs.iter().map(|x| x.chunk.len() as u64).sum();
+                    let traces: u64 = resp.data.traces.iter().map(|x| x.chunk.len() as u64).sum();
+                    let blocks: u64 = resp.data.blocks.iter().map(|x| x.chunk.len() as u64).sum();
+                    let sum = transaction * TX_COEFFICIENT as u64
+                        + logs * LOG_COEFFICIENT as u64
+                        + traces * TRACE_COEFFICIENT as u64
+                        + blocks * BLOCK_COEFFICIENT as u64;
+                    if sum < TARGET_SIZE {
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(x * 2));
+                    } else {
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(x / 2));
+                    }
                     if tx.send(Ok(resp)).await.is_err() {
                         return;
                     }

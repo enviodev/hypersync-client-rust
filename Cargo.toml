@@ -6,4 +6,5 @@ members = [
     "hypersync-format",
     "hypersync-net-types",
     "hypersync-schema",
+    "examples/all_erc20"
 ]

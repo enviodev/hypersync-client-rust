@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hypersync-client = { path = "../../" }
+hypersync-client = { path = "../../hypersync-client" }
 
-alloy-dyn-abi = "0.5.0"
-alloy-json-abi = "0.5.0"
+alloy-dyn-abi = "0.7.2"
+alloy-json-abi = "0.7.2"
 tokio = { version = "1", features = ["full"] }
 arrayvec = "0.7"
 url = "2"
@@ -17,4 +17,5 @@ hex-literal = "0.4.1"
 serde_json = "1.0.108"
 arrow2 = "0.18.0"
 prefix-hex = "0.7.1"
-alloy-primitives = "0.5.2"
+alloy-primitives = "0.7.2"
+polars-arrow = "0.39.2"
