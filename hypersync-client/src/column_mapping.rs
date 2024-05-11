@@ -7,11 +7,13 @@ use polars_arrow::array::{
     MutablePrimitiveArray, PrimitiveArray, UInt32Array, UInt64Array,
 };
 use polars_arrow::compute::cast;
-use polars_arrow::datatypes::ArrowDataType;
+use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
 use polars_arrow::types::NativeType;
 use rayon::prelude::*;
 use ruint::aliases::U256;
 use serde::{Deserialize, Serialize};
+
+use crate::ArrowBatch;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnMapping {
@@ -51,31 +53,38 @@ impl From<DataType> for ArrowDataType {
     }
 }
 
-pub fn apply_to_chunk(
-    chunk: &ArrowChunk,
+pub fn apply_to_batch(
+    batch: &ArrowBatch,
     field_names: &[&str],
     mapping: &BTreeMap<String, DataType>,
-) -> Result<ArrowChunk> {
+) -> Result<ArrowBatch> {
     if mapping.is_empty() {
-        return Ok(chunk.clone());
+        return Ok(batch.clone());
     }
 
-    let columns = chunk
-        .columns()
-        .par_iter()
-        .zip(field_names.par_iter())
-        .map(|(col, &field_name)| {
-            let col = match mapping.get(field_name) {
-                Some(&dt) => map_column(&**col, dt)
-                    .context(format!("apply cast to colum '{}'", field_name))?,
-                None => col.clone(),
-            };
+    let mut cols = Vec::with_capacity(batch.chunk.columns().len());
+    let mut fields = Vec::with_capacity(batch.schema.fields.len());
 
-            Ok(col)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    for (col, field) in batch.chunk.columns().iter().zip(batch.schema.fields.iter()) {
+        let col = match mapping.get(&field.name) {
+            Some(&dt) => {
+                map_column(&**col, dt).context(format!("apply cast to colum '{}'", field.name))?
+            }
+            None => col.clone(),
+        };
 
-    Ok(ArrowChunk::new(columns))
+        fields.push(Field::new(
+            field.name.clone(),
+            col.data_type().clone(),
+            field.is_nullable,
+        ));
+        cols.push(col);
+    }
+
+    Ok(ArrowBatch {
+        chunk: ArrowChunk::new(cols),
+        schema: Schema::from(fields),
+    })
 }
 
 pub fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Array + 'static>> {

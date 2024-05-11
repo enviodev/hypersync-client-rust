@@ -1,46 +1,44 @@
-use std::{cmp, collections::BTreeSet, error::Error, time::Duration};
+use std::{cmp, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use arrayvec::ArrayVec;
-use format::{Address, LogArgument};
 use futures::StreamExt;
-use hypersync_net_types::{
-    hypersync_net_types_capnp, ArchiveHeight, FieldSelection, LogSelection, Query, RollbackGuard,
-    TransactionSelection,
-};
+use hypersync_net_types::{ArchiveHeight, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
+use tokio::sync::mpsc;
 
 mod column_mapping;
-pub mod config;
+mod config;
 mod decode;
 mod parquet_out;
+mod parse_response;
+pub mod preset_query;
 mod rayon_async;
-mod transport_format;
+mod stream;
 mod types;
+mod util;
 
-pub use column_mapping::{ColumnMapping, DataType};
-pub use config::Config;
-pub use decode::Decoder;
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
-pub use parquet_out::map_batch_to_binary_view;
-use tokio::sync::mpsc;
-pub use transport_format::{ArrowIpc, TransportFormat};
-pub use types::{ArrowBatch, ParquetConfig, QueryResponse, QueryResponseData, StreamConfig};
+
+pub use column_mapping::{ColumnMapping, DataType};
+pub use config::{ClientConfig, StreamConfig};
+pub use decode::Decoder;
+pub use parse_response::parse_query_response;
+pub use types::{ArrowBatch, QueryResponse, QueryResponseData};
 
 pub type ArrowChunk = Chunk<Box<dyn Array>>;
 
 #[derive(Clone)]
 pub struct Client {
     http_client: reqwest::Client,
-    cfg: Config,
+    cfg: ClientConfig,
 }
 
 impl Client {
     /// Create a new client with given config
-    pub fn new(cfg: Config) -> Result<Self> {
+    pub fn new(cfg: ClientConfig) -> Result<Self> {
         let http_client = reqwest::Client::builder()
             .no_gzip()
             .timeout(Duration::from_millis(cfg.http_req_timeout_millis.get()))
@@ -49,6 +47,50 @@ impl Client {
 
         Ok(Self { http_client, cfg })
     }
+
+    // pub async fn collect(&self, query: Query, config: CollectConfig) -> Result<()> {
+    //     todo!()
+    // }
+
+    // pub async fn collect_events(&self, query: Query, config: CollectConfig) -> Result<()> {
+    //     todo!()
+    // }
+
+    // pub async fn collect_arrow(&self, query: Query, config: CollectConfig) -> Result<()> {
+    //     todo!()
+    // }
+
+    // pub async fn collect_parquet(&self, path: &str, query: Query, config: CollectConfig) -> Result<()> {
+    //     todo!()
+    // }
+
+    // pub async fn get_height(&self, config: &RequestConfig) -> Result<u64> {
+    //     todo!()
+    // }
+
+    // pub async fn get(&self, query: &Query, config: &RequestConfig) -> Result<Response> {
+    //     todo!()
+    // }
+
+    // pub async fn get_events(&self, query: &Query, config: &RequestConfig) -> Result<EventResponse> {
+    //     todo!()
+    // }
+
+    // pub async fn get_arrow(&self, query: &Query, config: &RequestConfig) -> Result<ArrowResponse> {
+    //     todo!()
+    // }
+
+    // pub async fn stream(&self, query: Query, config: StreamConfig) -> Result<Stream> {
+    //     todo!()
+    // }
+
+    // pub async fn stream_events(&self, query: Query, config: StreamConfig) -> Result<EventStream> {
+    //     todo!()
+    // }
+
+    // pub async fn stream_arrow(&self, query: Query, config: StreamConfig) -> Result<ArrowStream> {
+    //     todo!()
+    // }
 
     /// Create a parquet file by executing a query.
     ///
@@ -284,276 +326,5 @@ impl Client {
 
             base = std::cmp::min(base + 1, 5);
         }
-    }
-
-    fn parse_query_response<Format: TransportFormat>(bytes: &[u8]) -> Result<QueryResponse> {
-        let mut opts = capnp::message::ReaderOptions::new();
-        opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
-        let message_reader =
-            capnp::serialize_packed::read_message(bytes, opts).context("create message reader")?;
-
-        let query_response = message_reader
-            .get_root::<hypersync_net_types_capnp::query_response::Reader>()
-            .context("get root")?;
-
-        let archive_height = match query_response.get_archive_height() {
-            -1 => None,
-            h => Some(
-                h.try_into()
-                    .context("invalid archive height returned from server")?,
-            ),
-        };
-
-        let rollback_guard = if query_response.has_rollback_guard() {
-            let rg = query_response
-                .get_rollback_guard()
-                .context("get rollback guard")?;
-
-            Some(RollbackGuard {
-                block_number: rg.get_block_number(),
-                timestamp: rg.get_timestamp(),
-                hash: rg
-                    .get_hash()
-                    .context("get rollback guard hash")?
-                    .try_into()
-                    .context("hash size")?,
-                first_block_number: rg.get_first_block_number(),
-                first_parent_hash: rg
-                    .get_first_parent_hash()
-                    .context("get rollback guard first parent hash")?
-                    .try_into()
-                    .context("hash size")?,
-            })
-        } else {
-            None
-        };
-
-        let data = query_response.get_data().context("read data")?;
-
-        let blocks = Format::read_chunks(data.get_blocks().context("get data")?)
-            .context("parse block data")?;
-        let transactions = Format::read_chunks(data.get_transactions().context("get data")?)
-            .context("parse tx data")?;
-        let logs =
-            Format::read_chunks(data.get_logs().context("get data")?).context("parse log data")?;
-        let traces = if data.has_traces() {
-            Format::read_chunks(data.get_traces().context("get data")?)
-                .context("parse traces data")?
-        } else {
-            Vec::new()
-        };
-
-        Ok(QueryResponse {
-            archive_height,
-            next_block: query_response.get_next_block(),
-            total_execution_time: query_response.get_total_execution_time(),
-            data: QueryResponseData {
-                blocks,
-                transactions,
-                logs,
-                traces,
-            },
-            rollback_guard,
-        })
-    }
-
-    /// Returns a query for all Blocks and Transactions within the block range (from_block, to_block]
-    /// If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query {
-        let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        let all_tx_fields: BTreeSet<String> = hypersync_schema::transaction()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Query {
-            from_block,
-            to_block,
-            include_all_blocks: true,
-            transactions: vec![TransactionSelection::default()],
-            field_selection: FieldSelection {
-                block: all_block_fields,
-                transaction: all_tx_fields,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    /// Returns a query object for all Blocks and hashes of the Transactions within the block range
-    /// (from_block, to_block].  Also returns the block_hash and block_number fields on each Transaction
-    /// so it can be mapped to a block.  If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_blocks_and_transaction_hashes(
-        from_block: u64,
-        to_block: Option<u64>,
-    ) -> Query {
-        let mut tx_field_selection = BTreeSet::new();
-        tx_field_selection.insert("block_hash".to_owned());
-        tx_field_selection.insert("block_number".to_owned());
-        tx_field_selection.insert("hash".to_owned());
-
-        let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Query {
-            from_block,
-            to_block,
-            include_all_blocks: true,
-            transactions: vec![TransactionSelection::default()],
-            field_selection: FieldSelection {
-                block: all_block_fields,
-                transaction: tx_field_selection,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    /// Returns a query object for all Logs within the block range (from_block, to_block] from
-    /// the given address.  If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_logs<A>(from_block: u64, to_block: Option<u64>, address: A) -> Result<Query>
-    where
-        A: TryInto<Address>,
-        <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-    {
-        let address = address.try_into().context("convert Address type")?;
-
-        let all_log_fields: BTreeSet<String> = hypersync_schema::log()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Ok(Query {
-            from_block,
-            to_block,
-            logs: vec![LogSelection {
-                address: vec![address],
-                ..Default::default()
-            }],
-            field_selection: FieldSelection {
-                log: all_log_fields,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-    }
-
-    /// Returns a query for all Logs within the block range (from_block, to_block] from the
-    /// given address with a matching topic0 event signature.  Topic0 is the keccak256 hash
-    /// of the event signature.  If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_logs_of_event<A, T>(
-        from_block: u64,
-        to_block: Option<u64>,
-        topic0: T,
-        address: A,
-    ) -> Result<Query>
-    where
-        A: TryInto<Address>,
-        <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-        T: TryInto<LogArgument>,
-        <T as TryInto<LogArgument>>::Error: Error + Send + Sync + 'static,
-    {
-        let topic0 = topic0.try_into().context("convert Topic0 type")?;
-        let mut topics = ArrayVec::<Vec<LogArgument>, 4>::new();
-        topics.insert(0, vec![topic0]);
-
-        let address = address.try_into().context("convert Address type")?;
-
-        let all_log_fields: BTreeSet<String> = hypersync_schema::log()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Ok(Query {
-            from_block,
-            to_block,
-            logs: vec![LogSelection {
-                address: vec![address],
-                topics,
-            }],
-            field_selection: FieldSelection {
-                log: all_log_fields,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
-    }
-
-    /// Returns a query object for all transactions within the block range (from_block, to_block].
-    /// If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_transactions(from_block: u64, to_block: Option<u64>) -> Query {
-        let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Query {
-            from_block,
-            to_block,
-            transactions: vec![TransactionSelection::default()],
-            field_selection: FieldSelection {
-                transaction: all_txn_fields,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    /// Returns a query object for all transactions from an address within the block range
-    /// (from_block, to_block].  If to_block is None then query runs to the head of the chain.
-    /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
-    /// that only includes the fields you'll use in `field_selection`.
-    pub fn preset_query_transactions_from_address<A>(
-        from_block: u64,
-        to_block: Option<u64>,
-        address: A,
-    ) -> Result<Query>
-    where
-        A: TryInto<Address>,
-        <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-    {
-        let address = address.try_into().context("convert Address type")?;
-
-        let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
-
-        Ok(Query {
-            from_block,
-            to_block,
-            transactions: vec![TransactionSelection {
-                from: vec![address],
-                ..Default::default()
-            }],
-            field_selection: FieldSelection {
-                transaction: all_txn_fields,
-                ..Default::default()
-            },
-            ..Default::default()
-        })
     }
 }
