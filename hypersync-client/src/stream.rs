@@ -6,9 +6,10 @@ use hypersync_net_types::Query;
 use tokio::sync::mpsc;
 
 use crate::{
+    config::HexOutput,
     rayon_async,
     types::ArrowResponse,
-    util::{decode_logs_batch, hex_encode_batch},
+    util::{decode_logs_batch, hex_encode_batch, hex_encode_prefixed},
     ArrowBatch, ArrowResponseData, StreamConfig,
 };
 
@@ -204,7 +205,7 @@ async fn map_responses(
 
 fn map_batch(
     column_mapping: Option<&BTreeMap<String, crate::DataType>>,
-    hex_output: bool,
+    hex_output: HexOutput,
     mut batch: ArrowBatch,
 ) -> Result<ArrowBatch> {
     if let Some(map) = column_mapping {
@@ -212,8 +213,10 @@ fn map_batch(
             crate::column_mapping::apply_to_batch(&batch, map).context("apply column mapping")?;
     }
 
-    if hex_output {
-        batch = hex_encode_batch(&batch);
+    match hex_output {
+        HexOutput::NonPrefixed => batch = hex_encode_batch(&batch, faster_hex::hex_string),
+        HexOutput::Prefixed => batch = hex_encode_batch(&batch, hex_encode_prefixed),
+        HexOutput::NoEncode => (),
     }
 
     Ok(batch)

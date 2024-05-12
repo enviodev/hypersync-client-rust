@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, env::temp_dir};
 
 use alloy_dyn_abi::DynSolValue;
 use alloy_json_abi::JsonAbi;
-use hypersync_client::{ArrowIpc, Client, ColumnMapping, Config, Decoder, ParquetConfig};
+use hypersync_client::{Client, ClientConfig, ColumnMapping, Decoder, StreamConfig};
 use hypersync_format::{Address, Hex, LogArgument};
 use hypersync_net_types::{FieldSelection, Query};
 use polars_arrow::array::UInt64Array;
@@ -10,7 +10,7 @@ use polars_arrow::array::UInt64Array;
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc() {
-    let client = Client::new(Config {
+    let client = Client::new(ClientConfig {
         url: URL.parse().unwrap(),
         bearer_token: None,
         http_req_timeout_millis: 20000.try_into().unwrap(),

@@ -17,7 +17,21 @@ use rayon::iter::{
 
 use crate::{ArrowBatch, ArrowChunk};
 
-pub fn hex_encode_batch(batch: &ArrowBatch) -> ArrowBatch {
+pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
+    let mut out = vec![0; bytes.len() * 2 + 2];
+
+    out[0] = b'0';
+    out[1] = b'x';
+
+    faster_hex::hex_encode(bytes, &mut out[2..]).unwrap();
+
+    unsafe { String::from_utf8_unchecked(out) }
+}
+
+pub fn hex_encode_batch<F: Fn(&[u8]) -> String + Send + Sync + Copy>(
+    batch: &ArrowBatch,
+    encode: F,
+) -> ArrowBatch {
     let (fields, cols) = batch
         .chunk
         .columns()
@@ -25,7 +39,9 @@ pub fn hex_encode_batch(batch: &ArrowBatch) -> ArrowBatch {
         .zip(batch.schema.fields.par_iter())
         .map(|(col, field)| {
             let col = match col.data_type() {
-                DataType::Binary => Box::new(hex_encode(col.as_any().downcast_ref().unwrap())),
+                DataType::Binary => {
+                    Box::new(hex_encode(col.as_any().downcast_ref().unwrap(), encode))
+                }
                 _ => col.clone(),
             };
 
@@ -46,11 +62,14 @@ pub fn hex_encode_batch(batch: &ArrowBatch) -> ArrowBatch {
     }
 }
 
-fn hex_encode(input: &BinaryArray<i32>) -> Utf8Array<i32> {
+fn hex_encode<F: Fn(&[u8]) -> String + Copy>(
+    input: &BinaryArray<i32>,
+    encode: F,
+) -> Utf8Array<i32> {
     let mut arr = MutableUtf8Array::<i32>::new();
 
     for buf in input.iter() {
-        arr.push(buf.map(faster_hex::hex_string));
+        arr.push(buf.map(encode));
     }
 
     arr.into()

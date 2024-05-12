@@ -20,11 +20,24 @@ pub struct StreamConfig {
     pub column_mapping: Option<ColumnMapping>,
     pub event_signature: Option<String>,
     #[serde(default)]
-    pub hex_output: bool,
+    pub hex_output: HexOutput,
     pub batch_size: Option<u64>,
     pub concurrency: Option<usize>,
     pub max_num_blocks: Option<usize>,
     pub max_num_transactions: Option<usize>,
     pub max_num_logs: Option<usize>,
     pub max_num_traces: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum HexOutput {
+    NoEncode,
+    Prefixed,
+    NonPrefixed,
+}
+
+impl Default for HexOutput {
+    fn default() -> Self {
+        Self::NoEncode
+    }
 }
