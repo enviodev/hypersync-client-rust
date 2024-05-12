@@ -1,23 +1,9 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    path::PathBuf,
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Instant};
 
-use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier};
-use alloy_json_abi::EventParam;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use hypersync_net_types::Query;
-use hypersync_schema::{concat_chunks, empty_chunk};
-use polars_arrow::{
-    array::{Array, BinaryViewArray, MutableArray, MutableBooleanArray, Utf8ViewArray},
-    datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field},
-};
-use polars_arrow::{
-    array::{ArrayFromIter, BinaryArray, MutableBinaryViewArray, Utf8Array},
-    legacy::error::PolarsError,
-};
+use hypersync_schema::concat_chunks;
+use polars_arrow::{datatypes::ArrowSchema as Schema, legacy::error::PolarsError};
 use polars_parquet::parquet::write::FileStreamer;
 use polars_parquet::{
     read::ParquetError,
@@ -26,16 +12,20 @@ use polars_parquet::{
         DynStreamingIterator, Encoding, FallibleStreamingIterator, RowGroupIter, WriteOptions,
     },
 };
-use rayon::prelude::*;
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use crate::{
-    column_mapping, rayon_async, types::StreamConfig, ArrowBatch, ArrowChunk, Client, ParquetConfig,
+    config::StreamConfig, rayon_async, util::map_batch_to_binary_view, ArrowBatch, Client,
 };
 
-pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfig) -> Result<()> {
-    let path = PathBuf::from(config.path);
+pub async fn collect_parquet(
+    client: Arc<Client>,
+    path: &str,
+    query: Query,
+    config: StreamConfig,
+) -> Result<()> {
+    let path = PathBuf::from(path);
 
     tokio::fs::create_dir_all(&path)
         .await
@@ -43,49 +33,26 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
 
     let mut blocks_path = path.clone();
     blocks_path.push("blocks.parquet");
-    let (mut blocks_sender, blocks_join) =
-        spawn_writer(blocks_path, &config.column_mapping.block, config.hex_output)?;
+    let (mut blocks_sender, blocks_join) = spawn_writer(blocks_path)?;
 
     let mut transactions_path = path.clone();
     transactions_path.push("transactions.parquet");
-    let (mut transactions_sender, transactions_join) = spawn_writer(
-        transactions_path,
-        &config.column_mapping.transaction,
-        config.hex_output,
-    )?;
+    let (mut transactions_sender, transactions_join) = spawn_writer(transactions_path)?;
 
     let mut logs_path = path.clone();
     logs_path.push("logs.parquet");
-    let (mut logs_sender, logs_join) =
-        spawn_writer(logs_path, &config.column_mapping.log, config.hex_output)?;
+    let (mut logs_sender, logs_join) = spawn_writer(logs_path)?;
 
     let mut traces_path = path.clone();
     traces_path.push("traces.parquet");
-    let (mut traces_sender, traces_join) =
-        spawn_writer(traces_path, &config.column_mapping.trace, config.hex_output)?;
-
-    let event_signature = match &config.event_signature {
-        Some(sig) => Some(alloy_json_abi::Event::parse(sig).context("parse event signature")?),
-        None => None,
-    };
+    let (mut traces_sender, traces_join) = spawn_writer(traces_path)?;
 
     let mut decoded_logs_path = path.clone();
     decoded_logs_path.push("decoded_logs.parquet");
-    let (mut decoded_logs_sender, decoded_logs_join) = spawn_writer(
-        decoded_logs_path,
-        &config.column_mapping.decoded_log,
-        config.hex_output,
-    )?;
+    let (mut decoded_logs_sender, decoded_logs_join) = spawn_writer(decoded_logs_path)?;
 
     let mut rx = client
-        .stream::<crate::ArrowIpc>(
-            query,
-            StreamConfig {
-                concurrency: config.concurrency,
-                batch_size: config.batch_size,
-                retry: config.retry,
-            },
-        )
+        .stream_arrow(query, config)
         .await
         .context("start stream")?;
 
@@ -96,7 +63,6 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
 
         let blocks_fut = async move {
             for batch in resp.data.blocks {
-                let batch = map_batch_to_binary_view(batch);
                 blocks_sender
                     .send(batch)
                     .await
@@ -108,7 +74,6 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
 
         let txs_fut = async move {
             for batch in resp.data.transactions {
-                let batch = map_batch_to_binary_view(batch);
                 transactions_sender
                     .send(batch)
                     .await
@@ -122,7 +87,6 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
             let data = resp.data.logs.clone();
             async move {
                 for batch in data {
-                    let batch = map_batch_to_binary_view(batch);
                     logs_sender
                         .send(batch)
                         .await
@@ -135,7 +99,6 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
 
         let traces_fut = async move {
             for batch in resp.data.traces {
-                let batch = map_batch_to_binary_view(batch);
                 traces_sender
                     .send(batch)
                     .await
@@ -145,16 +108,8 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
             Ok::<_, anyhow::Error>(traces_sender)
         };
 
-        let sig = Arc::new(event_signature.clone());
         let decoded_logs_fut = async move {
-            for batch in resp.data.logs {
-                let sig = sig.clone();
-                let batch = map_batch_to_binary_view(batch);
-                let batch = rayon_async::spawn(move || decode_logs_batch(&sig, batch))
-                    .await
-                    .context("join decode logs task")?
-                    .context("decode logs")?;
-
+            for batch in resp.data.decoded_logs {
                 decoded_logs_sender
                     .send(batch)
                     .await
@@ -209,17 +164,11 @@ pub async fn collect_parquet(client: &Client, query: Query, config: ParquetConfi
     Ok(())
 }
 
-fn spawn_writer(
-    path: PathBuf,
-    mapping: &BTreeMap<String, column_mapping::DataType>,
-    hex_output: bool,
-) -> Result<(mpsc::Sender<ArrowBatch>, JoinHandle<Result<()>>)> {
+fn spawn_writer(path: PathBuf) -> Result<(mpsc::Sender<ArrowBatch>, JoinHandle<Result<()>>)> {
     let (tx, rx) = mpsc::channel(64);
 
-    let mapping = Arc::new(mapping.clone());
-
     let handle = tokio::task::spawn(async move {
-        match run_writer(rx, path, mapping, hex_output).await {
+        match run_writer(rx, path).await {
             Ok(v) => Ok(v),
             Err(e) => {
                 log::error!("failed to run parquet writer: {:?}", e);
@@ -231,12 +180,7 @@ fn spawn_writer(
     Ok((tx, handle))
 }
 
-async fn run_writer(
-    mut rx: mpsc::Receiver<ArrowBatch>,
-    path: PathBuf,
-    mapping: Arc<BTreeMap<String, crate::DataType>>,
-    hex_output: bool,
-) -> Result<()> {
+async fn run_writer(mut rx: mpsc::Receiver<ArrowBatch>, path: PathBuf) -> Result<()> {
     let make_writer = move |schema: &Schema| {
         let schema = schema.clone();
         let path = path.clone();
@@ -299,43 +243,16 @@ async fn run_writer(
             total_rows = 0;
             let schema = batches[0].schema.clone();
             let chunks = batches.into_iter().map(|b| b.chunk).collect::<Vec<_>>();
-
             let chunk = concat_chunks(chunks.as_slice()).context("concat chunks")?;
-            let mapping = mapping.clone();
+            let batch = ArrowBatch {
+                chunk: Arc::new(chunk),
+                schema: schema.clone(),
+            };
+            let batch = map_batch_to_binary_view(batch);
+
             let fut = rayon_async::spawn(move || {
-                let field_names = schema
-                    .fields
-                    .iter()
-                    .map(|f| f.name.as_str())
-                    .collect::<Vec<&str>>();
-                let chunk = column_mapping::apply_to_chunk(&chunk, &field_names, &mapping)
-                    .context("apply column mapping to batch")?;
-
-                let chunk = if hex_output {
-                    hex_encode_chunk(&chunk).context("hex encode batch")?
-                } else {
-                    chunk
-                };
-                let chunk = Arc::new(chunk);
-
-                let schema = chunk
-                    .iter()
-                    .zip(schema.fields.iter())
-                    .map(|(col, field)| {
-                        Field::new(
-                            field.name.clone(),
-                            col.data_type().clone(),
-                            field.is_nullable,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let schema = Arc::new(Schema::from(schema));
-
                 let rg = encode_row_group(
-                    ArrowBatch {
-                        chunk,
-                        schema: schema.clone(),
-                    },
+                    batch,
                     WriteOptions {
                         write_statistics: true,
                         version: polars_parquet::write::Version::V2,

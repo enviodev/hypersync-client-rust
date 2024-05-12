@@ -233,33 +233,6 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
     }
 }
 
-fn decode_erc20_amount(data: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Array>> {
-    let mut builder = MutableBinaryArray::<i32>::new();
-
-    for val in data.values_iter() {
-        // Check if we are decoding a single u256 and the body is empty
-        //
-        // This case can happen when decoding zero value erc20 transfers
-        let v = if val.is_empty() {
-            [0; 32].as_slice()
-        } else {
-            val
-        };
-
-        match decoder.abi_decode(v).context("decode val")? {
-            DynSolValue::Uint(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-            v => {
-                return Err(anyhow!(
-                    "unexpected output type from decode: {:?}",
-                    v.as_type()
-                ))
-            }
-        }
-    }
-
-    Ok(builder.as_box())
-}
-
 fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Array>> {
     match decoder {
         DynSolType::Bool => {

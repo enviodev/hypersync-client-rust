@@ -94,12 +94,12 @@ impl Client {
     }
 
     pub async fn collect_parquet(
-        &self,
+        self: Arc<Self>,
         path: &str,
         query: Query,
         config: StreamConfig,
     ) -> Result<()> {
-        todo!()
+        parquet_out::collect_parquet(self, path, query, config).await
     }
 
     async fn get_height_impl(&self) -> Result<u64> {
