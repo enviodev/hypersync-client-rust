@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, Context, Result};
 use hypersync_schema::ArrowChunk;
 use polars_arrow::array::{
-    Array, BinaryViewArray, Float32Array, Float64Array, Int32Array, Int64Array,
-    MutablePrimitiveArray, PrimitiveArray, UInt32Array, UInt64Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int32Array, Int64Array, MutablePrimitiveArray,
+    PrimitiveArray, UInt32Array, UInt64Array,
 };
 use polars_arrow::compute::cast;
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
 use polars_arrow::types::NativeType;
-use rayon::prelude::*;
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
 use serde::{Deserialize, Serialize};
 
@@ -55,35 +55,38 @@ impl From<DataType> for ArrowDataType {
 
 pub fn apply_to_batch(
     batch: &ArrowBatch,
-    field_names: &[&str],
     mapping: &BTreeMap<String, DataType>,
 ) -> Result<ArrowBatch> {
     if mapping.is_empty() {
         return Ok(batch.clone());
     }
 
-    let mut cols = Vec::with_capacity(batch.chunk.columns().len());
-    let mut fields = Vec::with_capacity(batch.schema.fields.len());
+    let (fields, cols) = batch
+        .chunk
+        .columns()
+        .par_iter()
+        .zip(batch.schema.fields.par_iter())
+        .map(|(col, field)| {
+            let col = match mapping.get(&field.name) {
+                Some(&dt) => map_column(&**col, dt)
+                    .context(format!("apply cast to colum '{}'", field.name))?,
+                None => col.clone(),
+            };
 
-    for (col, field) in batch.chunk.columns().iter().zip(batch.schema.fields.iter()) {
-        let col = match mapping.get(&field.name) {
-            Some(&dt) => {
-                map_column(&**col, dt).context(format!("apply cast to colum '{}'", field.name))?
-            }
-            None => col.clone(),
-        };
-
-        fields.push(Field::new(
-            field.name.clone(),
-            col.data_type().clone(),
-            field.is_nullable,
-        ));
-        cols.push(col);
-    }
+            Ok((
+                Field::new(
+                    field.name.clone(),
+                    col.data_type().clone(),
+                    field.is_nullable,
+                ),
+                col,
+            ))
+        })
+        .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
     Ok(ArrowBatch {
-        chunk: ArrowChunk::new(cols),
-        schema: Schema::from(fields),
+        chunk: ArrowChunk::new(cols).into(),
+        schema: Schema::from(fields).into(),
     })
 }
 
@@ -104,8 +107,8 @@ pub fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn
 
 fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -117,8 +120,8 @@ fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
 
 fn map_to_f32(col: &dyn Array) -> Result<Float32Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -130,8 +133,8 @@ fn map_to_f32(col: &dyn Array) -> Result<Float32Array> {
 
 fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -143,8 +146,8 @@ fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
 
 fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -156,8 +159,8 @@ fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
 
 fn map_to_int64(col: &dyn Array) -> Result<Int64Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -169,8 +172,8 @@ fn map_to_int64(col: &dyn Array) -> Result<Int64Array> {
 
 fn map_to_int32(col: &dyn Array) -> Result<Int32Array> {
     match col.data_type() {
-        &ArrowDataType::BinaryView => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryViewArray>().unwrap())
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
         }
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -181,7 +184,7 @@ fn map_to_int32(col: &dyn Array) -> Result<Int32Array> {
 }
 
 fn binary_to_target_array<T: NativeType + TryFrom<U256>>(
-    src: &BinaryViewArray,
+    src: &BinaryArray<i32>,
 ) -> Result<PrimitiveArray<T>> {
     let mut out = MutablePrimitiveArray::with_capacity(src.len());
 

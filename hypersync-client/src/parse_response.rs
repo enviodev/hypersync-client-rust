@@ -1,6 +1,6 @@
 use std::{io::Cursor, sync::Arc};
 
-use crate::{ArrowBatch, QueryResponse, QueryResponseData};
+use crate::{types::ArrowResponse, ArrowBatch, ArrowResponseData, QueryResponse};
 use anyhow::{Context, Result};
 use hypersync_net_types::{hypersync_net_types_capnp, RollbackGuard};
 use polars_arrow::io::ipc;
@@ -26,7 +26,7 @@ fn read_chunks(bytes: &[u8]) -> Result<Vec<ArrowBatch>> {
     Ok(chunks)
 }
 
-pub fn parse_query_response(bytes: &[u8]) -> Result<QueryResponse> {
+pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
     let mut opts = capnp::message::ReaderOptions::new();
     opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
     let message_reader =
@@ -84,11 +84,12 @@ pub fn parse_query_response(bytes: &[u8]) -> Result<QueryResponse> {
         archive_height,
         next_block: query_response.get_next_block(),
         total_execution_time: query_response.get_total_execution_time(),
-        data: QueryResponseData {
+        data: ArrowResponseData {
             blocks,
             transactions,
             logs,
             traces,
+            decoded_logs: Vec::new(),
         },
         rollback_guard,
     })

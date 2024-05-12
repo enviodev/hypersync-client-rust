@@ -40,13 +40,17 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
     pub fn decode(
         &self,
         topic0: &[u8],
-        topics: impl Iterator<&[u8; 32]>,
+        topics: &[Option<&[u8]>],
         data: &[u8],
     ) -> Result<Option<DecodedEvent>> {
         let event = match self.map.iter().find(|e| e.0 == topic0) {
             Some(event) => &event.1,
             None => return Ok(None),
         };
+
+        let topics = topics
+            .iter()
+            .filter_map(|&t| t.map(|t| t.try_into().unwrap()));
 
         let decoded = event
             .decode_log_parts(topics, data, false)

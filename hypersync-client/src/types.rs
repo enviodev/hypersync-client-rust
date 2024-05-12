@@ -5,16 +5,17 @@ use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::RollbackGuard;
 use polars_arrow::datatypes::SchemaRef;
 
-#[derive(Debug, Clone)]
-pub struct QueryResponseData {
+#[derive(Default, Debug, Clone)]
+pub struct ArrowResponseData {
     pub blocks: Vec<ArrowBatch>,
     pub transactions: Vec<ArrowBatch>,
     pub logs: Vec<ArrowBatch>,
     pub traces: Vec<ArrowBatch>,
+    pub decoded_logs: Vec<ArrowBatch>,
 }
 
 #[derive(Debug, Clone)]
-pub struct QueryResponse {
+pub struct QueryResponse<T> {
     /// Current height of the source hypersync instance
     pub archive_height: Option<u64>,
     /// Next block to query for, the responses are paginated so
@@ -24,10 +25,12 @@ pub struct QueryResponse {
     /// Total time it took the hypersync instance to execute the query.
     pub total_execution_time: u64,
     /// Response data
-    pub data: QueryResponseData,
+    pub data: T,
     /// Rollback guard
     pub rollback_guard: Option<RollbackGuard>,
 }
+
+pub type ArrowResponse = QueryResponse<ArrowResponseData>;
 
 #[derive(Debug, Clone)]
 pub struct ArrowBatch {
