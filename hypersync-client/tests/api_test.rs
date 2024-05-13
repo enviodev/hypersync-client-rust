@@ -1,21 +1,14 @@
-use std::{collections::BTreeSet, env::temp_dir};
+use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
-use alloy_dyn_abi::DynSolValue;
 use alloy_json_abi::JsonAbi;
-use hypersync_client::{ArrowIpc, Client, ColumnMapping, Config, Decoder, ParquetConfig};
-use hypersync_format::{Address, Hex, LogArgument};
+use hypersync_client::{preset_query, Client, ClientConfig, ColumnMapping, StreamConfig};
 use hypersync_net_types::{FieldSelection, Query};
 use polars_arrow::array::UInt64Array;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
 
     let mut block_field_selection = BTreeSet::new();
     block_field_selection.insert("number".to_owned());
@@ -23,7 +16,7 @@ async fn test_api_arrow_ipc() {
     block_field_selection.insert("hash".to_owned());
 
     let res = client
-        .send::<ArrowIpc>(&Query {
+        .get_arrow(&Query {
             from_block: 14000000,
             to_block: None,
             logs: Vec::new(),
@@ -46,12 +39,7 @@ async fn test_api_arrow_ipc() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc_ordering() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
 
     let mut block_field_selection = BTreeSet::new();
     block_field_selection.insert("number".to_owned());
@@ -84,7 +72,7 @@ async fn test_api_arrow_ipc_ordering() {
     }))
     .unwrap();
 
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let res = client.get_arrow(&query).await.unwrap();
 
     assert!(res.next_block > 13223105);
 
@@ -108,15 +96,11 @@ fn get_file_path(name: &str) -> String {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_decode_logs() {
-    const ADDR: &str = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72";
-    let address = Address::decode_hex(ADDR).unwrap();
+    env_logger::try_init().ok();
 
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    const ADDR: &str = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72";
+
+    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
 
     let query: Query = serde_json::from_value(serde_json::json!({
         "from_block": 18680952,
@@ -141,72 +125,29 @@ async fn test_api_decode_logs() {
     }))
     .unwrap();
 
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
-
-    let path = get_file_path("ens_token_abi.json");
-    let abi = tokio::fs::read_to_string(path).await.unwrap();
-    let abi: JsonAbi = serde_json::from_str(&abi).unwrap();
-
-    let decoder = Decoder::new(&[(address, abi)]).unwrap();
-
-    let decoded_logs = decoder.decode_logs(&res.data.logs).unwrap().unwrap();
-
-    assert_eq!(decoded_logs.len(), 1);
-
-    println!("{:?}", decoded_logs[0]);
-}
-
-const URL: &str = "https://eth.hypersync.xyz";
-
-#[test]
-fn decode_zero_erc20_transfer() {
-    const ADDR: &str = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72";
-    let address = Address::decode_hex(ADDR).unwrap();
-
-    let path = get_file_path("erc20.abi.json");
-    let abi = std::fs::read_to_string(path).unwrap();
-    let abi: JsonAbi = serde_json::from_str(&abi).unwrap();
-
-    let decoder = Decoder::new(&[(address.clone(), abi)]).unwrap();
-
-    let topics = [
-        Some(
-            LogArgument::decode_hex(
-                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-            )
-            .unwrap(),
-        ),
-        Some(
-            LogArgument::decode_hex(
-                "0x000000000000000000000000327339b55b16345a4b206bfb09c3fa27ab4689ec",
-            )
-            .unwrap(),
-        ),
-        Some(
-            LogArgument::decode_hex(
-                "0x0000000000000000000000001e037f97d730cc881e77f01e409d828b0bb14de0",
-            )
-            .unwrap(),
-        ),
-        None,
-    ];
-
-    let topics = topics
-        .iter()
-        .map(|t| t.as_ref().map(|t| t.as_slice()))
-        .collect::<Vec<_>>();
-
-    let event = decoder
-        .decode(
-            address.as_slice(),
-            topics[0].unwrap(),
-            topics.as_slice(),
-            &[],
+    let mut rx = client
+        .stream_arrow(
+            query,
+            StreamConfig {
+                event_signature: Some(
+                    "Transfer(address indexed from, address indexed to, uint indexed amount)"
+                        .into(),
+                ),
+                ..Default::default()
+            },
         )
-        .unwrap()
+        .await
         .unwrap();
 
-    assert_eq!(event.body[0], DynSolValue::Uint(0.try_into().unwrap(), 256));
+    let res = rx.recv().await.unwrap().unwrap();
+
+    let decoded_logs = res.data.decoded_logs;
+
+    dbg!(res.data.logs);
+
+    assert_eq!(decoded_logs[0].chunk.len(), 1);
+
+    println!("{:?}", decoded_logs[0]);
 }
 
 #[test]
@@ -218,17 +159,15 @@ fn parse_nameless_abi() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
-async fn test_parquet_out_decode_with_invalid_log() {
+async fn test_stream_decode_with_invalid_log() {
     env_logger::try_init().ok();
 
-    let client = Client::new(Config {
-        url: "https://base.hypersync.xyz".parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
+    let client = Client::new(ClientConfig {
+        url: Some("https://base.hypersync.xyz".parse().unwrap()),
+        ..Default::default()
     })
     .unwrap();
-
-    let path = format!("{}/{}", temp_dir().to_string_lossy(), uuid::Uuid::new_v4());
+    let client = Arc::new(client);
 
     let query: Query = serde_json::from_value(serde_json::json!({
         "from_block": 6589327,
@@ -243,16 +182,11 @@ async fn test_parquet_out_decode_with_invalid_log() {
     }))
     .unwrap();
 
-    client
-        .create_parquet_folder(
+    let data = client
+        .collect_arrow(
             query,
-            ParquetConfig {
-                path,
-                hex_output: true,
-                batch_size: 100,
-                concurrency: 10,
-                retry: false,
-                column_mapping: ColumnMapping {
+            StreamConfig {
+                column_mapping: Some(ColumnMapping {
                     block: maplit::btreemap! {
                         "number".to_owned() => hypersync_client::DataType::Float32,
                     },
@@ -264,15 +198,18 @@ async fn test_parquet_out_decode_with_invalid_log() {
                     decoded_log: maplit::btreemap! {
                         "amount".to_owned() => hypersync_client::DataType::Float64,
                     },
-                },
+                }),
                 event_signature: Some(
                     "Transfer(address indexed from, address indexed to, uint indexed amount)"
                         .into(),
                 ),
+                ..Default::default()
             },
         )
         .await
         .unwrap();
+
+    dbg!(data);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -280,12 +217,7 @@ async fn test_parquet_out_decode_with_invalid_log() {
 async fn test_parquet_out() {
     env_logger::try_init().ok();
 
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
 
     let path = format!("{}/{}", temp_dir().to_string_lossy(), uuid::Uuid::new_v4());
 
@@ -305,15 +237,11 @@ async fn test_parquet_out() {
     .unwrap();
 
     client
-        .create_parquet_folder(
+        .collect_parquet(
+            &path,
             query,
-            ParquetConfig {
-                path,
-                hex_output: true,
-                batch_size: 100,
-                concurrency: 10,
-                retry: false,
-                column_mapping: ColumnMapping {
+            StreamConfig {
+                column_mapping: Some(ColumnMapping {
                     block: maplit::btreemap! {
                         "number".to_owned() => hypersync_client::DataType::Float32,
                     },
@@ -325,11 +253,12 @@ async fn test_parquet_out() {
                     decoded_log: maplit::btreemap! {
                         //"amount".to_owned() => hypersync_client::DataType::Float64,
                     },
-                },
+                }),
                 event_signature: Some(
                     "Transfer(address indexed from, address indexed to, uint indexed amount)"
                         .into(),
                 ),
+                ..Default::default()
             },
         )
         .await
@@ -339,14 +268,9 @@ async fn test_parquet_out() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_blocks_and_transactions() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
-    let query = Client::preset_query_blocks_and_transactions(18_000_000, Some(18_000_100));
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
+    let query = preset_query::blocks_and_transactions(18_000_000, Some(18_000_100));
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_blocks: usize = res
         .data
@@ -369,14 +293,9 @@ async fn test_api_preset_query_blocks_and_transactions() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_blocks_and_transaction_hashes() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
-    let query = Client::preset_query_blocks_and_transaction_hashes(18_000_000, Some(18_000_100));
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
+    let query = preset_query::blocks_and_transaction_hashes(18_000_000, Some(18_000_100));
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_blocks: usize = res
         .data
@@ -399,16 +318,11 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_logs() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
 
     let usdt_addr = hex_literal::hex!("dAC17F958D2ee523a2206206994597C13D831ec7");
-    let query = Client::preset_query_logs(18_000_000, Some(18_001_000), usdt_addr).unwrap();
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let query = preset_query::logs(18_000_000, Some(18_001_000), usdt_addr).unwrap();
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_logs: usize = res
         .data
@@ -424,25 +338,16 @@ async fn test_api_preset_query_logs() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_logs_of_event() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
 
     let usdt_addr = hex_literal::hex!("dAC17F958D2ee523a2206206994597C13D831ec7");
     let transfer_topic0 =
         hex_literal::hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
-    let query = Client::preset_query_logs_of_event(
-        18_000_000,
-        Some(18_001_000),
-        transfer_topic0,
-        usdt_addr,
-    )
-    .unwrap();
+    let query =
+        preset_query::logs_of_event(18_000_000, Some(18_001_000), transfer_topic0, usdt_addr)
+            .unwrap();
 
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_logs: usize = res
         .data
@@ -458,14 +363,9 @@ async fn test_api_preset_query_logs_of_event() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_transactions() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
-    let query = Client::preset_query_transactions(18_000_000, Some(18_000_100));
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
+    let query = preset_query::transactions(18_000_000, Some(18_000_100));
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_txs: usize = res
         .data
@@ -481,21 +381,13 @@ async fn test_api_preset_query_transactions() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_transactions_from_address() {
-    let client = Client::new(Config {
-        url: URL.parse().unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: 20000.try_into().unwrap(),
-    })
-    .unwrap();
+    let client = Client::new(ClientConfig::default()).unwrap();
 
     let vitalik_eth_addr = hex_literal::hex!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
-    let query = Client::preset_query_transactions_from_address(
-        19_000_000,
-        Some(19_300_000),
-        vitalik_eth_addr,
-    )
-    .unwrap();
-    let res = client.send::<ArrowIpc>(&query).await.unwrap();
+    let query =
+        preset_query::transactions_from_address(19_000_000, Some(19_300_000), vitalik_eth_addr)
+            .unwrap();
+    let res = client.get_arrow(&query).await.unwrap();
 
     let num_txs: usize = res
         .data
@@ -504,6 +396,6 @@ async fn test_api_preset_query_transactions_from_address() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_000_100);
+    assert!(res.next_block == 19_300_000);
     assert!(num_txs > 1);
 }
