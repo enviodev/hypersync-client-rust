@@ -7,11 +7,12 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn from_signatures(signatures: &[String]) -> Result<Self> {
+    pub fn from_signatures<S: AsRef<str>>(signatures: &[S]) -> Result<Self> {
         let mut map = signatures
             .iter()
             .map(|sig| {
-                let event = alloy_json_abi::Event::parse(sig).context("parse event signature")?;
+                let event =
+                    alloy_json_abi::Event::parse(sig.as_ref()).context("parse event signature")?;
                 let topic0 = event.selector().to_vec();
                 let event = event.resolve().context("resolve event")?;
                 Ok((topic0, event))

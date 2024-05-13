@@ -9,7 +9,7 @@ use hypersync_net_types::{FieldSelection, LogSelection, Query, TransactionSelect
 /// If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query {
+pub fn blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query {
     let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
         .fields
         .iter()
@@ -41,7 +41,7 @@ pub fn preset_query_blocks_and_transactions(from_block: u64, to_block: Option<u6
 /// so it can be mapped to a block.  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> Query {
+pub fn blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> Query {
     let mut tx_field_selection = BTreeSet::new();
     tx_field_selection.insert("block_hash".to_owned());
     tx_field_selection.insert("block_number".to_owned());
@@ -71,7 +71,7 @@ pub fn preset_query_blocks_and_transaction_hashes(from_block: u64, to_block: Opt
 /// the given address.  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_logs<A>(from_block: u64, to_block: Option<u64>, address: A) -> Result<Query>
+pub fn logs<A>(from_block: u64, to_block: Option<u64>, address: A) -> Result<Query>
 where
     A: TryInto<Address>,
     <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
@@ -104,7 +104,7 @@ where
 /// of the event signature.  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_logs_of_event<A, T>(
+pub fn logs_of_event<A, T>(
     from_block: u64,
     to_block: Option<u64>,
     topic0: T,
@@ -147,7 +147,7 @@ where
 /// If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_transactions(from_block: u64, to_block: Option<u64>) -> Query {
+pub fn transactions(from_block: u64, to_block: Option<u64>) -> Query {
     let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
         .fields
         .iter()
@@ -170,7 +170,7 @@ pub fn preset_query_transactions(from_block: u64, to_block: Option<u64>) -> Quer
 /// (from_block, to_block].  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn preset_query_transactions_from_address<A>(
+pub fn transactions_from_address<A>(
     from_block: u64,
     to_block: Option<u64>,
     address: A,

@@ -35,6 +35,14 @@ pub async fn stream_arrow(
         let initial_res = client.get_arrow(&query).await.context("get initial data");
         match initial_res {
             Ok(res) => {
+                let res = match map_responses(config.clone(), vec![res]).await {
+                    Ok(mut resps) => resps.remove(0),
+                    Err(e) => {
+                        tx.send(Err(e)).await.ok();
+                        return;
+                    }
+                };
+
                 query.from_block = res.next_block;
                 if tx.send(Ok(res)).await.is_err() {
                     return;
