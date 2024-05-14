@@ -1,6 +1,5 @@
-use std::{collections::BTreeSet, error::Error};
+use std::collections::BTreeSet;
 
-use anyhow::{Context, Result};
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, LogArgument};
 use hypersync_net_types::{FieldSelection, LogSelection, Query, TransactionSelection};
@@ -71,24 +70,18 @@ pub fn blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> 
 /// the given address.  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn logs<A>(from_block: u64, to_block: Option<u64>, address: A) -> Result<Query>
-where
-    A: TryInto<Address>,
-    <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-{
-    let address = address.try_into().context("convert Address type")?;
-
+pub fn logs(from_block: u64, to_block: Option<u64>, contract_address: Address) -> Query {
     let all_log_fields: BTreeSet<String> = hypersync_schema::log()
         .fields
         .iter()
         .map(|x| x.name.clone())
         .collect();
 
-    Ok(Query {
+    Query {
         from_block,
         to_block,
         logs: vec![LogSelection {
-            address: vec![address],
+            address: vec![contract_address],
             ..Default::default()
         }],
         field_selection: FieldSelection {
@@ -96,7 +89,7 @@ where
             ..Default::default()
         },
         ..Default::default()
-    })
+    }
 }
 
 /// Returns a query for all Logs within the block range (from_block, to_block] from the
@@ -104,23 +97,14 @@ where
 /// of the event signature.  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn logs_of_event<A, T>(
+pub fn logs_of_event(
     from_block: u64,
     to_block: Option<u64>,
-    topic0: T,
-    address: A,
-) -> Result<Query>
-where
-    A: TryInto<Address>,
-    <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-    T: TryInto<LogArgument>,
-    <T as TryInto<LogArgument>>::Error: Error + Send + Sync + 'static,
-{
-    let topic0 = topic0.try_into().context("convert Topic0 type")?;
+    topic0: LogArgument,
+    contract_address: Address,
+) -> Query {
     let mut topics = ArrayVec::<Vec<LogArgument>, 4>::new();
     topics.insert(0, vec![topic0]);
-
-    let address = address.try_into().context("convert Address type")?;
 
     let all_log_fields: BTreeSet<String> = hypersync_schema::log()
         .fields
@@ -128,11 +112,11 @@ where
         .map(|x| x.name.clone())
         .collect();
 
-    Ok(Query {
+    Query {
         from_block,
         to_block,
         logs: vec![LogSelection {
-            address: vec![address],
+            address: vec![contract_address],
             topics,
         }],
         field_selection: FieldSelection {
@@ -140,7 +124,7 @@ where
             ..Default::default()
         },
         ..Default::default()
-    })
+    }
 }
 
 /// Returns a query object for all transactions within the block range (from_block, to_block].
@@ -170,24 +154,18 @@ pub fn transactions(from_block: u64, to_block: Option<u64>) -> Query {
 /// (from_block, to_block].  If to_block is None then query runs to the head of the chain.
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
-pub fn transactions_from_address<A>(
+pub fn transactions_from_address(
     from_block: u64,
     to_block: Option<u64>,
-    address: A,
-) -> Result<Query>
-where
-    A: TryInto<Address>,
-    <A as TryInto<Address>>::Error: Error + Send + Sync + 'static,
-{
-    let address = address.try_into().context("convert Address type")?;
-
+    address: Address,
+) -> Query {
     let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
         .fields
         .iter()
         .map(|x| x.name.clone())
         .collect();
 
-    Ok(Query {
+    Query {
         from_block,
         to_block,
         transactions: vec![TransactionSelection {
@@ -199,5 +177,5 @@ where
             ..Default::default()
         },
         ..Default::default()
-    })
+    }
 }

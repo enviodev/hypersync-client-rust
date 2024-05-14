@@ -2,6 +2,7 @@ use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
 use hypersync_client::{preset_query, Client, ClientConfig, ColumnMapping, StreamConfig};
+use hypersync_format::{Address, Hex, LogArgument};
 use hypersync_net_types::{FieldSelection, Query};
 use polars_arrow::array::UInt64Array;
 
@@ -320,8 +321,8 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
 async fn test_api_preset_query_logs() {
     let client = Client::new(ClientConfig::default()).unwrap();
 
-    let usdt_addr = hex_literal::hex!("dAC17F958D2ee523a2206206994597C13D831ec7");
-    let query = preset_query::logs(18_000_000, Some(18_001_000), usdt_addr).unwrap();
+    let usdt_addr = Address::decode_hex("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap();
+    let query = preset_query::logs(18_000_000, Some(18_001_000), usdt_addr);
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_logs: usize = res
@@ -340,12 +341,13 @@ async fn test_api_preset_query_logs() {
 async fn test_api_preset_query_logs_of_event() {
     let client = Client::new(ClientConfig::default()).unwrap();
 
-    let usdt_addr = hex_literal::hex!("dAC17F958D2ee523a2206206994597C13D831ec7");
-    let transfer_topic0 =
-        hex_literal::hex!("ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef");
+    let usdt_addr = Address::decode_hex("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap();
+    let transfer_topic0 = LogArgument::decode_hex(
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+    )
+    .unwrap();
     let query =
-        preset_query::logs_of_event(18_000_000, Some(18_001_000), transfer_topic0, usdt_addr)
-            .unwrap();
+        preset_query::logs_of_event(18_000_000, Some(18_001_000), transfer_topic0, usdt_addr);
 
     let res = client.get_arrow(&query).await.unwrap();
 
@@ -383,10 +385,10 @@ async fn test_api_preset_query_transactions() {
 async fn test_api_preset_query_transactions_from_address() {
     let client = Client::new(ClientConfig::default()).unwrap();
 
-    let vitalik_eth_addr = hex_literal::hex!("d8dA6BF26964aF9D7eEd9e03E53415D37aA96045");
+    let vitalik_eth_addr =
+        Address::decode_hex("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").unwrap();
     let query =
-        preset_query::transactions_from_address(19_000_000, Some(19_300_000), vitalik_eth_addr)
-            .unwrap();
+        preset_query::transactions_from_address(19_000_000, Some(19_300_000), vitalik_eth_addr);
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_txs: usize = res
