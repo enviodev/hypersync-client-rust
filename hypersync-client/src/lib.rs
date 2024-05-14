@@ -20,16 +20,17 @@ pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
 
+use parse_response::parse_query_response;
+use tokio::sync::mpsc;
+use types::ArrowResponse;
+use url::Url;
+
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::{ClientConfig, StreamConfig};
 pub use decode::Decoder;
-pub use parse_response::parse_query_response;
-use tokio::sync::mpsc;
-use types::ArrowResponse;
 pub use types::{ArrowBatch, ArrowResponseData, QueryResponse};
-use url::Url;
 
-pub type ArrowChunk = Chunk<Box<dyn Array>>;
+type ArrowChunk = Chunk<Box<dyn Array>>;
 
 #[derive(Clone)]
 pub struct Client {
@@ -79,18 +80,47 @@ impl Client {
         self: Arc<Self>,
         query: Query,
         config: StreamConfig,
-    ) -> Result<Vec<ArrowResponse>> {
+    ) -> Result<ArrowResponse> {
         let mut recv = stream::stream_arrow(self, query, config)
             .await
             .context("start stream")?;
 
-        let mut resps = Vec::new();
+        let mut data = ArrowResponseData::default();
+        let mut archive_height = None;
+        let mut next_block = 0;
+        let mut total_execution_time = 0;
 
         while let Some(res) = recv.recv().await {
-            resps.push(res.context("get response")?);
+            let res = res.context("get response")?;
+
+            for batch in res.data.blocks {
+                data.blocks.push(batch);
+            }
+            for batch in res.data.transactions {
+                data.transactions.push(batch);
+            }
+            for batch in res.data.logs {
+                data.logs.push(batch);
+            }
+            for batch in res.data.traces {
+                data.traces.push(batch);
+            }
+            for batch in res.data.decoded_logs {
+                data.decoded_logs.push(batch);
+            }
+
+            archive_height = res.archive_height;
+            next_block = res.next_block;
+            total_execution_time += res.total_execution_time
         }
 
-        Ok(resps)
+        Ok(ArrowResponse {
+            archive_height,
+            next_block,
+            total_execution_time,
+            data,
+            rollback_guard: None,
+        })
     }
 
     pub async fn collect_parquet(
