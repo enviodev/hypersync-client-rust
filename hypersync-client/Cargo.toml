@@ -4,6 +4,8 @@ version = "0.4.0"
 edition = "2021"
 description = "client library for hypersync"
 license = "MPL-2.0"
+homepage = "https://github.com/enviodev/hypersync-client-rust"
+repository = "https://github.com/enviodev/hypersync-client-rust"
 
 [dependencies]
 anyhow = "1"
