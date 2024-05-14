@@ -22,13 +22,12 @@ pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
 use tokio::sync::mpsc;
-use types::ArrowResponse;
 use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::{ClientConfig, StreamConfig};
 pub use decode::Decoder;
-pub use types::{ArrowBatch, ArrowResponseData, QueryResponse};
+pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
 
