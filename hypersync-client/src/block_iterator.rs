@@ -1,44 +1,56 @@
 use std::cmp;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::sync::mpsc;
+use tokio_stream::Stream;
 
 pub struct BlockIterator {
     offset: u64,
     end: u64,
     step: Arc<AtomicU64>,
+    rx_unbounded: mpsc::Receiver<Option<u64>>, // channel used to receive
+    unbounded_counter: usize,                  // Number of block ranges produced
+    unbounded_concurrency: usize, // if unbounded counter % unbounded_concurrency == 0 iterator should produce unbounded block range
 }
 
 impl BlockIterator {
-    // fn new() -> BlockIterator {
-    //     BlockIterator {
-    //         offset: 0,
-    //         end: 0,
-    //         step: Arc::new(AtomicU64::new(0)),
-    //     }
-    // }
-
-    pub fn build(offset: u64, end: u64, step: Arc<AtomicU64>) -> BlockIterator {
-        BlockIterator { offset, end, step }
+    pub fn build(
+        offset: u64,
+        end: u64,
+        step: Arc<AtomicU64>,
+        rx_unbounded: mpsc::Receiver<Option<u64>>,
+        unbounded_concurrency: usize,
+    ) -> BlockIterator {
+        BlockIterator {
+            offset,
+            end,
+            step,
+            rx_unbounded,
+            unbounded_counter: 0,
+            unbounded_concurrency,
+        }
     }
 }
 
-impl Iterator for BlockIterator {
-    type Item = (u64, u64);
+impl Stream for BlockIterator {
+    type Item = (u64, Option<u64>);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // Increment our count. This is why we started at zero.
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.offset == self.end {
-            return None;
+            return Poll::Ready(None);
+        }
+        if self.unbounded_counter % self.unbounded_concurrency == 0 && self.unbounded_counter != 0 {
+            match self.rx_unbounded.poll_recv(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(value) => self.offset = value.unwrap().unwrap(),
+            }
+            return Poll::Ready(Some((self.offset, None)));
         }
         let start = self.offset;
         self.offset = cmp::min(self.offset + self.step.load(Ordering::SeqCst), self.end);
-        Some((start, self.offset))
+        Poll::Ready(Some((start, Some(self.offset))))
     }
 }
-
-pub const TX_COEFFICIENT: usize = 1;
-pub const LOG_COEFFICIENT: usize = 1;
-pub const BLOCK_COEFFICIENT: usize = 1;
-pub const TRACE_COEFFICIENT: usize = 1;
-
-pub const TARGET_SIZE: u64 = 50000;

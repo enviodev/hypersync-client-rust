@@ -73,12 +73,15 @@ async fn main() {
     };
     let mut channel = client.stream::<ArrowIpc>(query, scfg).await.unwrap();
 
+    let mut prev = 0;
     while let Some(res) = channel.recv().await {
         let res = res.unwrap();
         println!(
-            "Ran the query once.  Next block to query is {}",
-            res.next_block
+            "Ran the query once.  Next block to query is {}, prev {}",
+            res.next_block,
+            prev
         );
+        prev = res.next_block;
         // read json abi file for erc20
         let path = "./erc20.abi.json";
         let abi = tokio::fs::read_to_string(path).await.unwrap();

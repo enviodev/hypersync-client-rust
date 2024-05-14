@@ -10,6 +10,7 @@ use hypersync_net_types::{
     hypersync_net_types_capnp, ArchiveHeight, FieldSelection, LogSelection, Query, RollbackGuard,
     TransactionSelection,
 };
+use polars_arrow::compute::boolean::any;
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
 mod block_iterator;
@@ -21,10 +22,7 @@ mod rayon_async;
 mod transport_format;
 mod types;
 
-use crate::block_iterator::{
-    BlockIterator, BLOCK_COEFFICIENT, LOG_COEFFICIENT, TARGET_SIZE,
-    TRACE_COEFFICIENT, TX_COEFFICIENT,
-};
+use crate::block_iterator::BlockIterator;
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::Config;
 pub use decode::Decoder;
@@ -157,18 +155,27 @@ impl Client {
                     return;
                 }
             }
-
-            let it = BlockIterator::build(query.from_block, to_block, step.clone());
+            let (finder_tx, finder_rx) = mpsc::channel(1);
+            let it = BlockIterator::build(
+                query.from_block,
+                to_block,
+                step.clone(),
+                finder_rx,
+                config.concurrency,
+            );
             let futs = it.map(move |(start, end)| {
                 let mut query = query.clone();
                 query.from_block = start;
-                query.to_block = Some(end);
-                Self::run_query_to_end(client.clone(), query, config.retry)
+                query.to_block = end;
+                if end.is_some() {
+                    Self::run_query(client.clone(), query, config.retry, None)
+                } else {
+                    Self::run_query(client.clone(), query, config.retry, Some(finder_tx.clone()))
+                }
             });
 
-            let mut stream = futures::stream::iter(futs).buffered(config.concurrency);
+            let mut stream = futs.buffered(config.concurrency);
 
-            // responces are unordered so old request could affect step size for fresher requests
             while let Some(resps) = stream.next().await {
                 let resps = match resps {
                     Ok(resps) => resps,
@@ -178,19 +185,6 @@ impl Client {
                     }
                 };
                 for resp in resps {
-                    let transaction: u64 = resp.data.transactions.iter().map(|x| x.chunk.len() as u64).sum();
-                    let logs: u64 = resp.data.logs.iter().map(|x| x.chunk.len() as u64).sum();
-                    let traces: u64 = resp.data.traces.iter().map(|x| x.chunk.len() as u64).sum();
-                    let blocks: u64 = resp.data.blocks.iter().map(|x| x.chunk.len() as u64).sum();
-                    let sum = transaction * TX_COEFFICIENT as u64
-                        + logs * LOG_COEFFICIENT as u64
-                        + traces * TRACE_COEFFICIENT as u64
-                        + blocks * BLOCK_COEFFICIENT as u64;
-                    if sum < TARGET_SIZE {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::min(x * 2, 200_000)));
-                    } else {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::max(x / 2, 100)));
-                    }
                     if tx.send(Ok(resp)).await.is_err() {
                         return;
                     }
@@ -201,6 +195,18 @@ impl Client {
         Ok(rx)
     }
 
+    async fn run_query(
+        self,
+        query: Query,
+        retry: bool,
+        block_channel: Option<mpsc::Sender<Option<u64>>>,
+    ) -> Result<Vec<QueryResponse>> {
+        if block_channel.is_some() {
+            self.run_query_to_first_data(query, retry, block_channel.unwrap()).await
+        } else {
+            self.run_query_to_end(query, retry).await
+        }
+    }
     async fn run_query_to_end(self, query: Query, retry: bool) -> Result<Vec<QueryResponse>> {
         let mut resps = Vec::new();
 
@@ -231,6 +237,39 @@ impl Client {
         }
 
         Ok(resps)
+    }
+
+    async fn run_query_to_first_data(
+        self,
+        query: Query,
+        retry: bool,
+        block_channel: mpsc::Sender<Option<u64>>,
+    ) -> Result<Vec<QueryResponse>> {
+        assert!(query.to_block.is_none());
+
+        let mut query = query;
+
+        loop {
+            let resp = if retry {
+                self.send_with_retry::<crate::ArrowIpc>(&query)
+                    .await
+                    .context("send query")?
+            } else {
+                self.send::<crate::ArrowIpc>(&query)
+                    .await
+                    .context("send query")?
+            };
+
+            if resp.data.transactions.len() != 0
+                || resp.data.blocks.len() != 0
+                || resp.data.traces.len() != 0
+                || resp.data.logs.len() != 0
+            {
+                _ = block_channel.send(Some(resp.next_block)).await;
+                return Ok(vec![resp]);
+            }
+            query.from_block = resp.next_block;
+        }
     }
 
     /// Send a query request to the source hypersync instance.
