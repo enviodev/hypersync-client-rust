@@ -21,10 +21,7 @@ mod rayon_async;
 mod transport_format;
 mod types;
 
-use crate::block_iterator::{
-    BlockIterator, BLOCK_COEFFICIENT, LOG_COEFFICIENT, TARGET_SIZE,
-    TRACE_COEFFICIENT, TX_COEFFICIENT,
-};
+use crate::block_iterator::{BlockIterator, TARGET_SIZE};
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::Config;
 pub use decode::Decoder;
@@ -132,6 +129,7 @@ impl Client {
 
         let client = self.clone();
         let step = Arc::new(AtomicU64::new(config.batch_size));
+        let last_stepper = Arc::new(AtomicU64::new(0));
         tokio::spawn(async move {
             let mut query = query;
             let initial_res = if config.retry {
@@ -177,20 +175,21 @@ impl Client {
                         return;
                     }
                 };
-                for resp in resps {
-                    let transaction: u64 = resp.data.transactions.iter().map(|x| x.chunk.len() as u64).sum();
-                    let logs: u64 = resp.data.logs.iter().map(|x| x.chunk.len() as u64).sum();
-                    let traces: u64 = resp.data.traces.iter().map(|x| x.chunk.len() as u64).sum();
-                    let blocks: u64 = resp.data.blocks.iter().map(|x| x.chunk.len() as u64).sum();
-                    let sum = transaction * TX_COEFFICIENT as u64
-                        + logs * LOG_COEFFICIENT as u64
-                        + traces * TRACE_COEFFICIENT as u64
-                        + blocks * BLOCK_COEFFICIENT as u64;
-                    if sum < TARGET_SIZE {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::min(x * 2, 200_000)));
+                let max_block = resps.0.last().unwrap().next_block;
+                if last_stepper.fetch_max(max_block, Ordering::SeqCst) != max_block {
+                    let size = resps.1;
+                    println!("Size = {} of block end = {}", size, max_block);
+                    if size < TARGET_SIZE {
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                            Some(cmp::min(x * 2, 200_000))
+                        });
                     } else {
-                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| Some(cmp::max(x / 2, 100)));
+                        _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                            Some(cmp::max(x / 2, 1000))
+                        });
                     }
+                }
+                for resp in resps.0 {
                     if tx.send(Ok(resp)).await.is_err() {
                         return;
                     }
@@ -201,23 +200,25 @@ impl Client {
         Ok(rx)
     }
 
-    async fn run_query_to_end(self, query: Query, retry: bool) -> Result<Vec<QueryResponse>> {
+    async fn run_query_to_end(self, query: Query, retry: bool) -> Result<(Vec<QueryResponse>, u64)> {
         let mut resps = Vec::new();
 
         let to_block = query.to_block.unwrap();
 
         let mut query = query;
-
+        let mut size = 0;
         loop {
             let resp = if retry {
-                self.send_with_retry::<crate::ArrowIpc>(&query)
+                self.send_with_retry_impl::<crate::ArrowIpc>(&query)
                     .await
                     .context("send query")?
             } else {
-                self.send::<crate::ArrowIpc>(&query)
+                self.send_impl::<crate::ArrowIpc>(&query)
                     .await
                     .context("send query")?
             };
+            size += resp.1;
+            let resp = resp.0;
 
             let next_block = resp.next_block;
 
@@ -230,14 +231,18 @@ impl Client {
             }
         }
 
-        Ok(resps)
+        Ok((resps, size))
     }
 
+    pub async fn send<Format: TransportFormat>(&self, query: &Query) -> Result<QueryResponse> {
+        // We drop bytes size to keep compatibility
+        self.send_impl::<Format>(query).await.map(|res| res.0)
+    }
     /// Send a query request to the source hypersync instance.
     ///
     /// Returns a query response which contains block, tx and log data.
     /// Format can be ArrowIpc or Parquet.
-    pub async fn send<Format: TransportFormat>(&self, query: &Query) -> Result<QueryResponse> {
+    pub async fn send_impl<Format: TransportFormat>(&self, query: &Query) -> Result<(QueryResponse, u64)> {
         let mut url = self.cfg.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -269,9 +274,15 @@ impl Client {
             Self::parse_query_response::<Format>(&bytes).context("parse query response")
         })?;
 
-        Ok(res)
+        Ok((res, bytes.len() as u64))
     }
 
+    pub async fn send_with_retry<Format: TransportFormat>(
+        &self,
+        query: &Query,
+    ) -> Result<QueryResponse> {
+        self.send_with_retry_impl::<Format>(query).await.map(|res| res.0)
+    }
     /// Send a query request to the source hypersync instance.
     /// Internally calls send.
     /// On an error from the source hypersync instance, sleeps for
@@ -280,14 +291,14 @@ impl Client {
     ///
     /// Returns a query response which contains block, tx and log data.
     /// Format can be ArrowIpc or Parquet.
-    pub async fn send_with_retry<Format: TransportFormat>(
+    pub async fn send_with_retry_impl<Format: TransportFormat>(
         &self,
         query: &Query,
-    ) -> Result<QueryResponse> {
+    ) -> Result<(QueryResponse, u64)> {
         let mut base = 1;
 
         loop {
-            match self.send::<Format>(query).await {
+            match self.send_impl::<Format>(query).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!("failed to send request to hypersync server: {:?}", e);

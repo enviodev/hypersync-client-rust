@@ -36,9 +36,4 @@ impl Iterator for BlockIterator {
     }
 }
 
-pub const TX_COEFFICIENT: usize = 1;
-pub const LOG_COEFFICIENT: usize = 1;
-pub const BLOCK_COEFFICIENT: usize = 1;
-pub const TRACE_COEFFICIENT: usize = 1;
-
-pub const TARGET_SIZE: u64 = 50000;
+pub const TARGET_SIZE: u64 = 200000;
