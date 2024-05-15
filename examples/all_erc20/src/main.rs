@@ -11,7 +11,7 @@ use url::Url;
 async fn main() {
     // create hypersync client using the mainnet hypersync endpoint
     let client_config = Config {
-        url: Url::parse("https://eth.hypersync.xyz").unwrap(),
+        url: Url::parse("http://167.235.0.227:2104/").unwrap(),
         bearer_token: None,
         http_req_timeout_millis: NonZeroU64::new(30000).unwrap(),
     };
@@ -25,7 +25,7 @@ async fn main() {
         "logs": [
             {
             "address": [
-                "0x3883f5e181fccaf8410fa61e12b59bad963fb645",
+                "0x85F17Cf997934a597031b2E18a9aB6ebD4B9f6a4",
             ]
         }],
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
@@ -68,7 +68,7 @@ async fn main() {
     // let res = client.send::<ArrowIpc>(&query).await.unwrap();
     let scfg = StreamConfig {
         batch_size: 10000,
-        concurrency: 10,
+        concurrency: 20,
         retry: true,
     };
     let mut channel = client.stream::<ArrowIpc>(query, scfg).await.unwrap();
@@ -76,11 +76,14 @@ async fn main() {
     let mut prev = 0;
     while let Some(res) = channel.recv().await {
         let res = res.unwrap();
-        println!(
-            "Ran the query once.  Next block to query is {}, range: {} ",
-            res.next_block,
-            res.next_block - prev
-        );
+        if res.next_block - prev != 10000 {
+            println!(
+                "Ran the query once.  Next block to query is {}, range: {}, time {}",
+                res.next_block,
+                res.next_block - prev,
+                res.total_execution_time,
+            );
+        }
         prev = res.next_block;
         // read json abi file for erc20
         let path = "./erc20.abi.json";
@@ -120,6 +123,6 @@ async fn main() {
 
         let total_blocks = res.next_block;
 
-        println!("total volume was {total_volume} in {total_blocks} blocks");
+        // println!("total volume was {total_volume} in {total_blocks} blocks");
     }
 }

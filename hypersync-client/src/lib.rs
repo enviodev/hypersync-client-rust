@@ -162,7 +162,7 @@ impl Client {
                 to_block,
                 step.clone(),
                 finder_rx,
-                config.concurrency,
+                config.concurrency / 2,
             );
             let futs = it.map(move |(start, end)| {
                 let mut query = query.clone();
@@ -170,13 +170,16 @@ impl Client {
                 query.to_block = end;
 
                 if end.is_some() {
+                    println!("Bounded");
                     Self::run_query(client.clone(), query, config.retry, None)
                 } else {
+                    println!("Unbounded");
                     // NOTE: We need to finetune this number to avoid preemtive end on low density parts
-                    query.max_num_transactions = Some(100);
-                    query.max_num_blocks = Some(100);
-                    query.max_num_logs = Some(100);
-                    query.max_num_traces = Some(100);
+                    let limit = 1;
+                    query.max_num_transactions = Some(limit);
+                    query.max_num_blocks = Some(limit);
+                    query.max_num_logs = Some(limit);
+                    query.max_num_traces = Some(limit);
                     Self::run_query(client.clone(), query, config.retry, Some(finder_tx.clone()))
                 }
             });
@@ -255,7 +258,6 @@ impl Client {
         block_channel: mpsc::Sender<Option<u64>>,
     ) -> Result<Vec<QueryResponse>> {
 
-
         assert!(query.to_block.is_none());
 
         let mut query = query;
@@ -270,8 +272,6 @@ impl Client {
                 .context("send query")?
         };
 
-
-        println!("run_query_to_first_data executed request from {} to {:?}. Next block sent is {}", query.from_block, query.to_block, resp.next_block);
 
         block_channel.send(Some(resp.next_block)).await?;
         return Ok(vec![resp]);
