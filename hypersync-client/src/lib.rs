@@ -6,6 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use arrayvec::ArrayVec;
 use format::{Address, LogArgument};
 use futures::StreamExt;
+use log::debug;
 use hypersync_net_types::{
     hypersync_net_types_capnp, ArchiveHeight, FieldSelection, LogSelection, Query, RollbackGuard,
     TransactionSelection,
@@ -167,9 +168,15 @@ impl Client {
                 let mut query = query.clone();
                 query.from_block = start;
                 query.to_block = end;
+
                 if end.is_some() {
                     Self::run_query(client.clone(), query, config.retry, None)
                 } else {
+                    // NOTE: We need to finetune this number to avoid preemtive end on low density parts
+                    query.max_num_transactions = Some(100);
+                    query.max_num_blocks = Some(100);
+                    query.max_num_logs = Some(100);
+                    query.max_num_traces = Some(100);
                     Self::run_query(client.clone(), query, config.retry, Some(finder_tx.clone()))
                 }
             });
@@ -201,8 +208,10 @@ impl Client {
         retry: bool,
         block_channel: Option<mpsc::Sender<Option<u64>>>,
     ) -> Result<Vec<QueryResponse>> {
+
         if block_channel.is_some() {
-            self.run_query_to_first_data(query, retry, block_channel.unwrap()).await
+            self.run_query_to_first_data(query, retry, block_channel.unwrap())
+                .await
         } else {
             self.run_query_to_end(query, retry).await
         }
@@ -245,31 +254,27 @@ impl Client {
         retry: bool,
         block_channel: mpsc::Sender<Option<u64>>,
     ) -> Result<Vec<QueryResponse>> {
+
+
         assert!(query.to_block.is_none());
 
         let mut query = query;
 
-        loop {
-            let resp = if retry {
-                self.send_with_retry::<crate::ArrowIpc>(&query)
-                    .await
-                    .context("send query")?
-            } else {
-                self.send::<crate::ArrowIpc>(&query)
-                    .await
-                    .context("send query")?
-            };
+        let resp = if retry {
+            self.send_with_retry::<crate::ArrowIpc>(&query)
+                .await
+                .context("send query")?
+        } else {
+            self.send::<crate::ArrowIpc>(&query)
+                .await
+                .context("send query")?
+        };
 
-            if resp.data.transactions.len() != 0
-                || resp.data.blocks.len() != 0
-                || resp.data.traces.len() != 0
-                || resp.data.logs.len() != 0
-            {
-                _ = block_channel.send(Some(resp.next_block)).await;
-                return Ok(vec![resp]);
-            }
-            query.from_block = resp.next_block;
-        }
+
+        println!("run_query_to_first_data executed request from {} to {:?}. Next block sent is {}", query.from_block, query.to_block, resp.next_block);
+
+        block_channel.send(Some(resp.next_block)).await?;
+        return Ok(vec![resp]);
     }
 
     /// Send a query request to the source hypersync instance.

@@ -77,9 +77,9 @@ async fn main() {
     while let Some(res) = channel.recv().await {
         let res = res.unwrap();
         println!(
-            "Ran the query once.  Next block to query is {}, prev {}",
+            "Ran the query once.  Next block to query is {}, range: {} ",
             res.next_block,
-            prev
+            res.next_block - prev
         );
         prev = res.next_block;
         // read json abi file for erc20
@@ -93,16 +93,12 @@ async fn main() {
         // every log we get should be decodable by this abi but we don't know
         // the specific contract addresses since we are indexing all erc20 transfers.
         for log in &res.data.logs {
-            println!("Log chunk len: {}", log.chunk.len());
             // returned data is in arrow format so we have to convert to Address
             let col = log.column::<BinaryArray<i32>>("address").unwrap();
             for val in col.into_iter().flatten() {
                 let address: Address = val.try_into().unwrap();
                 abis.insert((address, abi.clone()));
             }
-        }
-        for tx in &res.data.transactions {
-            println!("Tx chunk len: {}", tx.chunk.len());
         }
 
         // convert hash set into a vector for decoder argument
