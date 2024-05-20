@@ -1,9 +1,59 @@
+use std::{collections::HashMap, sync::Arc};
+
 use arrayvec::ArrayVec;
 use hypersync_format::{
     AccessList, Address, BlockNumber, BloomFilter, Data, Hash, LogArgument, LogIndex, Nonce,
     Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
+use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
+use xxhash_rust::xxh3::Xxh3Builder;
+
+use crate::types::ResponseData;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Event {
+    pub transaction: Option<Arc<Transaction>>,
+    pub block: Option<Arc<Block>>,
+    pub log: Log,
+}
+
+impl From<ResponseData> for Vec<Event> {
+    fn from(data: ResponseData) -> Self {
+        let mut events = Vec::with_capacity(data.logs.iter().map(|chunk| chunk.len()).sum());
+
+        for ((blocks, transactions), logs) in data
+            .blocks
+            .into_iter()
+            .zip(data.transactions.into_iter())
+            .zip(data.logs.into_iter())
+        {
+            let blocks = blocks
+                .into_iter()
+                .map(|block| (block.number.unwrap(), Arc::new(block)))
+                .collect::<IntMap<u64, _>>();
+            let transactions = transactions
+                .into_iter()
+                .map(|tx| (tx.hash.clone().unwrap(), Arc::new(tx)))
+                .collect::<HashMap<_, _, Xxh3Builder>>();
+
+            for log in logs {
+                let block = blocks.get(&log.block_number.unwrap().into()).cloned();
+                let transaction = transactions
+                    .get(log.transaction_hash.as_ref().unwrap())
+                    .cloned();
+
+                events.push(Event {
+                    transaction,
+                    block,
+                    log,
+                });
+            }
+        }
+
+        events
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Block {

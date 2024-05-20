@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    simple_types::{Block, Log, Trace, Transaction},
+    simple_types::{Block, Event, Log, Trace, Transaction},
     ArrowChunk, FromArrow,
 };
 use anyhow::{anyhow, Context, Result};
@@ -23,6 +23,19 @@ pub struct ResponseData {
     pub transactions: Vec<Vec<Transaction>>,
     pub logs: Vec<Vec<Log>>,
     pub traces: Vec<Vec<Trace>>,
+}
+
+impl From<&'_ ArrowResponse> for EventResponse {
+    fn from(arrow_response: &'_ ArrowResponse) -> Self {
+        let r: QueryResponse = arrow_response.into();
+        Self {
+            archive_height: r.archive_height,
+            next_block: r.next_block,
+            total_execution_time: r.total_execution_time,
+            data: vec![r.data.into()],
+            rollback_guard: r.rollback_guard,
+        }
+    }
 }
 
 impl From<&'_ ArrowResponse> for QueryResponse {
@@ -84,6 +97,7 @@ pub struct QueryResponse<T = ResponseData> {
 }
 
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
+pub type EventResponse = QueryResponse<Vec<Vec<Event>>>;
 
 #[derive(Debug, Clone)]
 pub struct ArrowBatch {
