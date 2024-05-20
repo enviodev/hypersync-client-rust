@@ -25,6 +25,7 @@ pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
 use tokio::sync::mpsc;
+use types::ResponseData;
 use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
@@ -70,9 +71,54 @@ impl Client {
         })
     }
 
-    // pub async fn collect(&self, query: Query, config: StreamConfig) -> Result<()> {
-    //     todo!()
-    // }
+    pub async fn collect(
+        self: Arc<Self>,
+        query: Query,
+        config: StreamConfig,
+    ) -> Result<QueryResponse> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.stream function. User is expected to decode the logs using Decoder"));
+        }
+
+        let mut recv = stream::stream_arrow(self, query, config)
+            .await
+            .context("start stream")?;
+
+        let mut data = ResponseData::default();
+        let mut archive_height = None;
+        let mut next_block = 0;
+        let mut total_execution_time = 0;
+
+        while let Some(res) = recv.recv().await {
+            let res = res.context("get response")?;
+            let res = QueryResponse::from(&res);
+
+            for batch in res.data.blocks {
+                data.blocks.push(batch);
+            }
+            for batch in res.data.transactions {
+                data.transactions.push(batch);
+            }
+            for batch in res.data.logs {
+                data.logs.push(batch);
+            }
+            for batch in res.data.traces {
+                data.traces.push(batch);
+            }
+
+            archive_height = res.archive_height;
+            next_block = res.next_block;
+            total_execution_time += res.total_execution_time
+        }
+
+        Ok(QueryResponse {
+            archive_height,
+            next_block,
+            total_execution_time,
+            data,
+            rollback_guard: None,
+        })
+    }
 
     // pub async fn collect_events(&self, query: Query, config: StreamConfig) -> Result<()> {
     //     todo!()
@@ -188,9 +234,10 @@ impl Client {
         Err(err)
     }
 
-    // pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
-    //     todo!()
-    // }
+    pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
+        let arrow_response = self.get_arrow(query).await.context("get data")?;
+        Ok(QueryResponse::from(&arrow_response))
+    }
 
     // pub async fn get_events(&self, query: &Query) -> Result<QueryResponse> {
     //     todo!()
@@ -261,9 +308,39 @@ impl Client {
         Err(err)
     }
 
-    // pub async fn stream(&self, query: Query, config: StreamConfig) -> Result<Stream> {
-    //     todo!()
-    // }
+    pub async fn stream(
+        self: Arc<Self>,
+        query: Query,
+        config: StreamConfig,
+    ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.stream function. User is expected to decode the logs using Decoder"));
+        }
+
+        let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
+            mpsc::channel(config.concurrency.unwrap_or(10));
+
+        let mut inner_rx = self
+            .stream_arrow(query, config)
+            .await
+            .context("start inner stream")?;
+
+        tokio::spawn(async move {
+            while let Some(resp) = inner_rx.recv().await {
+                let is_err = resp.is_err();
+                if tx
+                    .send(resp.map(|r| QueryResponse::from(&r)))
+                    .await
+                    .is_err()
+                    || is_err
+                {
+                    return;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
 
     // pub async fn stream_events(&self, query: Query, config: StreamConfig) -> Result<EventStream> {
     //     todo!()

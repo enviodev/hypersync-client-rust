@@ -1,5 +1,8 @@
 use alloy_dyn_abi::{DecodedEvent, DynSolEvent, Specifier};
 use anyhow::{anyhow, Context, Result};
+use hypersync_format::LogArgument;
+
+use crate::simple_types::Log;
 
 pub struct Decoder {
     // A map of topic0 => Event decoder
@@ -38,10 +41,16 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
         Ok(Self { map })
     }
 
+    pub fn decode_log(&self, log: &Log) -> Result<Option<DecodedEvent>> {
+        let topic0 = log.topics.first().context("get topic0")?;
+        let data = log.data.as_ref().context("get log.data")?;
+        self.decode(topic0.as_slice(), &log.topics, data)
+    }
+
     pub fn decode(
         &self,
         topic0: &[u8],
-        topics: &[Option<&[u8]>],
+        topics: &[LogArgument],
         data: &[u8],
     ) -> Result<Option<DecodedEvent>> {
         let event = match self.map.iter().find(|e| e.0 == topic0) {
@@ -49,9 +58,7 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
             None => return Ok(None),
         };
 
-        let topics = topics
-            .iter()
-            .filter_map(|&t| t.map(|t| t.try_into().unwrap()));
+        let topics = topics.iter().map(|t| t.into());
 
         let decoded = event
             .decode_log_parts(topics, data, false)

@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::ArrowChunk;
+use crate::{
+    simple_types::{Block, Log, Trace, Transaction},
+    ArrowChunk, FromArrow,
+};
 use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::RollbackGuard;
 use polars_arrow::datatypes::SchemaRef;
@@ -14,8 +17,58 @@ pub struct ArrowResponseData {
     pub decoded_logs: Vec<ArrowBatch>,
 }
 
+#[derive(Default, Debug, Clone)]
+pub struct ResponseData {
+    pub blocks: Vec<Vec<Block>>,
+    pub transactions: Vec<Vec<Transaction>>,
+    pub logs: Vec<Vec<Log>>,
+    pub traces: Vec<Vec<Trace>>,
+}
+
+impl From<&'_ ArrowResponse> for QueryResponse {
+    fn from(arrow_response: &ArrowResponse) -> Self {
+        let blocks = arrow_response
+            .data
+            .blocks
+            .iter()
+            .map(Block::from_arrow)
+            .collect();
+        let transactions = arrow_response
+            .data
+            .transactions
+            .iter()
+            .map(Transaction::from_arrow)
+            .collect();
+        let logs = arrow_response
+            .data
+            .logs
+            .iter()
+            .map(Log::from_arrow)
+            .collect();
+        let traces = arrow_response
+            .data
+            .traces
+            .iter()
+            .map(Trace::from_arrow)
+            .collect();
+
+        QueryResponse {
+            archive_height: arrow_response.archive_height,
+            next_block: arrow_response.next_block,
+            total_execution_time: arrow_response.total_execution_time,
+            data: ResponseData {
+                blocks,
+                transactions,
+                logs,
+                traces,
+            },
+            rollback_guard: arrow_response.rollback_guard.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct QueryResponse<T> {
+pub struct QueryResponse<T = ResponseData> {
     /// Current height of the source hypersync instance
     pub archive_height: Option<u64>,
     /// Next block to query for, the responses are paginated so

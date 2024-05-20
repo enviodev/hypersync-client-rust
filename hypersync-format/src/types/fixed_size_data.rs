@@ -1,4 +1,5 @@
 use crate::{Error, Result};
+use alloy_primitives::FixedBytes;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -23,6 +24,12 @@ pub struct FixedSizeData<const N: usize>(Box<[u8; N]>);
 impl<const N: usize> Default for FixedSizeData<N> {
     fn default() -> Self {
         Self(Box::new([0; N]))
+    }
+}
+
+impl<const N: usize> From<&'_ FixedSizeData<N>> for FixedBytes<N> {
+    fn from(data: &'_ FixedSizeData<N>) -> Self {
+        Self::from(*data.0)
     }
 }
 
