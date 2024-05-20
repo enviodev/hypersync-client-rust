@@ -8,14 +8,17 @@ use reqwest::Method;
 mod column_mapping;
 mod config;
 mod decode;
+mod from_arrow;
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
 mod rayon_async;
+pub mod simple_types;
 mod stream;
 mod types;
 mod util;
 
+pub use from_arrow::FromArrow;
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
