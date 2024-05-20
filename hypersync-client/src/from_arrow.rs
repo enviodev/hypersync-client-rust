@@ -17,8 +17,7 @@ where
     T: TryFrom<&'a [u8]>,
     <T as TryFrom<&'a [u8]>>::Error: std::fmt::Debug,
 {
-    arr.map(|arr| arr.get(i).map(|v| v.try_into().unwrap()))
-        .flatten()
+    arr.and_then(|arr| arr.get(i).map(|v| v.try_into().unwrap()))
 }
 
 impl FromArrow for Block {
@@ -56,7 +55,7 @@ impl FromArrow for Block {
 
         (0..batch.chunk.len())
             .map(|idx| Self {
-                number: number.map(|arr| arr.get(idx).map(|v| v.into())).flatten(),
+                number: number.and_then(|arr| arr.get(idx)),
                 hash: map_binary(idx, hash),
                 parent_hash: map_binary(idx, parent_hash),
                 nonce: map_binary(idx, nonce),
@@ -73,26 +72,21 @@ impl FromArrow for Block {
                 gas_limit: map_binary(idx, gas_limit),
                 gas_used: map_binary(idx, gas_used),
                 timestamp: map_binary(idx, timestamp),
-                uncles: uncles
-                    .map(|arr| {
-                        arr.get(idx).map(|v| {
-                            v.chunks(32)
-                                .map(|chunk| chunk.try_into().unwrap())
-                                .collect()
-                        })
+                uncles: uncles.and_then(|arr| {
+                    arr.get(idx).map(|v| {
+                        v.chunks(32)
+                            .map(|chunk| chunk.try_into().unwrap())
+                            .collect()
                     })
-                    .flatten(),
+                }),
                 base_fee_per_gas: map_binary(idx, base_fee_per_gas),
                 blob_gas_used: map_binary(idx, blob_gas_used),
                 excess_blob_gas: map_binary(idx, excess_blob_gas),
                 parent_beacon_block_root: map_binary(idx, parent_beacon_block_root),
                 withdrawals_root: map_binary(idx, withdrawals_root),
                 withdrawals: withdrawals
-                    .map(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap()))
-                    .flatten(),
-                l1_block_number: l1_block_number
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
+                    .and_then(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap())),
+                l1_block_number: l1_block_number.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 send_count: map_binary(idx, send_count),
                 send_root: map_binary(idx, send_root),
                 mix_hash: map_binary(idx, mix_hash),
@@ -147,9 +141,7 @@ impl FromArrow for Transaction {
         (0..batch.chunk.len())
             .map(|idx| Self {
                 block_hash: map_binary(idx, block_hash),
-                block_number: block_number
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
+                block_number: block_number.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 from: map_binary(idx, from),
                 gas: map_binary(idx, gas),
                 gas_price: map_binary(idx, gas_price),
@@ -157,9 +149,7 @@ impl FromArrow for Transaction {
                 input: map_binary(idx, input),
                 nonce: map_binary(idx, nonce),
                 to: map_binary(idx, to),
-                transaction_index: transaction_index
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
+                transaction_index: transaction_index.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 value: map_binary(idx, value),
                 v: map_binary(idx, v),
                 r: map_binary(idx, r),
@@ -169,31 +159,26 @@ impl FromArrow for Transaction {
                 max_fee_per_gas: map_binary(idx, max_fee_per_gas),
                 chain_id: map_binary(idx, chain_id),
                 access_list: access_list
-                    .map(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap()))
-                    .flatten(),
+                    .and_then(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap())),
                 max_fee_per_blob_gas: map_binary(idx, max_fee_per_blob_gas),
-                blob_versioned_hashes: blob_versioned_hashes
-                    .map(|arr| {
-                        arr.get(idx).map(|v| {
-                            v.chunks(32)
-                                .map(|chunk| chunk.try_into().unwrap())
-                                .collect()
-                        })
+                blob_versioned_hashes: blob_versioned_hashes.and_then(|arr| {
+                    arr.get(idx).map(|v| {
+                        v.chunks(32)
+                            .map(|chunk| chunk.try_into().unwrap())
+                            .collect()
                     })
-                    .flatten(),
+                }),
                 cumulative_gas_used: map_binary(idx, cumulative_gas_used),
                 effective_gas_price: map_binary(idx, effective_gas_price),
                 gas_used: map_binary(idx, gas_used),
                 contract_address: map_binary(idx, contract_address),
                 logs_bloom: map_binary(idx, logs_bloom),
-                kind: kind.map(|arr| arr.get(idx).map(|v| v.into())).flatten(),
+                kind: kind.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 root: map_binary(idx, root),
-                status: status
-                    .map(|arr| {
-                        arr.get(idx)
-                            .map(|v| hypersync_format::TransactionStatus::from_u8(v).unwrap())
-                    })
-                    .flatten(),
+                status: status.and_then(|arr| {
+                    arr.get(idx)
+                        .map(|v| hypersync_format::TransactionStatus::from_u8(v).unwrap())
+                }),
                 l1_fee: map_binary(idx, l1_fee),
                 l1_gas_price: map_binary(idx, l1_gas_price),
                 l1_gas_used: map_binary(idx, l1_gas_used),
@@ -221,18 +206,12 @@ impl FromArrow for Log {
 
         (0..batch.chunk.len())
             .map(|idx| Self {
-                removed: removed.map(|arr| arr.get(idx).map(|v| v)).flatten(),
-                log_index: log_index
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
-                transaction_index: transaction_index
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
+                removed: removed.and_then(|arr| arr.get(idx)),
+                log_index: log_index.and_then(|arr| arr.get(idx).map(|v| v.into())),
+                transaction_index: transaction_index.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 transaction_hash: map_binary(idx, transaction_hash),
                 block_hash: map_binary(idx, block_hash),
-                block_number: block_number
-                    .map(|arr| arr.get(idx).map(|v| v.into()))
-                    .flatten(),
+                block_number: block_number.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 address: map_binary(idx, address),
                 data: map_binary(idx, data),
                 topics: {
@@ -286,33 +265,26 @@ impl FromArrow for Trace {
             .map(|idx| Self {
                 from: map_binary(idx, from),
                 to: map_binary(idx, to),
-                call_type: call_type
-                    .map(|arr| arr.get(idx).map(|v| v.to_owned()))
-                    .flatten(),
+                call_type: call_type.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
                 gas: map_binary(idx, gas),
                 input: map_binary(idx, input),
                 init: map_binary(idx, init),
                 value: map_binary(idx, value),
                 author: map_binary(idx, author),
-                reward_type: reward_type
-                    .map(|arr| arr.get(idx).map(|v| v.to_owned()))
-                    .flatten(),
+                reward_type: reward_type.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
                 block_hash: map_binary(idx, block_hash),
-                block_number: block_number.map(|arr| arr.get(idx)).flatten(),
+                block_number: block_number.and_then(|arr| arr.get(idx)),
                 address: map_binary(idx, address),
                 code: map_binary(idx, code),
                 gas_used: map_binary(idx, gas_used),
                 output: map_binary(idx, output),
-                subtraces: subtraces.map(|arr| arr.get(idx)).flatten(),
+                subtraces: subtraces.and_then(|arr| arr.get(idx)),
                 trace_address: trace_address
-                    .map(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap()))
-                    .flatten(),
+                    .and_then(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap())),
                 transaction_hash: map_binary(idx, transaction_hash),
-                transaction_position: transaction_position.map(|arr| arr.get(idx)).flatten(),
-                kind: kind.map(|arr| arr.get(idx).map(|v| v.to_owned())).flatten(),
-                error: error
-                    .map(|arr| arr.get(idx).map(|v| v.to_owned()))
-                    .flatten(),
+                transaction_position: transaction_position.and_then(|arr| arr.get(idx)),
+                kind: kind.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
+                error: error.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
             })
             .collect()
     }
