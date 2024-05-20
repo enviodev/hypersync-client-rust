@@ -123,12 +123,14 @@ impl Client {
 
     pub async fn collect_events(
         self: Arc<Self>,
-        query: Query,
+        mut query: Query,
         config: StreamConfig,
     ) -> Result<EventResponse> {
         if config.event_signature.is_some() {
             return Err(anyhow!("config.event_signature can't be passed to client.collect_events function. User is expected to decode the logs using Decoder"));
         }
+
+        add_event_join_fields_to_selection(&mut query);
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -275,8 +277,9 @@ impl Client {
         Ok(QueryResponse::from(&arrow_response))
     }
 
-    pub async fn get_events(&self, query: &Query) -> Result<EventResponse> {
-        let arrow_response = self.get_arrow(query).await.context("get data")?;
+    pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
+        add_event_join_fields_to_selection(&mut query);
+        let arrow_response = self.get_arrow(&query).await.context("get data")?;
         Ok(EventResponse::from(&arrow_response))
     }
 
@@ -381,12 +384,14 @@ impl Client {
 
     pub async fn stream_events(
         self: Arc<Self>,
-        query: Query,
+        mut query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
         if config.event_signature.is_some() {
             return Err(anyhow!("config.event_signature can't be passed to client.stream_events function. User is expected to decode the logs using Decoder"));
         }
+
+        add_event_join_fields_to_selection(&mut query);
 
         let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
             mpsc::channel(config.concurrency.unwrap_or(10));
@@ -419,5 +424,31 @@ impl Client {
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
         stream::stream_arrow(self, query, config).await
+    }
+}
+
+fn add_event_join_fields_to_selection(query: &mut Query) {
+    // Field lists for implementing event based API, these fields are used for joining
+    // so they should always be added to the field selection.
+    const BLOCK_JOIN_FIELDS: &[&str] = &["number"];
+    const TX_JOIN_FIELDS: &[&str] = &["block_number", "transaction_index"];
+    const LOG_JOIN_FIELDS: &[&str] = &["log_index", "transaction_index", "block_number"];
+
+    if !query.field_selection.block.is_empty() {
+        for field in BLOCK_JOIN_FIELDS.iter() {
+            query.field_selection.block.insert(field.to_string());
+        }
+    }
+
+    if !query.field_selection.transaction.is_empty() {
+        for field in TX_JOIN_FIELDS.iter() {
+            query.field_selection.transaction.insert(field.to_string());
+        }
+    }
+
+    if !query.field_selection.log.is_empty() {
+        for field in LOG_JOIN_FIELDS.iter() {
+            query.field_selection.log.insert(field.to_string());
+        }
     }
 }
