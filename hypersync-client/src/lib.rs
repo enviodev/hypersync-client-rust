@@ -8,20 +8,25 @@ use reqwest::Method;
 mod column_mapping;
 mod config;
 mod decode;
+mod from_arrow;
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
 mod rayon_async;
+pub mod simple_types;
 mod stream;
 mod types;
 mod util;
 
+pub use from_arrow::FromArrow;
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
+use simple_types::Event;
 use tokio::sync::mpsc;
+use types::{EventResponse, ResponseData};
 use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
@@ -67,13 +72,95 @@ impl Client {
         })
     }
 
-    // pub async fn collect(&self, query: Query, config: StreamConfig) -> Result<()> {
-    //     todo!()
-    // }
+    pub async fn collect(
+        self: Arc<Self>,
+        query: Query,
+        config: StreamConfig,
+    ) -> Result<QueryResponse> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.collect function. User is expected to decode the logs using Decoder"));
+        }
 
-    // pub async fn collect_events(&self, query: Query, config: StreamConfig) -> Result<()> {
-    //     todo!()
-    // }
+        let mut recv = stream::stream_arrow(self, query, config)
+            .await
+            .context("start stream")?;
+
+        let mut data = ResponseData::default();
+        let mut archive_height = None;
+        let mut next_block = 0;
+        let mut total_execution_time = 0;
+
+        while let Some(res) = recv.recv().await {
+            let res = res.context("get response")?;
+            let res: QueryResponse = QueryResponse::from(&res);
+
+            for batch in res.data.blocks {
+                data.blocks.push(batch);
+            }
+            for batch in res.data.transactions {
+                data.transactions.push(batch);
+            }
+            for batch in res.data.logs {
+                data.logs.push(batch);
+            }
+            for batch in res.data.traces {
+                data.traces.push(batch);
+            }
+
+            archive_height = res.archive_height;
+            next_block = res.next_block;
+            total_execution_time += res.total_execution_time
+        }
+
+        Ok(QueryResponse {
+            archive_height,
+            next_block,
+            total_execution_time,
+            data,
+            rollback_guard: None,
+        })
+    }
+
+    pub async fn collect_events(
+        self: Arc<Self>,
+        mut query: Query,
+        config: StreamConfig,
+    ) -> Result<EventResponse> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.collect_events function. User is expected to decode the logs using Decoder"));
+        }
+
+        add_event_join_fields_to_selection(&mut query);
+
+        let mut recv = stream::stream_arrow(self, query, config)
+            .await
+            .context("start stream")?;
+
+        let mut data = Vec::new();
+        let mut archive_height = None;
+        let mut next_block = 0;
+        let mut total_execution_time = 0;
+
+        while let Some(res) = recv.recv().await {
+            let res = res.context("get response")?;
+            let res: QueryResponse = QueryResponse::from(&res);
+            let events: Vec<Event> = res.data.into();
+
+            data.push(events);
+
+            archive_height = res.archive_height;
+            next_block = res.next_block;
+            total_execution_time += res.total_execution_time
+        }
+
+        Ok(EventResponse {
+            archive_height,
+            next_block,
+            total_execution_time,
+            data,
+            rollback_guard: None,
+        })
+    }
 
     pub async fn collect_arrow(
         self: Arc<Self>,
@@ -185,13 +272,16 @@ impl Client {
         Err(err)
     }
 
-    // pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
-    //     todo!()
-    // }
+    pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
+        let arrow_response = self.get_arrow(query).await.context("get data")?;
+        Ok(QueryResponse::from(&arrow_response))
+    }
 
-    // pub async fn get_events(&self, query: &Query) -> Result<QueryResponse> {
-    //     todo!()
-    // }
+    pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
+        add_event_join_fields_to_selection(&mut query);
+        let arrow_response = self.get_arrow(&query).await.context("get data")?;
+        Ok(EventResponse::from(&arrow_response))
+    }
 
     async fn get_arrow_impl(&self, query: &Query) -> Result<ArrowResponse> {
         let mut url = self.url.clone();
@@ -258,13 +348,75 @@ impl Client {
         Err(err)
     }
 
-    // pub async fn stream(&self, query: Query, config: StreamConfig) -> Result<Stream> {
-    //     todo!()
-    // }
+    pub async fn stream(
+        self: Arc<Self>,
+        query: Query,
+        config: StreamConfig,
+    ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.stream function. User is expected to decode the logs using Decoder"));
+        }
 
-    // pub async fn stream_events(&self, query: Query, config: StreamConfig) -> Result<EventStream> {
-    //     todo!()
-    // }
+        let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
+            mpsc::channel(config.concurrency.unwrap_or(10));
+
+        let mut inner_rx = self
+            .stream_arrow(query, config)
+            .await
+            .context("start inner stream")?;
+
+        tokio::spawn(async move {
+            while let Some(resp) = inner_rx.recv().await {
+                let is_err = resp.is_err();
+                if tx
+                    .send(resp.map(|r| QueryResponse::from(&r)))
+                    .await
+                    .is_err()
+                    || is_err
+                {
+                    return;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
+
+    pub async fn stream_events(
+        self: Arc<Self>,
+        mut query: Query,
+        config: StreamConfig,
+    ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
+        if config.event_signature.is_some() {
+            return Err(anyhow!("config.event_signature can't be passed to client.stream_events function. User is expected to decode the logs using Decoder"));
+        }
+
+        add_event_join_fields_to_selection(&mut query);
+
+        let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
+            mpsc::channel(config.concurrency.unwrap_or(10));
+
+        let mut inner_rx = self
+            .stream_arrow(query, config)
+            .await
+            .context("start inner stream")?;
+
+        tokio::spawn(async move {
+            while let Some(resp) = inner_rx.recv().await {
+                let is_err = resp.is_err();
+                if tx
+                    .send(resp.map(|r| EventResponse::from(&r)))
+                    .await
+                    .is_err()
+                    || is_err
+                {
+                    return;
+                }
+            }
+        });
+
+        Ok(rx)
+    }
 
     pub async fn stream_arrow(
         self: Arc<Self>,
@@ -272,5 +424,31 @@ impl Client {
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
         stream::stream_arrow(self, query, config).await
+    }
+}
+
+fn add_event_join_fields_to_selection(query: &mut Query) {
+    // Field lists for implementing event based API, these fields are used for joining
+    // so they should always be added to the field selection.
+    const BLOCK_JOIN_FIELDS: &[&str] = &["number"];
+    const TX_JOIN_FIELDS: &[&str] = &["block_number", "transaction_index"];
+    const LOG_JOIN_FIELDS: &[&str] = &["log_index", "transaction_index", "block_number"];
+
+    if !query.field_selection.block.is_empty() {
+        for field in BLOCK_JOIN_FIELDS.iter() {
+            query.field_selection.block.insert(field.to_string());
+        }
+    }
+
+    if !query.field_selection.transaction.is_empty() {
+        for field in TX_JOIN_FIELDS.iter() {
+            query.field_selection.transaction.insert(field.to_string());
+        }
+    }
+
+    if !query.field_selection.log.is_empty() {
+        for field in LOG_JOIN_FIELDS.iter() {
+            query.field_selection.log.insert(field.to_string());
+        }
     }
 }
