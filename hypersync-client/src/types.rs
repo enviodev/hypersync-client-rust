@@ -119,10 +119,14 @@ impl ArrowBatch {
                     .chunk
                     .columns()
                     .get(idx)
-                    .context("get column")?
-                    .as_any()
-                    .downcast_ref::<T>()
-                    .with_context(|| anyhow!("cast type of column '{}'", name))?;
+                    .context("get column using index")?;
+                let col = col.as_any().downcast_ref::<T>().with_context(|| {
+                    anyhow!(
+                        "cast type of column '{}', it was {:?}",
+                        name,
+                        col.data_type()
+                    )
+                })?;
                 Ok(col)
             }
             None => Err(anyhow!("field {} not found in schema", name)),

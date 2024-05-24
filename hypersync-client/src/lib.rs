@@ -63,7 +63,7 @@ impl Client {
             http_client,
             url: cfg
                 .url
-                .unwrap_or("https://eth.hypersync.xyz".parse().unwrap()),
+                .unwrap_or("https://eth.hypersync.xyz".parse().context("parse url")?),
             bearer_token: cfg.bearer_token,
             max_num_retries: cfg.max_num_retries.unwrap_or(12),
             retry_backoff_ms: cfg.retry_backoff_ms.unwrap_or(500),
@@ -77,9 +77,7 @@ impl Client {
         query: Query,
         config: StreamConfig,
     ) -> Result<QueryResponse> {
-        if config.event_signature.is_some() {
-            return Err(anyhow!("config.event_signature can't be passed to client.collect function. User is expected to decode the logs using Decoder"));
-        }
+        check_simple_stream_params(&config)?;
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -126,9 +124,7 @@ impl Client {
         mut query: Query,
         config: StreamConfig,
     ) -> Result<EventResponse> {
-        if config.event_signature.is_some() {
-            return Err(anyhow!("config.event_signature can't be passed to client.collect_events function. User is expected to decode the logs using Decoder"));
-        }
+        check_simple_stream_params(&config)?;
 
         add_event_join_fields_to_selection(&mut query);
 
@@ -353,9 +349,7 @@ impl Client {
         query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
-        if config.event_signature.is_some() {
-            return Err(anyhow!("config.event_signature can't be passed to client.stream function. User is expected to decode the logs using Decoder"));
-        }
+        check_simple_stream_params(&config)?;
 
         let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
             mpsc::channel(config.concurrency.unwrap_or(10));
@@ -387,9 +381,7 @@ impl Client {
         mut query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
-        if config.event_signature.is_some() {
-            return Err(anyhow!("config.event_signature can't be passed to client.stream_events function. User is expected to decode the logs using Decoder"));
-        }
+        check_simple_stream_params(&config)?;
 
         add_event_join_fields_to_selection(&mut query);
 
@@ -425,6 +417,17 @@ impl Client {
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
         stream::stream_arrow(self, query, config).await
     }
+}
+
+fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
+    if config.event_signature.is_some() {
+        return Err(anyhow!("config.event_signature can't be passed to simple type function. User is expected to decode the logs using Decoder."));
+    }
+    if config.column_mapping.is_some() {
+        return Err(anyhow!("config.column_mapping can't be passed to single type function. User is expected to map values manually."));
+    }
+
+    Ok(())
 }
 
 fn add_event_join_fields_to_selection(query: &mut Query) {

@@ -1,22 +1,20 @@
-use alloy_dyn_abi::{DecodedEvent, DynSolValue};
-use alloy_json_abi::JsonAbi;
-use alloy_primitives::Uint;
-use arrow2::array::BinaryArray;
-use hypersync_client::{client, format::Address};
-use std::{collections::HashSet, num::NonZeroU64};
-use url::Url;
+// Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
+// It has no practical use but it is meant to show how to use the client
+
+use std::sync::Arc;
+
+use hypersync_client::{Client, ClientConfig, ColumnMapping, DataType, StreamConfig};
+use polars_arrow::{
+    array::{Array, Float64Array},
+    compute,
+    scalar::PrimitiveScalar,
+};
 
 #[tokio::main]
 async fn main() {
-    // create hypersync client using the mainnet hypersync endpoint
-    let client_config = client::Config {
-        url: Url::parse("https://eth.hypersync.xyz").unwrap(),
-        bearer_token: None,
-        http_req_timeout_millis: NonZeroU64::new(30000).unwrap(),
-    };
-    let client = client::Client::new(client_config).unwrap();
+    // create default client, uses eth mainnet
+    let client = Client::new(ClientConfig::default()).unwrap();
 
-    // The query to run
     let query = serde_json::from_value(serde_json::json!( {
         // start from block 0 and go to the end of the chain (we don't specify a toBlock).
         "from_block": 0,
@@ -30,98 +28,76 @@ async fn main() {
         }],
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         "field_selection": {
-            "block": [
-                "hash",
-                "number",
-                "timestamp",
-            ],
             "log": [
-                "block_number",
-                "transaction_index",
-                "log_index",
-                "transaction_hash",
                 "data",
-                "address",
                 "topic0",
                 "topic1",
                 "topic2",
                 "topic3",
-            ],
-            "transaction": [
-                "block_number",
-                "transaction_index",
-                "hash",
-                "from",
-                "to",
-                "value",
-                "input",
             ]
         }
     }))
     .unwrap();
 
-    println!("Running the query...");
+    println!("Starting the stream");
 
-    // Run the query once, the query is automatically paginated so it will return when it reaches some limit (time, response size etc.)
-    // there is a next_block field on the response object so we can set the from_block of our query to this value and continue our query until
-    // res.next_block is equal to res.archive_height or query.to_block in case we specified an end block.
-    let res = client.send::<client::ArrowIpc>(&query).await.unwrap();
+    // Put the client inside Arc so we can use it for streaming
+    let client = Arc::new(client);
 
-    println!(
-        "Ran the query once.  Next block to query is {}",
-        res.next_block
-    );
+    // Stream arrow data so we can average the erc20 transfer amounts in memory
+    //
+    // This will parallelize internal requests so we don't have to worry about pipelining/parallelizing make request -> handle response -> handle data loop
+    let mut receiver = client
+        .stream_arrow(
+            query,
+            StreamConfig {
+                // Pass the event signature for decoding
+                event_signature: Some(
+                    "Transfer(address indexed from, address indexed to, uint amount)".to_owned(),
+                ),
+                column_mapping: Some(ColumnMapping {
+                    decoded_log: [
+                        // Map the amount column to float so we can do aggregation on it
+                        ("amount".to_owned(), DataType::Float64),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
-    // read json abi file for erc20
-    let path = "./erc20.abi.json";
-    let abi = tokio::fs::read_to_string(path).await.unwrap();
-    let abi: JsonAbi = serde_json::from_str(&abi).unwrap();
+    let mut num_transfers = 0;
+    let mut total_amount = 0f64;
 
-    // set of (address -> abi)
-    let mut abis = HashSet::new();
+    // Receive the data in a loop
+    while let Some(res) = receiver.recv().await {
+        let res = res.unwrap();
 
-    // every log we get should be decodable by this abi but we don't know
-    // the specific contract addresses since we are indexing all erc20 transfers.
-    for log in &res.data.logs {
-        // returned data is in arrow format so we have to convert to Address
-        let col = log.column::<BinaryArray<i32>>("address").unwrap();
-        for val in col.into_iter().flatten() {
-            let address: Address = val.try_into().unwrap();
-            abis.insert((address, abi.clone()));
+        for batch in res.data.decoded_logs {
+            // get amount array so we can sum/count
+            let amount = batch.column::<Float64Array>("amount").unwrap();
+
+            // exclude null rows to avoid counting invalid logs
+            num_transfers += amount.len() - amount.null_count();
+
+            total_amount += compute::aggregate::sum(amount)
+                .unwrap()
+                .as_any()
+                .downcast_ref::<PrimitiveScalar<f64>>()
+                .unwrap()
+                .value()
+                .unwrap_or_default();
         }
+
+        println!(
+            "scanned up to block: {}, found {} transfers, average amount is: {:.2}",
+            res.next_block,
+            num_transfers,
+            total_amount / num_transfers as f64
+        );
     }
-
-    // convert hash set into a vector for decoder argument
-    let abis: Vec<(Address, JsonAbi)> = abis.into_iter().collect();
-
-    // Create a decoder with our mapping
-    let decoder = client::Decoder::new(abis.as_slice()).unwrap();
-
-    // Decode the logs
-    let decoded_logs = decoder
-        .decode_logs(&res.data.logs)
-        .unwrap()
-        .unwrap_or_default();
-
-    // filter out None
-    let decoded_logs: Vec<DecodedEvent> = decoded_logs.into_iter().flatten().collect();
-
-    // lets count total volume, it is meaningless because of currency differences but good as an example
-    // This needs to be larger than 256, otherwise it will overflow
-    let mut total_volume: Uint<512, 8> = Uint::from(0);
-
-    for log in decoded_logs {
-        let maybe_volume = log.body.get(0).unwrap();
-        match maybe_volume {
-            DynSolValue::Uint(volume, _) => {
-                let volume: Uint<512, 8> = Uint::from(*volume);
-                total_volume += volume;
-            }
-            _ => panic!("not a Uint"),
-        }
-    }
-
-    let total_blocks = res.next_block - query.from_block;
-
-    println!("total volume was {total_volume} in {total_blocks} blocks");
 }
