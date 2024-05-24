@@ -258,7 +258,7 @@ impl FromArrow for Trace {
         let trace_address = batch.column::<BinaryArray<i32>>("trace_address").ok();
         let transaction_hash = batch.column::<BinaryArray<i32>>("transaction_hash").ok();
         let transaction_position = batch.column::<UInt64Array>("transaction_position").ok();
-        let kind = batch.column::<Utf8Array<i32>>("kind").ok();
+        let kind = batch.column::<Utf8Array<i32>>("type").ok();
         let error = batch.column::<Utf8Array<i32>>("error").ok();
 
         (0..batch.chunk.len())
