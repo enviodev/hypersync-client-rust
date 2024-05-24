@@ -217,18 +217,10 @@ impl FromArrow for Log {
                 topics: {
                     let mut arr = ArrayVec::new();
 
-                    if let Some(t) = map_binary(idx, topic0) {
-                        arr.push(t);
-                    }
-                    if let Some(t) = map_binary(idx, topic1) {
-                        arr.push(t);
-                    }
-                    if let Some(t) = map_binary(idx, topic2) {
-                        arr.push(t);
-                    }
-                    if let Some(t) = map_binary(idx, topic3) {
-                        arr.push(t);
-                    }
+                    arr.push(map_binary(idx, topic0));
+                    arr.push(map_binary(idx, topic1));
+                    arr.push(map_binary(idx, topic2));
+                    arr.push(map_binary(idx, topic3));
 
                     arr
                 },

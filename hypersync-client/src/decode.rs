@@ -42,7 +42,12 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
     }
 
     pub fn decode_log(&self, log: &Log) -> Result<Option<DecodedEvent>> {
-        let topic0 = log.topics.first().context("get topic0")?;
+        let topic0 = log
+            .topics
+            .first()
+            .context("get topic0")?
+            .as_ref()
+            .context("get topic0")?;
         let data = log.data.as_ref().context("get log.data")?;
         self.decode(topic0.as_slice(), &log.topics, data)
     }
@@ -50,7 +55,7 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
     pub fn decode(
         &self,
         topic0: &[u8],
-        topics: &[LogArgument],
+        topics: &[Option<LogArgument>],
         data: &[u8],
     ) -> Result<Option<DecodedEvent>> {
         let event = match self.map.iter().find(|e| e.0 == topic0) {
@@ -58,7 +63,10 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
             None => return Ok(None),
         };
 
-        let topics = topics.iter().map(|t| t.into());
+        let topics = topics
+            .iter()
+            .take_while(|t| t.is_some())
+            .map(|t| t.as_ref().unwrap().into());
 
         let decoded = event
             .decode_log_parts(topics, data, false)
