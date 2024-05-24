@@ -144,7 +144,7 @@ async fn map_responses(
                                     let batch =
                                         decode_logs_batch(sig, batch).context("decode logs")?;
                                     map_batch(
-                                        cfg.column_mapping.as_ref().map(|cm| &cm.log),
+                                        cfg.column_mapping.as_ref().map(|cm| &cm.decoded_log),
                                         cfg.hex_output,
                                         batch,
                                     )
