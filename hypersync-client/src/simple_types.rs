@@ -136,7 +136,7 @@ pub struct Log {
     pub block_number: Option<BlockNumber>,
     pub address: Option<Address>,
     pub data: Option<Data>,
-    pub topics: ArrayVec<LogArgument, 4>,
+    pub topics: ArrayVec<Option<LogArgument>, 4>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
