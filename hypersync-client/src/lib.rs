@@ -30,6 +30,7 @@ use types::{EventResponse, ResponseData};
 use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
+pub use config::HexOutput;
 pub use config::{ClientConfig, StreamConfig};
 pub use decode::Decoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
