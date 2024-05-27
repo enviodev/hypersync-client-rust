@@ -17,7 +17,7 @@ pub struct LogSelection {
     #[serde(default)]
     pub address: Vec<Address>,
     /// Topics to match, each member of the top level array is another array, if the nth topic matches any
-    ///  topic specified in topics[n] the log will be returned. Empty means match all.
+    ///  topic specified in nth element of topics, the log will be returned. Empty means match all.
     #[serde(default)]
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
 }
