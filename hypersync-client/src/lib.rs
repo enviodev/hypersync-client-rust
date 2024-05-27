@@ -435,8 +435,8 @@ fn add_event_join_fields_to_selection(query: &mut Query) {
     // Field lists for implementing event based API, these fields are used for joining
     // so they should always be added to the field selection.
     const BLOCK_JOIN_FIELDS: &[&str] = &["number"];
-    const TX_JOIN_FIELDS: &[&str] = &["block_number", "transaction_index"];
-    const LOG_JOIN_FIELDS: &[&str] = &["log_index", "transaction_index", "block_number"];
+    const TX_JOIN_FIELDS: &[&str] = &["hash"];
+    const LOG_JOIN_FIELDS: &[&str] = &["transaction_hash", "block_number"];
 
     if !query.field_selection.block.is_empty() {
         for field in BLOCK_JOIN_FIELDS.iter() {

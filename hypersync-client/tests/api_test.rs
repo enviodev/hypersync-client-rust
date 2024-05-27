@@ -160,6 +160,37 @@ fn parse_nameless_abi() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
+async fn test_get_events_without_join_fields() {
+    env_logger::try_init().ok();
+
+    let client = Client::new(ClientConfig {
+        url: Some("https://base.hypersync.xyz".parse().unwrap()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": 6589327,
+        "to_block": 6589328,
+        "logs": [{
+            "address": ["0xd981ed72b1b3bf866563a9755d41a887d3e4721a"],
+            "topics": [["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]],
+        }],
+        "field_selection": {
+            "log": ["block_number", "topic0", "topic1", "topic2", "topic3", "data", "address"],
+            "transaction": ["value"],
+            "block": ["gas_used"],
+        }
+    }))
+    .unwrap();
+
+    let res = client.get_events(query).await.unwrap();
+
+    dbg!(res.data);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
 async fn test_stream_decode_with_invalid_log() {
     env_logger::try_init().ok();
 
