@@ -324,7 +324,7 @@ impl Client {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!(
-                        "failed to get height from server, retrying... The error was: {:?}",
+                        "failed to get arrow data from server, retrying... The error was: {:?}",
                         e
                     );
                     err = err.context(e);
