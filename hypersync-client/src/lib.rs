@@ -5,6 +5,7 @@ use hypersync_net_types::{ArchiveHeight, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
 
+mod block_iterator;
 mod column_mapping;
 mod config;
 mod decode;
@@ -280,7 +281,7 @@ impl Client {
         Ok(EventResponse::from(&arrow_response))
     }
 
-    async fn get_arrow_impl(&self, query: &Query) -> Result<ArrowResponse> {
+    async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -311,10 +312,14 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok(res)
+        Ok((res, bytes.len().try_into().unwrap()))
     }
 
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
+        self.get_arrow_with_size(query).await.map(|res| res.0)
+    }
+
+    async fn get_arrow_with_size(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut base = self.retry_base_ms;
 
         let mut err = anyhow!("");

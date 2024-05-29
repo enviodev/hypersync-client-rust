@@ -1,5 +1,13 @@
-use std::{cmp, collections::BTreeMap, sync::Arc};
+use std::{
+    cmp,
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
+use crate::block_iterator::{BlockIterator, TARGET_SIZE_BOTTOM, TARGET_SIZE_CEILING};
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::Query;
@@ -21,14 +29,15 @@ pub async fn stream_arrow(
     let concurrency = config.concurrency.unwrap_or(10);
     let batch_size = config.batch_size.unwrap_or(100_000);
 
+    let step = Arc::new(AtomicU64::new(batch_size));
+    let last_stepper = Arc::new(AtomicU64::new(0));
+
     let (tx, rx) = mpsc::channel(concurrency);
 
     let to_block = match query.to_block {
         Some(to_block) => to_block,
         None => client.get_height().await.context("get height")?,
     };
-
-    let step = usize::try_from(batch_size).unwrap();
 
     tokio::spawn(async move {
         let mut query = query;
@@ -54,16 +63,13 @@ pub async fn stream_arrow(
             }
         }
 
-        let futs = (query.from_block..to_block)
-            .step_by(step)
-            .map(move |start| {
-                let end = cmp::min(start + batch_size, to_block);
-                let mut query = query.clone();
-                query.from_block = start;
-                query.to_block = Some(end);
-
-                run_query_to_end(client.clone(), query)
-            });
+        let it = BlockIterator::build(query.from_block, to_block, step.clone());
+        let futs = it.map(move |(start, end)| {
+            let mut query = query.clone();
+            query.from_block = start;
+            query.to_block = Some(end);
+            run_query_to_end(client.clone(), query)
+        });
 
         let mut stream = futures::stream::iter(futs).buffered(concurrency);
 
@@ -81,6 +87,7 @@ pub async fn stream_arrow(
                 }
             };
 
+            let (resps, resps_size) = resps;
             let resps = match map_responses(config.clone(), resps).await {
                 Ok(resps) => resps,
                 Err(e) => {
@@ -88,6 +95,20 @@ pub async fn stream_arrow(
                     return;
                 }
             };
+
+            let max_block = resps.last().unwrap().next_block;
+            if last_stepper.fetch_max(max_block, Ordering::SeqCst) != max_block {
+                println!("Size = {} of block end = {}", resps_size, max_block);
+                if resps_size > TARGET_SIZE_CEILING {
+                    _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        Some(cmp::min(x + (x / 2), 200_000))
+                    });
+                } else if resps_size < TARGET_SIZE_BOTTOM {
+                    _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        Some(cmp::max(x - (x / 2), 200))
+                    });
+                }
+            }
 
             for resp in resps {
                 num_blocks += count_rows(&resp.data.blocks);
@@ -230,15 +251,24 @@ fn map_batch(
     Ok(batch)
 }
 
-async fn run_query_to_end(client: Arc<crate::Client>, query: Query) -> Result<Vec<ArrowResponse>> {
+async fn run_query_to_end(
+    client: Arc<crate::Client>,
+    query: Query,
+) -> Result<(Vec<ArrowResponse>, u64)> {
     let mut resps = Vec::new();
 
     let to_block = query.to_block.unwrap();
 
+    let mut size = 0;
+
     let mut query = query;
 
     loop {
-        let resp = client.get_arrow(&query).await.context("get data")?;
+        let (resp, resp_size) = client
+            .get_arrow_with_size(&query)
+            .await
+            .context("get data")?;
+        size += resp_size;
 
         let next_block = resp.next_block;
 
@@ -251,5 +281,5 @@ async fn run_query_to_end(client: Arc<crate::Client>, query: Query) -> Result<Ve
         }
     }
 
-    Ok(resps)
+    Ok((resps, size))
 }
