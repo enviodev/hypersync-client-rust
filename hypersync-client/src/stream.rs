@@ -27,6 +27,10 @@ pub async fn stream_arrow(
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
     let concurrency = config.concurrency.unwrap_or(8);
     let batch_size = config.batch_size.unwrap_or(1000);
+    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
+    let min_batch_size = config.min_batch_size.unwrap_or(200);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(2000000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(500000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
     let last_stepper = Arc::new(AtomicU64::new(0));
@@ -97,16 +101,14 @@ pub async fn stream_arrow(
 
             let max_block = resps.last().unwrap().next_block;
             if last_stepper.fetch_max(max_block, Ordering::SeqCst) != max_block {
-                if resps_size < TARGET_MIN_RESPONSE_SIZE {
+                if resps_size > response_size_ceiling {
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::min(x + x / 3, 200_000))
-                    })
-                    .ok();
-                } else if resps_size > TARGET_MAX_RESPONSE_SIZE {
+                        Some(cmp::max(x - (x / 3), min_batch_size))
+                    }).ok();
+                } else if resps_size < response_size_floor {
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::max(x - x / 3, 200))
-                    })
-                    .ok();
+                        Some(cmp::min(x + (x / 3), max_batch_size))
+                    }).ok();
                 }
             }
 
@@ -133,9 +135,6 @@ pub async fn stream_arrow(
 
     Ok(rx)
 }
-
-pub const TARGET_MIN_RESPONSE_SIZE: u64 = 2 * 1024 * 1024; // 2 MB
-pub const TARGET_MAX_RESPONSE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
 
 fn count_rows(batches: &[ArrowBatch]) -> usize {
     batches.iter().map(|b| b.chunk.len()).sum()

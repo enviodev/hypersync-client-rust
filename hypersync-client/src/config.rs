@@ -21,12 +21,21 @@ pub struct StreamConfig {
     pub event_signature: Option<String>,
     #[serde(default)]
     pub hex_output: HexOutput,
+    // Initial batch size. Size would be adjusted based on response size during execution.
     pub batch_size: Option<u64>,
+    // Maximum batch size that could be used during dynamic adjustment.
+    pub max_batch_size: Option<u64>,
+    // Minimum batch size that could be used during dynamic adjustment.
+    pub min_batch_size: Option<u64>,
     pub concurrency: Option<usize>,
     pub max_num_blocks: Option<usize>,
     pub max_num_transactions: Option<usize>,
     pub max_num_logs: Option<usize>,
     pub max_num_traces: Option<usize>,
+    // Size of a response in bytes from which step size will be lowered
+    pub response_bytes_ceiling: Option<u64>,
+    // Size of a response in bytes from which step size will be increased
+    pub response_bytes_floor: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
