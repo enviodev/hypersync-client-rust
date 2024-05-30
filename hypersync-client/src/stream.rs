@@ -25,7 +25,7 @@ pub async fn stream_arrow(
     query: Query,
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
-    let concurrency = config.concurrency.unwrap_or(8);
+    let concurrency = config.concurrency.unwrap_or(4);
     let batch_size = config.batch_size.unwrap_or(1000);
     let max_batch_size = config.max_batch_size.unwrap_or(200_000);
     let min_batch_size = config.min_batch_size.unwrap_or(200);
@@ -67,21 +67,48 @@ pub async fn stream_arrow(
         }
 
         let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
-        let futs = range_iter.map(move |(start, end)| {
+
+        let futs = range_iter.enumerate().map(move |(req_idx, (start, end))| {
             let mut query = query.clone();
             query.from_block = start;
             query.to_block = Some(end);
-            run_query_to_end(client.clone(), query)
+            let client = client.clone();
+            async move { (req_idx, run_query_to_end(client, query).await) }
         });
 
-        let mut stream = futures::stream::iter(futs).buffered(concurrency);
+        let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
 
         let mut num_blocks = 0;
         let mut num_transactions = 0;
         let mut num_logs = 0;
         let mut num_traces = 0;
 
-        while let Some(resps) = stream.next().await {
+        let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
+
+        tokio::spawn(async move {
+            let mut queue = BTreeMap::new();
+            let mut next_req_idx = 0;
+
+            while let Some((req_idx, resps)) = stream.next().await {
+                queue.insert(req_idx, resps);
+
+                if let Some(resps) = queue.remove(&next_req_idx) {
+                    if res_tx.send(resps).await.is_err() {
+                        return;
+                    }
+                    next_req_idx += 1;
+                }
+            }
+
+            while let Some(resps) = queue.remove(&next_req_idx) {
+                if res_tx.send(resps).await.is_err() {
+                    return;
+                }
+                next_req_idx += 1;
+            }
+        });
+
+        while let Some(resps) = res_rx.recv().await {
             let resps = match resps {
                 Ok(resps) => resps,
                 Err(e) => {
@@ -104,11 +131,13 @@ pub async fn stream_arrow(
                 if resps_size > response_size_ceiling {
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
                         Some(cmp::max(x - (x / 3), min_batch_size))
-                    }).ok();
+                    })
+                    .ok();
                 } else if resps_size < response_size_floor {
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
                         Some(cmp::min(x + (x / 3), max_batch_size))
-                    }).ok();
+                    })
+                    .ok();
                 }
             }
 
