@@ -7,7 +7,6 @@ use std::{
     },
 };
 
-use crate::block_iterator::{BlockIterator, TARGET_SIZE_BOTTOM, TARGET_SIZE_CEILING};
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::Query;
@@ -26,13 +25,13 @@ pub async fn stream_arrow(
     query: Query,
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
-    let concurrency = config.concurrency.unwrap_or(10);
-    let batch_size = config.batch_size.unwrap_or(100_000);
+    let concurrency = config.concurrency.unwrap_or(8);
+    let batch_size = config.batch_size.unwrap_or(1000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
     let last_stepper = Arc::new(AtomicU64::new(0));
 
-    let (tx, rx) = mpsc::channel(concurrency);
+    let (tx, rx) = mpsc::channel(concurrency * 2);
 
     let to_block = match query.to_block {
         Some(to_block) => to_block,
@@ -63,8 +62,8 @@ pub async fn stream_arrow(
             }
         }
 
-        let it = BlockIterator::build(query.from_block, to_block, step.clone());
-        let futs = it.map(move |(start, end)| {
+        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
+        let futs = range_iter.map(move |(start, end)| {
             let mut query = query.clone();
             query.from_block = start;
             query.to_block = Some(end);
@@ -98,15 +97,16 @@ pub async fn stream_arrow(
 
             let max_block = resps.last().unwrap().next_block;
             if last_stepper.fetch_max(max_block, Ordering::SeqCst) != max_block {
-                println!("Size = {} of block end = {}", resps_size, max_block);
-                if resps_size > TARGET_SIZE_CEILING {
-                    _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::min(x + (x / 2), 200_000))
-                    });
-                } else if resps_size < TARGET_SIZE_BOTTOM {
-                    _ = step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::max(x - (x / 2), 200))
-                    });
+                if resps_size < TARGET_MIN_RESPONSE_SIZE {
+                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        Some(cmp::min(x + x / 3, 200_000))
+                    })
+                    .ok();
+                } else if resps_size > TARGET_MAX_RESPONSE_SIZE {
+                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        Some(cmp::max(x - x / 3, 200))
+                    })
+                    .ok();
                 }
             }
 
@@ -133,6 +133,9 @@ pub async fn stream_arrow(
 
     Ok(rx)
 }
+
+pub const TARGET_MIN_RESPONSE_SIZE: u64 = 2 * 1024 * 1024; // 2 MB
+pub const TARGET_MAX_RESPONSE_SIZE: u64 = 4 * 1024 * 1024; // 4 MB
 
 fn count_rows(batches: &[ArrowBatch]) -> usize {
     batches.iter().map(|b| b.chunk.len()).sum()
@@ -282,4 +285,29 @@ async fn run_query_to_end(
     }
 
     Ok((resps, size))
+}
+
+pub struct BlockRangeIterator {
+    offset: u64,
+    end: u64,
+    step: Arc<AtomicU64>,
+}
+
+impl BlockRangeIterator {
+    pub fn new(offset: u64, end: u64, step: Arc<AtomicU64>) -> Self {
+        Self { offset, end, step }
+    }
+}
+
+impl Iterator for BlockRangeIterator {
+    type Item = (u64, u64);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset == self.end {
+            return None;
+        }
+        let start = self.offset;
+        self.offset = cmp::min(self.offset + self.step.load(Ordering::SeqCst), self.end);
+        Some((start, self.offset))
+    }
 }

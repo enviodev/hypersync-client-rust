@@ -5,7 +5,6 @@ use hypersync_net_types::{ArchiveHeight, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
 
-mod block_iterator;
 mod column_mapping;
 mod config;
 mod decode;

@@ -13,12 +13,15 @@ use polars_arrow::{
 #[tokio::main]
 async fn main() {
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig{url: Some("http://167.235.0.227:2104/".parse().unwrap()), ..Default::default()}).unwrap();
-
+    let client = Client::new(ClientConfig {
+        url: None,
+        ..Default::default()
+    })
+    .unwrap();
 
     let query = serde_json::from_value(serde_json::json!( {
-        // start from block 0 and go to the end of the chain (we don't specify a toBlock).
-        "from_block": 0,
+        // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).
+        "from_block": 10123123,
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
         "logs": [
             {
@@ -65,7 +68,6 @@ async fn main() {
                     .collect(),
                     ..Default::default()
                 }),
-                concurrency: Some(5),
                 ..Default::default()
             },
         )
@@ -74,7 +76,6 @@ async fn main() {
 
     let mut num_transfers = 0;
     let mut total_amount = 0f64;
-    let mut block = 0;
     // Receive the data in a loop
     while let Some(res) = receiver.recv().await {
         let res = res.unwrap();
@@ -101,7 +102,5 @@ async fn main() {
             num_transfers,
             total_amount / num_transfers as f64
         );
-        println!("Scanned range: from:{}, to:{}, size: {}, time: {}", block, res.next_block, res.next_block - block, res.total_execution_time);
-        block = res.next_block;
     }
 }
