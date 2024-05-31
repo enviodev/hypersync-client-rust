@@ -52,7 +52,7 @@ impl Client {
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         let timeout = cfg
             .http_req_timeout_millis
-            .unwrap_or(NonZeroU64::new(6_000).unwrap());
+            .unwrap_or(NonZeroU64::new(30_000).unwrap());
 
         let http_client = reqwest::Client::builder()
             .no_gzip()
@@ -243,7 +243,7 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries+1 {
+        for _ in 0..self.max_num_retries + 1 {
             match self.get_height_impl().await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
@@ -323,7 +323,7 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries+1 {
+        for _ in 0..self.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {

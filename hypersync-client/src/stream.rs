@@ -25,12 +25,12 @@ pub async fn stream_arrow(
     query: Query,
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
-    let concurrency = config.concurrency.unwrap_or(4);
+    let concurrency = config.concurrency.unwrap_or(10);
     let batch_size = config.batch_size.unwrap_or(1000);
     let max_batch_size = config.max_batch_size.unwrap_or(400_000);
     let min_batch_size = config.min_batch_size.unwrap_or(100);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(1_000_000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(500_000);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(4_000_000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(2_000_000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
 
@@ -67,13 +67,15 @@ pub async fn stream_arrow(
 
         let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
 
-        let futs = range_iter.enumerate().map(move |(req_idx, (start, end, generation))| {
-            let mut query = query.clone();
-            query.from_block = start;
-            query.to_block = Some(end);
-            let client = client.clone();
-            async move { (generation, req_idx, run_query_to_end(client, query).await) }
-        });
+        let futs = range_iter
+            .enumerate()
+            .map(move |(req_idx, (start, end, generation))| {
+                let mut query = query.clone();
+                query.from_block = start;
+                query.to_block = Some(end);
+                let client = client.clone();
+                async move { (generation, req_idx, run_query_to_end(client, query).await) }
+            });
 
         let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
 
