@@ -27,10 +27,10 @@ pub async fn stream_arrow(
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
     let concurrency = config.concurrency.unwrap_or(10);
     let batch_size = config.batch_size.unwrap_or(1000);
-    let max_batch_size = config.max_batch_size.unwrap_or(400_000);
-    let min_batch_size = config.min_batch_size.unwrap_or(100);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(4_000_000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(2_000_000);
+    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
+    let min_batch_size = config.min_batch_size.unwrap_or(200);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(2_000_000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(1_000_000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
 
@@ -77,6 +77,8 @@ pub async fn stream_arrow(
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
             });
 
+        // we use unordered parallelization here so need to order the responses later.
+        // Using unordered parallelization gives a big boost in performance.
         let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
 
         let mut num_blocks = 0;
@@ -86,6 +88,7 @@ pub async fn stream_arrow(
 
         let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
 
+        // This task re-orders the responses and sends it along the pipeline
         tokio::spawn(async move {
             let mut queue = BTreeMap::new();
             let mut next_req_idx = 0;
@@ -109,6 +112,9 @@ pub async fn stream_arrow(
             }
         });
 
+        // Generation is used so if we change batch_size we only want to change it again
+        // based on the new batch size we just set.
+        // If we don't check generations then we might apply same change to batch size multiple times.
         let mut next_generation = 0;
         while let Some((generation, resps)) = res_rx.recv().await {
             let resps = match resps {
@@ -134,10 +140,11 @@ pub async fn stream_arrow(
                     let ratio = response_size_ceiling as f64 / resps_size as f64;
 
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        // extract batch_size value
                         let x = x as u32;
 
                         let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
-                        let step = batch_size as u64 | (next_generation as u64) << 32;
+                        let step = batch_size | u64::from(next_generation) << 32;
                         Some(step)
                     })
                     .ok();
@@ -148,7 +155,7 @@ pub async fn stream_arrow(
                         let x = x as u32;
 
                         let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
-                        let step = batch_size as u64 | (next_generation as u64) << 32;
+                        let step = batch_size | u64::from(next_generation) << 32;
                         Some(step)
                     })
                     .ok();
@@ -351,10 +358,13 @@ impl Iterator for BlockRangeIterator {
         let start = self.offset;
 
         let step = self.step.load(Ordering::SeqCst);
-        let generation = (step >> 32) as u32;
-        let step = step as u32;
 
-        self.offset = cmp::min(self.offset + step as u64, self.end);
+        // we extract two u32 values from u64
+        // unsafe casts are intentional
+        let generation = (step >> 32) as u32;
+        let batch_size = step as u32;
+
+        self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
         Some((start, self.offset, generation))
     }
 }

@@ -24,10 +24,11 @@ async fn main() {
         "logs": [
             {
                 // We want All ERC20 transfers so no address filter and only a filter for the first topic
-            "topics": [
-                ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-            ]
-        }],
+                "topics": [
+                    ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
+                ]
+            }
+        ],
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         "field_selection": {
             "log": [
