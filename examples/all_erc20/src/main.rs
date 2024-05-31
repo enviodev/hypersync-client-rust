@@ -1,7 +1,7 @@
 // Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
 // It has no practical use but it is meant to show how to use the client
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{Client, ClientConfig, ColumnMapping, DataType, StreamConfig};
 use polars_arrow::{
@@ -74,6 +74,7 @@ async fn main() {
 
     let mut num_transfers = 0;
     let mut total_amount = 0f64;
+    let start = Instant::now();
     // Receive the data in a loop
     while let Some(res) = receiver.recv().await {
         let res = res.unwrap();
@@ -95,9 +96,10 @@ async fn main() {
         }
 
         println!(
-            "scanned up to block: {}, found {} transfers, average amount is: {:.2}",
+            "scanned up to block: {}, found {} transfers, events per second: {}, average amount is: {:.2}",
             res.next_block,
             num_transfers,
+            (num_transfers as u64).checked_div(start.elapsed().as_secs()).unwrap_or_default(),
             total_amount / num_transfers as f64
         );
     }

@@ -137,7 +137,6 @@ pub async fn stream_arrow(
                         let x = x as u32;
 
                         let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
-                        dbg!((x, ratio, batch_size));
                         let step = batch_size as u64 | (next_generation as u64) << 32;
                         Some(step)
                     })
@@ -149,7 +148,6 @@ pub async fn stream_arrow(
                         let x = x as u32;
 
                         let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
-                        dbg!(batch_size);
                         let step = batch_size as u64 | (next_generation as u64) << 32;
                         Some(step)
                     })
@@ -355,8 +353,6 @@ impl Iterator for BlockRangeIterator {
         let step = self.step.load(Ordering::SeqCst);
         let generation = (step >> 32) as u32;
         let step = step as u32;
-
-        dbg!((generation, step));
 
         self.offset = cmp::min(self.offset + step as u64, self.end);
         Some((start, self.offset, generation))
