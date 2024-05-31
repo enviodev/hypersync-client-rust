@@ -27,13 +27,12 @@ pub async fn stream_arrow(
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
     let concurrency = config.concurrency.unwrap_or(4);
     let batch_size = config.batch_size.unwrap_or(1000);
-    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
-    let min_batch_size = config.min_batch_size.unwrap_or(200);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(2000000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(500000);
+    let max_batch_size = config.max_batch_size.unwrap_or(400_000);
+    let min_batch_size = config.min_batch_size.unwrap_or(100);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(1_000_000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(500_000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
-    let last_stepper = Arc::new(AtomicU64::new(0));
 
     let (tx, rx) = mpsc::channel(concurrency * 2);
 
@@ -68,12 +67,12 @@ pub async fn stream_arrow(
 
         let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
 
-        let futs = range_iter.enumerate().map(move |(req_idx, (start, end))| {
+        let futs = range_iter.enumerate().map(move |(req_idx, (start, end, generation))| {
             let mut query = query.clone();
             query.from_block = start;
             query.to_block = Some(end);
             let client = client.clone();
-            async move { (req_idx, run_query_to_end(client, query).await) }
+            async move { (generation, req_idx, run_query_to_end(client, query).await) }
         });
 
         let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
@@ -89,10 +88,10 @@ pub async fn stream_arrow(
             let mut queue = BTreeMap::new();
             let mut next_req_idx = 0;
 
-            while let Some((req_idx, resps)) = stream.next().await {
-                queue.insert(req_idx, resps);
+            while let Some((generation, req_idx, resps)) = stream.next().await {
+                queue.insert(req_idx, (generation, resps));
 
-                if let Some(resps) = queue.remove(&next_req_idx) {
+                while let Some(resps) = queue.remove(&next_req_idx) {
                     if res_tx.send(resps).await.is_err() {
                         return;
                     }
@@ -108,7 +107,8 @@ pub async fn stream_arrow(
             }
         });
 
-        while let Some(resps) = res_rx.recv().await {
+        let mut next_generation = 0;
+        while let Some((generation, resps)) = res_rx.recv().await {
             let resps = match resps {
                 Ok(resps) => resps,
                 Err(e) => {
@@ -126,16 +126,30 @@ pub async fn stream_arrow(
                 }
             };
 
-            let max_block = resps.last().unwrap().next_block;
-            if last_stepper.fetch_max(max_block, Ordering::SeqCst) != max_block {
+            if generation == next_generation {
+                next_generation += 1;
                 if resps_size > response_size_ceiling {
+                    let ratio = response_size_ceiling as f64 / resps_size as f64;
+
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::max(x - (x / 3), min_batch_size))
+                        let x = x as u32;
+
+                        let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
+                        dbg!((x, ratio, batch_size));
+                        let step = batch_size as u64 | (next_generation as u64) << 32;
+                        Some(step)
                     })
                     .ok();
                 } else if resps_size < response_size_floor {
+                    let ratio = response_size_floor as f64 / resps_size as f64;
+
                     step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        Some(cmp::min(x + (x / 3), max_batch_size))
+                        let x = x as u32;
+
+                        let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
+                        dbg!(batch_size);
+                        let step = batch_size as u64 | (next_generation as u64) << 32;
+                        Some(step)
                     })
                     .ok();
                 }
@@ -328,14 +342,21 @@ impl BlockRangeIterator {
 }
 
 impl Iterator for BlockRangeIterator {
-    type Item = (u64, u64);
+    type Item = (u64, u64, u32);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset == self.end {
             return None;
         }
         let start = self.offset;
-        self.offset = cmp::min(self.offset + self.step.load(Ordering::SeqCst), self.end);
-        Some((start, self.offset))
+
+        let step = self.step.load(Ordering::SeqCst);
+        let generation = (step >> 32) as u32;
+        let step = step as u32;
+
+        dbg!((generation, step));
+
+        self.offset = cmp::min(self.offset + step as u64, self.end);
+        Some((start, self.offset, generation))
     }
 }

@@ -14,6 +14,8 @@ fn address_to_topic(address: &str) -> String {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init().unwrap();
+
     let client = Client::new(ClientConfig {
         url: Some("https://eth.hypersync.xyz".parse().unwrap()),
         ..Default::default()

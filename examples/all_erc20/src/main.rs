@@ -12,11 +12,10 @@ use polars_arrow::{
 
 #[tokio::main]
 async fn main() {
+    env_logger::init().unwrap();
+
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig {
-        url: None,
-        ..Default::default()
-    })
+    let client = Client::new(ClientConfig::default())
     .unwrap();
 
     let query = serde_json::from_value(serde_json::json!( {
