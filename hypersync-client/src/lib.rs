@@ -243,7 +243,7 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries {
+        for _ in 0..self.max_num_retries + 1 {
             match self.get_height_impl().await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
@@ -280,7 +280,7 @@ impl Client {
         Ok(EventResponse::from(&arrow_response))
     }
 
-    async fn get_arrow_impl(&self, query: &Query) -> Result<ArrowResponse> {
+    async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -311,15 +311,19 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok(res)
+        Ok((res, bytes.len().try_into().unwrap()))
     }
 
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
+        self.get_arrow_with_size(query).await.map(|res| res.0)
+    }
+
+    async fn get_arrow_with_size(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut base = self.retry_base_ms;
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries {
+        for _ in 0..self.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {

@@ -1,7 +1,7 @@
 // Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
 // It has no practical use but it is meant to show how to use the client
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{Client, ClientConfig, ColumnMapping, DataType, StreamConfig};
 use polars_arrow::{
@@ -12,20 +12,23 @@ use polars_arrow::{
 
 #[tokio::main]
 async fn main() {
+    env_logger::init().unwrap();
+
     // create default client, uses eth mainnet
     let client = Client::new(ClientConfig::default()).unwrap();
 
     let query = serde_json::from_value(serde_json::json!( {
-        // start from block 0 and go to the end of the chain (we don't specify a toBlock).
-        "from_block": 0,
+        // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).
+        "from_block": 10123123,
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
         "logs": [
             {
                 // We want All ERC20 transfers so no address filter and only a filter for the first topic
-            "topics": [
-                ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-            ]
-        }],
+                "topics": [
+                    ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
+                ]
+            }
+        ],
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         "field_selection": {
             "log": [
@@ -72,7 +75,7 @@ async fn main() {
 
     let mut num_transfers = 0;
     let mut total_amount = 0f64;
-
+    let start = Instant::now();
     // Receive the data in a loop
     while let Some(res) = receiver.recv().await {
         let res = res.unwrap();
@@ -94,9 +97,10 @@ async fn main() {
         }
 
         println!(
-            "scanned up to block: {}, found {} transfers, average amount is: {:.2}",
+            "scanned up to block: {}, found {} transfers, events per second: {}, average amount is: {:.2}",
             res.next_block,
             num_transfers,
+            (num_transfers as u64).checked_div(start.elapsed().as_secs()).unwrap_or_default(),
             total_amount / num_transfers as f64
         );
     }

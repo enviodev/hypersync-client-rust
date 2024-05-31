@@ -8,6 +8,8 @@ const DAI_ADDRESS: &str = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 
 #[tokio::main]
 async fn main() {
+    env_logger::init().unwrap();
+
     // create default client, uses eth mainnet
     let client = Client::new(ClientConfig::default()).unwrap();
 

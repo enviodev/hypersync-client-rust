@@ -1,4 +1,11 @@
-use std::{cmp, collections::BTreeMap, sync::Arc};
+use std::{
+    cmp,
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
@@ -19,16 +26,20 @@ pub async fn stream_arrow(
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
     let concurrency = config.concurrency.unwrap_or(10);
-    let batch_size = config.batch_size.unwrap_or(100_000);
+    let batch_size = config.batch_size.unwrap_or(1000);
+    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
+    let min_batch_size = config.min_batch_size.unwrap_or(200);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(2_000_000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(1_000_000);
 
-    let (tx, rx) = mpsc::channel(concurrency);
+    let step = Arc::new(AtomicU64::new(batch_size));
+
+    let (tx, rx) = mpsc::channel(concurrency * 2);
 
     let to_block = match query.to_block {
         Some(to_block) => to_block,
         None => client.get_height().await.context("get height")?,
     };
-
-    let step = usize::try_from(batch_size).unwrap();
 
     tokio::spawn(async move {
         let mut query = query;
@@ -54,25 +65,58 @@ pub async fn stream_arrow(
             }
         }
 
-        let futs = (query.from_block..to_block)
-            .step_by(step)
-            .map(move |start| {
-                let end = cmp::min(start + batch_size, to_block);
+        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
+
+        let futs = range_iter
+            .enumerate()
+            .map(move |(req_idx, (start, end, generation))| {
                 let mut query = query.clone();
                 query.from_block = start;
                 query.to_block = Some(end);
-
-                run_query_to_end(client.clone(), query)
+                let client = client.clone();
+                async move { (generation, req_idx, run_query_to_end(client, query).await) }
             });
 
-        let mut stream = futures::stream::iter(futs).buffered(concurrency);
+        // we use unordered parallelization here so need to order the responses later.
+        // Using unordered parallelization gives a big boost in performance.
+        let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
 
         let mut num_blocks = 0;
         let mut num_transactions = 0;
         let mut num_logs = 0;
         let mut num_traces = 0;
 
-        while let Some(resps) = stream.next().await {
+        let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
+
+        // This task re-orders the responses and sends it along the pipeline
+        tokio::spawn(async move {
+            let mut queue = BTreeMap::new();
+            let mut next_req_idx = 0;
+
+            while let Some((generation, req_idx, resps)) = stream.next().await {
+                queue.insert(req_idx, (generation, resps));
+
+                while let Some(resps) = queue.remove(&next_req_idx) {
+                    if res_tx.send(resps).await.is_err() {
+                        return;
+                    }
+                    next_req_idx += 1;
+                }
+            }
+
+            while let Some(resps) = queue.remove(&next_req_idx) {
+                if res_tx.send(resps).await.is_err() {
+                    return;
+                }
+                next_req_idx += 1;
+            }
+        });
+
+        // Generation is used so if we change batch_size we only want to change it again
+        // based on the new batch size we just set.
+        // If we don't check generations then we might apply same change to batch size multiple times.
+        let mut next_generation = 0;
+        while let Some((generation, resps)) = res_rx.recv().await {
             let resps = match resps {
                 Ok(resps) => resps,
                 Err(e) => {
@@ -81,6 +125,7 @@ pub async fn stream_arrow(
                 }
             };
 
+            let (resps, resps_size) = resps;
             let resps = match map_responses(config.clone(), resps).await {
                 Ok(resps) => resps,
                 Err(e) => {
@@ -88,6 +133,34 @@ pub async fn stream_arrow(
                     return;
                 }
             };
+
+            if generation == next_generation {
+                next_generation += 1;
+                if resps_size > response_size_ceiling {
+                    let ratio = response_size_ceiling as f64 / resps_size as f64;
+
+                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        // extract batch_size value
+                        let x = x as u32;
+
+                        let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
+                        let step = batch_size | u64::from(next_generation) << 32;
+                        Some(step)
+                    })
+                    .ok();
+                } else if resps_size < response_size_floor {
+                    let ratio = response_size_floor as f64 / resps_size as f64;
+
+                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                        let x = x as u32;
+
+                        let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
+                        let step = batch_size | u64::from(next_generation) << 32;
+                        Some(step)
+                    })
+                    .ok();
+                }
+            }
 
             for resp in resps {
                 num_blocks += count_rows(&resp.data.blocks);
@@ -230,15 +303,24 @@ fn map_batch(
     Ok(batch)
 }
 
-async fn run_query_to_end(client: Arc<crate::Client>, query: Query) -> Result<Vec<ArrowResponse>> {
+async fn run_query_to_end(
+    client: Arc<crate::Client>,
+    query: Query,
+) -> Result<(Vec<ArrowResponse>, u64)> {
     let mut resps = Vec::new();
 
     let to_block = query.to_block.unwrap();
 
+    let mut size = 0;
+
     let mut query = query;
 
     loop {
-        let resp = client.get_arrow(&query).await.context("get data")?;
+        let (resp, resp_size) = client
+            .get_arrow_with_size(&query)
+            .await
+            .context("get data")?;
+        size += resp_size;
 
         let next_block = resp.next_block;
 
@@ -251,5 +333,38 @@ async fn run_query_to_end(client: Arc<crate::Client>, query: Query) -> Result<Ve
         }
     }
 
-    Ok(resps)
+    Ok((resps, size))
+}
+
+pub struct BlockRangeIterator {
+    offset: u64,
+    end: u64,
+    step: Arc<AtomicU64>,
+}
+
+impl BlockRangeIterator {
+    pub fn new(offset: u64, end: u64, step: Arc<AtomicU64>) -> Self {
+        Self { offset, end, step }
+    }
+}
+
+impl Iterator for BlockRangeIterator {
+    type Item = (u64, u64, u32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.offset == self.end {
+            return None;
+        }
+        let start = self.offset;
+
+        let step = self.step.load(Ordering::SeqCst);
+
+        // we extract two u32 values from u64
+        // unsafe casts are intentional
+        let generation = (step >> 32) as u32;
+        let batch_size = step as u32;
+
+        self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
+        Some((start, self.offset, generation))
+    }
 }
