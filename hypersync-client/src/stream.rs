@@ -29,8 +29,8 @@ pub async fn stream_arrow(
     let batch_size = config.batch_size.unwrap_or(1000);
     let max_batch_size = config.max_batch_size.unwrap_or(200_000);
     let min_batch_size = config.min_batch_size.unwrap_or(200);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(2_000_000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(1_000_000);
+    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(500_000);
+    let response_size_floor = config.response_bytes_floor.unwrap_or(250_000);
 
     let step = Arc::new(AtomicU64::new(batch_size));
 
