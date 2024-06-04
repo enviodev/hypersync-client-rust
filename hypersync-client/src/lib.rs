@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
@@ -37,6 +39,7 @@ pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
 
+/// Internal client to handle http requests and retries.
 #[derive(Clone)]
 pub struct Client {
     http_client: reqwest::Client,
@@ -49,6 +52,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create a new client with the given configuration.
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         let timeout = cfg
             .http_req_timeout_millis
@@ -73,6 +77,8 @@ impl Client {
         })
     }
 
+    /// Retrieves blocks, transactions, traces, and logs through a stream using the provided
+    /// query and stream configuration.
     pub async fn collect(
         self: Arc<Self>,
         query: Query,
@@ -120,6 +126,7 @@ impl Client {
         })
     }
 
+    /// Retrieves events through a stream using the provided query and stream configuration.
     pub async fn collect_events(
         self: Arc<Self>,
         mut query: Query,
@@ -159,6 +166,8 @@ impl Client {
         })
     }
 
+    /// Retrieves blocks, transactions, traces, and logs in Arrow format through a stream using
+    /// the provided query and stream configuration.
     pub async fn collect_arrow(
         self: Arc<Self>,
         query: Query,
@@ -206,6 +215,8 @@ impl Client {
         })
     }
 
+    /// Writes parquet file getting data through a stream using the provided path, query,
+    /// and stream configuration.
     pub async fn collect_parquet(
         self: Arc<Self>,
         path: &str,
@@ -215,6 +226,7 @@ impl Client {
         parquet_out::collect_parquet(self, path, query, config).await
     }
 
+    /// Internal implementation of getting height of Client instance.
     async fn get_height_impl(&self) -> Result<u64> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
@@ -238,6 +250,7 @@ impl Client {
         Ok(height.height.unwrap_or(0))
     }
 
+    /// Get the height of the Client instance with retries.
     pub async fn get_height(&self) -> Result<u64> {
         let mut base = self.retry_base_ms;
 
@@ -269,17 +282,21 @@ impl Client {
         Err(err)
     }
 
+    /// Executes query with retries and returns the response.
     pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
         let arrow_response = self.get_arrow(query).await.context("get data")?;
         Ok(QueryResponse::from(&arrow_response))
     }
 
+    /// Add block, transaction and log fields selection to the query, executes it with retries
+    /// and returns the response.
     pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
         add_event_join_fields_to_selection(&mut query);
         let arrow_response = self.get_arrow(&query).await.context("get data")?;
         Ok(EventResponse::from(&arrow_response))
     }
 
+    /// Executes query once and returns the result in (Arrow, size) format.
     async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
@@ -314,10 +331,12 @@ impl Client {
         Ok((res, bytes.len().try_into().unwrap()))
     }
 
+    /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
         self.get_arrow_with_size(query).await.map(|res| res.0)
     }
 
+    /// Internal implementation for get_arrow.
     async fn get_arrow_with_size(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut base = self.retry_base_ms;
 
@@ -349,6 +368,7 @@ impl Client {
         Err(err)
     }
 
+    /// Spawns task to execute query and return data via a channel.
     pub async fn stream(
         self: Arc<Self>,
         query: Query,
@@ -381,6 +401,8 @@ impl Client {
         Ok(rx)
     }
 
+    /// Add block, transaction and log fields selection to the query and spawns task to execute it,
+    /// returning data via a channel.
     pub async fn stream_events(
         self: Arc<Self>,
         mut query: Query,
@@ -415,6 +437,7 @@ impl Client {
         Ok(rx)
     }
 
+    /// Spawns task to execute query and return data via a channel in Arrow format.
     pub async fn stream_arrow(
         self: Arc<Self>,
         query: Query,
