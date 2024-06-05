@@ -8,7 +8,9 @@ use crate::{
     ArrowBatch,
 };
 
+/// Used to do ArrowBatch-Native Rust type conversions while consuming the input value.
 pub trait FromArrow: Sized {
+    /// Converts to the Vector type from the ArrowBatch type.
     fn from_arrow(batch: &ArrowBatch) -> Vec<Self>;
 }
 
