@@ -15,20 +15,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::ArrowBatch;
 
+/// Column mapping for stream config.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnMapping {
+    /// Mapping for block data.
     #[serde(default)]
     pub block: BTreeMap<String, DataType>,
+    /// Mapping for transaction data.
     #[serde(default)]
     pub transaction: BTreeMap<String, DataType>,
+    /// Mapping for log data.
     #[serde(default)]
     pub log: BTreeMap<String, DataType>,
+    /// Mapping for trace data.
     #[serde(default)]
     pub trace: BTreeMap<String, DataType>,
+    /// Mapping for decoded log data.
     #[serde(default)]
     pub decoded_log: BTreeMap<String, DataType>,
 }
 
+#[allow(missing_docs)]
+/// `DataType` is an enumeration representing the different data types that can be used in the column mapping.
+/// Each variant corresponds to a specific data type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DataType {

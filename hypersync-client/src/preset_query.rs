@@ -1,3 +1,4 @@
+//! Preset queries for common use cases.
 use std::collections::BTreeSet;
 
 use arrayvec::ArrayVec;

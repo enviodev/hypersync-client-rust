@@ -8,20 +8,31 @@ use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::RollbackGuard;
 use polars_arrow::datatypes::SchemaRef;
 
+/// Query response in Arrow format
 #[derive(Default, Debug, Clone)]
 pub struct ArrowResponseData {
+    /// Query blocks response
     pub blocks: Vec<ArrowBatch>,
+    /// Query transactions response
     pub transactions: Vec<ArrowBatch>,
+    /// Query logs response
     pub logs: Vec<ArrowBatch>,
+    /// Query traces response
     pub traces: Vec<ArrowBatch>,
+    /// Query decoded_logs response
     pub decoded_logs: Vec<ArrowBatch>,
 }
 
+/// Query response data in Rust native format
 #[derive(Default, Debug, Clone)]
 pub struct ResponseData {
+    /// Query blocks response
     pub blocks: Vec<Vec<Block>>,
+    /// Query transactions response
     pub transactions: Vec<Vec<Transaction>>,
+    /// Query logs response
     pub logs: Vec<Vec<Log>>,
+    /// Query traces response
     pub traces: Vec<Vec<Trace>>,
 }
 
@@ -80,6 +91,8 @@ impl From<&'_ ArrowResponse> for QueryResponse {
     }
 }
 
+/// Query responce from hypersync instance.
+/// Contain next_block field in case query didn't process all the block range
 #[derive(Debug, Clone)]
 pub struct QueryResponse<T = ResponseData> {
     /// Current height of the source hypersync instance
@@ -96,16 +109,22 @@ pub struct QueryResponse<T = ResponseData> {
     pub rollback_guard: Option<RollbackGuard>,
 }
 
+/// Alias for Arrow Query response
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
+/// Alias for Rust native Query response
 pub type EventResponse = QueryResponse<Vec<Vec<Event>>>;
 
+/// Arrow chunk with schema
 #[derive(Debug, Clone)]
 pub struct ArrowBatch {
+    /// Reference to array chunk
     pub chunk: Arc<ArrowChunk>,
+    /// Schema reference for the chunk
     pub schema: SchemaRef,
 }
 
 impl ArrowBatch {
+    /// Extract column from chunk by name
     pub fn column<T: 'static>(&self, name: &str) -> Result<&T> {
         match self
             .schema

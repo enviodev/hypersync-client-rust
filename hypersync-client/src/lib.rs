@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-
+//! Hypersync client library for interacting with hypersync server.
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
@@ -42,12 +42,19 @@ type ArrowChunk = Chunk<Box<dyn Array>>;
 /// Internal client to handle http requests and retries.
 #[derive(Clone)]
 pub struct Client {
+    /// Initialized reqwest instance for client url.
     http_client: reqwest::Client,
+    /// HyperSync server URL.
     url: Url,
+    /// HyperSync server bearer token.
     bearer_token: Option<String>,
+    /// Number of retries to attempt before returning error.
     max_num_retries: usize,
+    /// Milliseconds that would be used for retry backoff increasing.
     retry_backoff_ms: u64,
+    /// Initial wait time for request backoff.
     retry_base_ms: u64,
+    /// Ceiling time for request backoff.
     retry_ceiling_ms: u64,
 }
 
