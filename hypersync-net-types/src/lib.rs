@@ -55,6 +55,8 @@ pub struct TraceSelection {
     #[serde(default)]
     pub to: Vec<Address>,
     #[serde(default)]
+    pub address: Vec<Address>,
+    #[serde(default)]
     pub call_type: Vec<String>,
     #[serde(default)]
     pub reward_type: Vec<String>,
