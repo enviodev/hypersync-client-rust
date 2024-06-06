@@ -243,7 +243,7 @@ pub struct Transaction {
     pub gas_used: Option<Quantity>,
     /// Address of created contract if transaction was a contract creation
     pub contract_address: Option<Address>,
-    /// Bloom filter for logs produced bu this transaction
+    /// Bloom filter for logs produced by this transaction
     pub logs_bloom: Option<BloomFilter>,
     /// Transaction type. For ethereum: Legacy, Eip2930, Eip1559, Eip4844
     #[serde(rename = "type")]
