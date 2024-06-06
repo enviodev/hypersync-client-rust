@@ -4,7 +4,7 @@ use hypersync_format::LogArgument;
 
 use crate::simple_types::Log;
 
-/// Extract topics from logs and decode them into events.
+/// Decode logs parsing topics and log data.
 pub struct Decoder {
     // A map of topic0 => Event decoder
     map: Vec<(Vec<u8>, DynSolEvent)>,
@@ -12,6 +12,11 @@ pub struct Decoder {
 
 impl Decoder {
     /// Initialize decoder from event signatures.
+    ///
+    ///     use hypersync_client::Decoder;
+    ///     let decoder = Decoder::from_signatures(&[
+    ///        "Transfer(address indexed from, address indexed to, uint amount)",
+    ///     ]).unwrap();
     pub fn from_signatures<S: AsRef<str>>(signatures: &[S]) -> Result<Self> {
         let mut map = signatures
             .iter()
@@ -44,6 +49,8 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
     }
 
     /// Parse log and return decoded event.
+    ///
+    /// Returns Ok(None) if topic0 not found.
     pub fn decode_log(&self, log: &Log) -> Result<Option<DecodedEvent>> {
         let topic0 = log
             .topics
@@ -55,7 +62,7 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
         self.decode(topic0.as_slice(), &log.topics, data)
     }
 
-    /// Decode log into event using parsed topic0 and topics.
+    /// Decode log.data into event using parsed topic0 and topics.
     pub fn decode(
         &self,
         topic0: &[u8],

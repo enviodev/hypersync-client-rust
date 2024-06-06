@@ -59,7 +59,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Create a new client with the given configuration.
+    /// Creates a new client with the given configuration.
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         let timeout = cfg
             .http_req_timeout_millis
@@ -86,6 +86,12 @@ impl Client {
 
     /// Retrieves blocks, transactions, traces, and logs through a stream using the provided
     /// query and stream configuration.
+    ///
+    /// ### Implementation
+    /// Runs multiple queries simultaneously based on config.concurrency.
+    ///
+    /// Each query runs until it reaches query.to, server height, any max_num_* query param,
+    /// or execution timed out by server.
     pub async fn collect(
         self: Arc<Self>,
         query: Query,

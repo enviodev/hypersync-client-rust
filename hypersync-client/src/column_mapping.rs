@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ArrowBatch;
 
-/// Column mapping for stream config.
+/// Column mapping for stream function output.
+/// It lets you map columns you want into the DataTypes you want.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnMapping {
     /// Mapping for block data.
