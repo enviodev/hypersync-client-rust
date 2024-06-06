@@ -19,7 +19,9 @@ pub struct ArrowResponseData {
     pub logs: Vec<ArrowBatch>,
     /// Query traces response
     pub traces: Vec<ArrowBatch>,
-    /// Query decoded_logs response
+    /// Query decoded_logs response.
+    ///
+    /// Populated only if event_singature is present.
     pub decoded_logs: Vec<ArrowBatch>,
 }
 
@@ -91,7 +93,7 @@ impl From<&'_ ArrowResponse> for QueryResponse {
     }
 }
 
-/// Query responce from hypersync instance.
+/// Query response from hypersync instance.
 /// Contain next_block field in case query didn't process all the block range
 #[derive(Debug, Clone)]
 pub struct QueryResponse<T = ResponseData> {
@@ -111,7 +113,7 @@ pub struct QueryResponse<T = ResponseData> {
 
 /// Alias for Arrow Query response
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
-/// Alias for Rust native Query response
+/// Alias for Event oriented, vectorized QueryResponse
 pub type EventResponse = QueryResponse<Vec<Vec<Event>>>;
 
 /// Arrow chunk with schema

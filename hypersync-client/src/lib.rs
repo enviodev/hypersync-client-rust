@@ -86,6 +86,12 @@ impl Client {
 
     /// Retrieves blocks, transactions, traces, and logs through a stream using the provided
     /// query and stream configuration.
+    ///
+    /// ### Implementation
+    /// Runs multiple queries simultaneously based on config.concurrency.
+    ///
+    /// Each query runs until it reaches query.to, server height, any max_num_* query param,
+    /// or execution timed out by server.
     pub async fn collect(
         self: Arc<Self>,
         query: Query,

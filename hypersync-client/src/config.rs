@@ -26,11 +26,12 @@ pub struct ClientConfig {
 /// Config for hypersync event streaming.
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct StreamConfig {
-    /// Mapping for events.
+    /// Column mapping for stream function output.
+    /// It lets you map columns you want into the DataTypes you want.
     pub column_mapping: Option<ColumnMapping>,
-    /// Event signature used to decode logs.
+    /// Event signature used to populate decode logs. Decode logs would be empty if set to None.
     pub event_signature: Option<String>,
-    /// Determines formatting of integer numbers.
+    /// Determines formatting of binary columns numbers into utf8 hex.
     #[serde(default)]
     pub hex_output: HexOutput,
     /// Initial batch size. Size would be adjusted based on response size during execution.
@@ -55,14 +56,14 @@ pub struct StreamConfig {
     pub response_bytes_floor: Option<u64>,
 }
 
-/// Determines format of hex numbers
+/// Determines format of Binary column
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum HexOutput {
-    /// Number won't be formatted as hex
+    /// Binary column won't be formatted as hex
     NoEncode,
-    /// Numbers would be formatted as prefixed hex i.e. 0xdeadbeef
+    /// Binary column would be formatted as prefixed hex i.e. 0xdeadbeef
     Prefixed,
-    /// Numbers would be formatted as non prefixed hex i.e. deadbeef
+    /// Binary column would be formatted as non prefixed hex i.e. deadbeef
     NonPrefixed,
 }
 
