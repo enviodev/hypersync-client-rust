@@ -13,6 +13,7 @@ pub struct Decoder {
 impl Decoder {
     /// Initialize decoder from event signatures.
     ///
+    ///     use hypersync_client::Decoder;
     ///     let decoder = Decoder::from_signatures(&[
     ///        "Transfer(address indexed from, address indexed to, uint amount)",
     ///     ]).unwrap();

@@ -25,13 +25,13 @@ pub struct LogSelection {
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct TransactionSelection {
     /// Address the transaction should originate from. If transaction.from matches any of these, the transaction
-    ///  will be returned. Keep in mind that this has an and relationship with to filter, so each transaction should
-    ///  match both of them. Empty means match all.
+    /// will be returned. Keep in mind that this has an and relationship with to filter, so each transaction should
+    /// match both of them. Empty means match all.
     #[serde(default)]
     pub from: Vec<Address>,
     /// Address the transaction should go to. If transaction.to matches any of these, the transaction will
-    ///  be returned. Keep in mind that this has an and relationship with from filter, so each transaction should
-    ///  match both of them. Empty means match all.
+    /// be returned. Keep in mind that this has an and relationship with from filter, so each transaction should
+    /// match both of them. Empty means match all.
     #[serde(default)]
     pub to: Vec<Address>,
     /// If first 4 bytes of transaction input matches any of these, transaction will be returned. Empty means match all.

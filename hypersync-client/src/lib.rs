@@ -59,7 +59,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Create a new client with the given configuration.
+    /// Creates a new client with the given configuration.
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         let timeout = cfg
             .http_req_timeout_millis
