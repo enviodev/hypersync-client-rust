@@ -8,9 +8,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use futures::StreamExt;
 use hypersync_net_types::Query;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use crate::{
     config::HexOutput,
@@ -67,7 +67,7 @@ pub async fn stream_arrow(
 
         let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
 
-        let futs = range_iter
+        let mut futs = range_iter
             .enumerate()
             .map(move |(req_idx, (start, end, generation))| {
                 let mut query = query.clone();
@@ -75,27 +75,34 @@ pub async fn stream_arrow(
                 query.to_block = Some(end);
                 let client = client.clone();
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
-            });
+            })
+            .peekable();
 
         // we use unordered parallelization here so need to order the responses later.
         // Using unordered parallelization gives a big boost in performance.
-        let mut stream = futures::stream::iter(futs).buffer_unordered(concurrency);
-
-        let mut num_blocks = 0;
-        let mut num_transactions = 0;
-        let mut num_logs = 0;
-        let mut num_traces = 0;
-
         let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
 
-        // This task re-orders the responses and sends it along the pipeline
         tokio::spawn(async move {
+            let mut set = JoinSet::new();
             let mut queue = BTreeMap::new();
             let mut next_req_idx = 0;
 
-            while let Some((generation, req_idx, resps)) = stream.next().await {
-                queue.insert(req_idx, (generation, resps));
-
+            while futs.peek().is_some() {
+                while let Some(res) = set.try_join_next() {
+                    let (generation, req_idx, resps) = res.unwrap();
+                    queue.insert(req_idx, (generation, resps));
+                }
+                while set.len() >= concurrency {
+                    let (generation, req_idx, resps) = set.join_next().await.unwrap().unwrap();
+                    queue.insert(req_idx, (generation, resps));
+                }
+                if queue.len() < concurrency * 2 {
+                    futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
+                        set.spawn(fut);
+                    });
+                } else {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                }
                 while let Some(resps) = queue.remove(&next_req_idx) {
                     if res_tx.send(resps).await.is_err() {
                         return;
@@ -104,6 +111,10 @@ pub async fn stream_arrow(
                 }
             }
 
+            while let Some(res) = set.join_next().await {
+                let (generation, req_idx, resps) = res.unwrap();
+                queue.insert(req_idx, (generation, resps));
+            }
             while let Some(resps) = queue.remove(&next_req_idx) {
                 if res_tx.send(resps).await.is_err() {
                     return;
@@ -111,6 +122,11 @@ pub async fn stream_arrow(
                 next_req_idx += 1;
             }
         });
+
+        let mut num_blocks = 0;
+        let mut num_transactions = 0;
+        let mut num_logs = 0;
+        let mut num_traces = 0;
 
         // Generation is used so if we change batch_size we only want to change it again
         // based on the new batch size we just set.
