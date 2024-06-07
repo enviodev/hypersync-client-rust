@@ -75,13 +75,14 @@ pub async fn stream_arrow(
                 query.to_block = Some(end);
                 let client = client.clone();
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
-            }).peekable();
+            })
+            .peekable();
 
         // we use unordered parallelization here so need to order the responses later.
         // Using unordered parallelization gives a big boost in performance.
         let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
 
-        tokio::spawn( async move {
+        tokio::spawn(async move {
             let mut set = JoinSet::new();
             let mut queue = BTreeMap::new();
             let mut next_req_idx = 0;
@@ -95,7 +96,7 @@ pub async fn stream_arrow(
                     let (generation, req_idx, resps) = set.join_next().await.unwrap().unwrap();
                     queue.insert(req_idx, (generation, resps));
                 }
-                futs.by_ref().take(concurrency- set.len()).for_each(|fut| {
+                futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
                     set.spawn(fut);
                 });
                 while let Some(resps) = queue.remove(&next_req_idx) {
@@ -116,15 +117,12 @@ pub async fn stream_arrow(
                 }
                 next_req_idx += 1;
             }
-
         });
-
 
         let mut num_blocks = 0;
         let mut num_transactions = 0;
         let mut num_logs = 0;
         let mut num_traces = 0;
-
 
         // Generation is used so if we change batch_size we only want to change it again
         // based on the new batch size we just set.
