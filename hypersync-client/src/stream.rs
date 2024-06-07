@@ -96,9 +96,13 @@ pub async fn stream_arrow(
                     let (generation, req_idx, resps) = set.join_next().await.unwrap().unwrap();
                     queue.insert(req_idx, (generation, resps));
                 }
-                futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
-                    set.spawn(fut);
-                });
+                if queue.len() < concurrency * 2 {
+                    futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
+                        set.spawn(fut);
+                    });
+                } else {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                }
                 while let Some(resps) = queue.remove(&next_req_idx) {
                     if res_tx.send(resps).await.is_err() {
                         return;
