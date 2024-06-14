@@ -25,38 +25,42 @@ pub struct Event {
 
 impl From<ResponseData> for Vec<Event> {
     fn from(data: ResponseData) -> Self {
-        let mut events = Vec::with_capacity(data.logs.iter().map(|chunk| chunk.len()).sum());
-
-        for ((blocks, transactions), logs) in data
+        let blocks = data
             .blocks
             .into_iter()
-            .zip(data.transactions.into_iter())
-            .zip(data.logs.into_iter())
-        {
-            let blocks = blocks
-                .into_iter()
-                .map(|block| (block.number.unwrap(), Arc::new(block)))
-                .collect::<IntMap<u64, _>>();
-            let transactions = transactions
-                .into_iter()
-                .map(|tx| (tx.hash.clone().unwrap(), Arc::new(tx)))
-                .collect::<HashMap<_, _, Xxh3Builder>>();
+            .flat_map(|blocks| {
+                blocks
+                    .into_iter()
+                    .map(|block| (block.number.unwrap(), Arc::new(block)))
+            })
+            .collect::<IntMap<u64, _>>();
 
-            for log in logs {
-                let block = blocks.get(&log.block_number.unwrap().into()).cloned();
-                let transaction = transactions
-                    .get(log.transaction_hash.as_ref().unwrap())
-                    .cloned();
+        let transactions = data
+            .transactions
+            .into_iter()
+            .flat_map(|txs| {
+                txs.into_iter()
+                    .map(|tx| (tx.hash.clone().unwrap(), Arc::new(tx)))
+            })
+            .collect::<HashMap<_, _, Xxh3Builder>>();
 
-                events.push(Event {
-                    transaction,
-                    block,
-                    log,
-                });
-            }
-        }
+        data.logs
+            .into_iter()
+            .flat_map(|logs| {
+                logs.into_iter().map(|log| {
+                    let block = blocks.get(&log.block_number.unwrap().into()).cloned();
+                    let transaction = transactions
+                        .get(log.transaction_hash.as_ref().unwrap())
+                        .cloned();
 
-        events
+                    Event {
+                        transaction,
+                        block,
+                        log,
+                    }
+                })
+            })
+            .collect()
     }
 }
 
