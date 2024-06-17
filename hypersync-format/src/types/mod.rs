@@ -143,7 +143,8 @@ pub struct TransactionReceipt {
     pub l1_fee: Option<Quantity>,
     pub l1_gas_price: Option<Quantity>,
     pub l1_gas_used: Option<Quantity>,
-    pub l1_fee_scalar: Option<Quantity>,
+    // This is a float value printed as string, e.g. "0.69"
+    pub l1_fee_scalar: Option<String>,
     pub gas_used_for_l1: Option<Quantity>,
 }
 

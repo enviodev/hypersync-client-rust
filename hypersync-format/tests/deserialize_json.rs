@@ -56,3 +56,9 @@ fn test_base_receipt() {
     let file = read_json_file("base_tx_receipt.json");
     let _: TransactionReceipt = serde_json::from_str(&file).unwrap();
 }
+
+#[test]
+fn test_optimism_receipt() {
+    let file = read_json_file("optimism_tx_receipt.json");
+    let _: TransactionReceipt = serde_json::from_str(&file).unwrap();
+}
