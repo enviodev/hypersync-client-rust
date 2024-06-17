@@ -6,7 +6,8 @@ use polars_arrow::array::{
     Array, BinaryArray, Float32Array, Float64Array, Int32Array, Int64Array, MutablePrimitiveArray,
     PrimitiveArray, UInt32Array, UInt64Array,
 };
-use polars_arrow::compute::cast;
+use polars_arrow::compute::cast::CastOptions;
+use polars_arrow::compute::{self, cast};
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
 use polars_arrow::types::NativeType;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -78,8 +79,15 @@ pub fn apply_to_batch(
         .zip(batch.schema.fields.par_iter())
         .map(|(col, field)| {
             let col = match mapping.get(&field.name) {
-                Some(&dt) => map_column(&**col, dt)
-                    .context(format!("apply cast to colum '{}'", field.name))?,
+                Some(&dt) => {
+                    if field.name == "l1_fee_scalar" {
+                        map_l1_fee_scalar(&**col, dt)
+                            .context(format!("apply cast to column '{}'", field.name))?
+                    } else {
+                        map_column(&**col, dt)
+                            .context(format!("apply cast to colum '{}'", field.name))?
+                    }
+                }
                 None => col.clone(),
             };
 
@@ -100,11 +108,34 @@ pub fn apply_to_batch(
     })
 }
 
-pub fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Array + 'static>> {
-    fn to_box<T: Array>(arr: T) -> Box<dyn Array> {
-        Box::new(arr)
-    }
+pub fn map_l1_fee_scalar(
+    col: &dyn Array,
+    target_data_type: DataType,
+) -> Result<Box<dyn Array + 'static>> {
+    let col = col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+    let col = Float64Array::from_iter(
+        col.iter()
+            .map(|v| v.map(|v| std::str::from_utf8(v).unwrap().parse().unwrap())),
+    );
 
+    let arr = compute::cast::cast(
+        &*to_box(col),
+        &target_data_type.into(),
+        CastOptions {
+            wrapped: false,
+            partial: false,
+        },
+    )
+    .with_context(|| anyhow!("failed to l1_fee_scalar to {:?}", target_data_type))?;
+
+    Ok(arr)
+}
+
+fn to_box<T: Array>(arr: T) -> Box<dyn Array> {
+    Box::new(arr)
+}
+
+fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Array + 'static>> {
     match target_data_type {
         DataType::Float64 => map_to_f64(col).map(to_box),
         DataType::Float32 => map_to_f32(col).map(to_box),

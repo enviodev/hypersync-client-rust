@@ -184,7 +184,10 @@ impl FromArrow for Transaction {
                 l1_fee: map_binary(idx, l1_fee),
                 l1_gas_price: map_binary(idx, l1_gas_price),
                 l1_gas_used: map_binary(idx, l1_gas_used),
-                l1_fee_scalar: map_binary(idx, l1_fee_scalar),
+                l1_fee_scalar: l1_fee_scalar.and_then(|arr| {
+                    arr.get(idx)
+                        .map(|v| std::str::from_utf8(v).unwrap().parse().unwrap())
+                }),
                 gas_used_for_l1: map_binary(idx, gas_used_for_l1),
             })
             .collect()

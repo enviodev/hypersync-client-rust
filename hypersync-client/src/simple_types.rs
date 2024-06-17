@@ -13,7 +13,7 @@ use xxhash_rust::xxh3::Xxh3Builder;
 use crate::types::ResponseData;
 
 /// An Ethereum event object.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Event {
     /// An Ethereum event transaction object.
     pub transaction: Option<Arc<Transaction>>,
@@ -158,7 +158,7 @@ pub struct Block {
 }
 
 /// Transaction object
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     /// The Keccak 256-bit hash of the block
     pub block_hash: Option<Hash>,
@@ -268,7 +268,7 @@ pub struct Transaction {
     pub l1_gas_used: Option<Quantity>,
     /// A multiplier applied to the actual gas usage on Layer 1 to calculate the dynamic costs.
     /// If set to 1, it has no impact on the L1 gas usage
-    pub l1_fee_scalar: Option<Quantity>,
+    pub l1_fee_scalar: Option<f64>,
     /// Amount of gas spent on L1 calldata in units of L2 gas.
     pub gas_used_for_l1: Option<Quantity>,
 }
