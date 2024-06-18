@@ -116,6 +116,27 @@ pub struct Query {
     ///  it won't overshoot by too much.
     #[serde(default)]
     pub max_num_traces: Option<usize>,
+    /// Selects join mode for the query,
+    /// Default: join in this order logs -> transactions -> traces -> blocks
+    /// JoinAll: join everything to everything. For example if logSelection matches log0, we get the
+    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
+    /// to blocks, traces.
+    /// JoinNothing: join nothing.
+    #[serde(default)]
+    pub join_mode: JoinMode,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+pub enum JoinMode {
+    Default,
+    JoinAll,
+    JoinNothing,
+}
+
+impl Default for JoinMode {
+    fn default() -> Self {
+        Self::Default
+    }
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
