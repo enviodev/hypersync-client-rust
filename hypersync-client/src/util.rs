@@ -11,9 +11,7 @@ use polars_arrow::{
     },
     datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field},
 };
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, ParallelBridge, ParallelIterator,
-};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::{ArrowBatch, ArrowChunk};
 
@@ -112,7 +110,6 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
 
         let decoded_tuples = data
             .values_iter()
-            .par_bridge()
             .map(|val| {
                 let tuple = tuple_decoder
                     .abi_decode(val)
