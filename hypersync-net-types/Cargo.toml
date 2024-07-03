@@ -11,6 +11,7 @@ serde = { version = "1", features = ["derive"] }
 arrayvec = { version = "0.7", features = ["serde"] }
 
 hypersync-format = { path = "../hypersync-format", version = "0.2" }
+sbbf-rs-safe = "0.3.2"
 
 [build-dependencies]
 capnpc = "0.19"
