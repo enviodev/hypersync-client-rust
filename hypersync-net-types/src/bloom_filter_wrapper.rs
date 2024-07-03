@@ -66,16 +66,31 @@ impl From<sbbf_rs_safe::Filter> for FilterWrapper {
 mod tests {
     use super::*;
     use sbbf_rs_safe::Filter;
+    use xxhash_rust::xxh3::xxh3_64;
 
     #[test]
     fn test_serialize_deserialize() {
-        let set = [0, 12, 99];
+        let set = [
+            xxh3_64("hello".as_bytes()),
+            xxh3_64("cruel world".as_bytes()),
+        ];
 
-        let filter = FilterWrapper(Filter::new(32, set.len()));
+        let mut filter = FilterWrapper(Filter::new(32, set.len()));
+        for hash in set.into_iter() {
+            filter.0.insert_hash(hash);
+        }
 
         let serialized_filter = serde_json::to_string(&filter).unwrap();
 
         let deserialized_filter: FilterWrapper = serde_json::from_str(&serialized_filter).unwrap();
+
+        assert!(deserialized_filter
+            .0
+            .contains_hash(xxh3_64("hello".as_bytes())));
+
+        assert!(deserialized_filter
+            .0
+            .contains_hash(xxh3_64("cruel world".as_bytes())));
 
         assert_eq!(filter, deserialized_filter);
     }
