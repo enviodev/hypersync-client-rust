@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 
+mod bloom_filter_wrapper;
+
 use arrayvec::ArrayVec;
+use bloom_filter_wrapper::FilterWrapper;
 use hypersync_format::{Address, FixedSizeData, Hash, LogArgument};
-use sbbf_rs_safe::Filter;
 use serde::{Deserialize, Serialize};
 
 pub type Sighash = FixedSizeData<4>;
@@ -18,7 +20,7 @@ pub struct LogSelection {
     #[serde(default)]
     pub address: Vec<Address>,
     #[serde(default)]
-    pub address_filter: Option<Filter>,
+    pub address_filter: Option<FilterWrapper>,
     /// Topics to match, each member of the top level array is another array, if the nth topic matches any
     ///  topic specified in nth element of topics, the log will be returned. Empty means match all.
     #[serde(default)]
@@ -33,14 +35,14 @@ pub struct TransactionSelection {
     #[serde(default)]
     pub from: Vec<Address>,
     #[serde(default)]
-    pub from_filter: Option<Filter>,
+    pub from_filter: Option<FilterWrapper>,
     /// Address the transaction should go to. If transaction.to matches any of these, the transaction will
     /// be returned. Keep in mind that this has an and relationship with from filter, so each transaction should
     /// match both of them. Empty means match all.
     #[serde(default)]
     pub to: Vec<Address>,
     #[serde(default)]
-    pub to_filter: Option<Filter>,
+    pub to_filter: Option<FilterWrapper>,
     /// If first 4 bytes of transaction input matches any of these, transaction will be returned. Empty means match all.
     #[serde(default)]
     pub sighash: Vec<Sighash>,
@@ -54,7 +56,7 @@ pub struct TransactionSelection {
     #[serde(default)]
     pub contract_address: Vec<Address>,
     #[serde(default)]
-    pub contract_address_filter: Option<Filter>,
+    pub contract_address_filter: Option<FilterWrapper>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
@@ -62,15 +64,15 @@ pub struct TraceSelection {
     #[serde(default)]
     pub from: Vec<Address>,
     #[serde(default)]
-    pub from_filter: Option<Filter>,
+    pub from_filter: Option<FilterWrapper>,
     #[serde(default)]
     pub to: Vec<Address>,
     #[serde(default)]
-    pub to_filter: Option<Filter>,
+    pub to_filter: Option<FilterWrapper>,
     #[serde(default)]
     pub address: Vec<Address>,
     #[serde(default)]
-    pub address_filter: Option<Filter>,
+    pub address_filter: Option<FilterWrapper>,
     #[serde(default)]
     pub call_type: Vec<String>,
     #[serde(default)]

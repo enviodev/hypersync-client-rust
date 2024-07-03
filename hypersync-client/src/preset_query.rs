@@ -119,6 +119,7 @@ pub fn logs_of_event(
         logs: vec![LogSelection {
             address: vec![contract_address],
             topics,
+            ..Default::default()
         }],
         field_selection: FieldSelection {
             log: all_log_fields,

@@ -12,6 +12,7 @@ arrayvec = { version = "0.7", features = ["serde"] }
 
 hypersync-format = { path = "../hypersync-format", version = "0.2" }
 sbbf-rs-safe = "0.3.2"
+hex = "0.4.3"
 
 [build-dependencies]
 capnpc = "0.19"
