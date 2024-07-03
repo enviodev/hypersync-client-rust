@@ -9,6 +9,12 @@ use serde::{
 #[derive(Debug, Clone)]
 pub struct FilterWrapper(sbbf_rs_safe::Filter);
 
+impl PartialEq for FilterWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_bytes() == other.0.as_bytes()
+    }
+}
+
 // Implement Serialize and Deserialize for FilterWrapper using hex encoding
 impl Serialize for FilterWrapper {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -18,12 +24,6 @@ impl Serialize for FilterWrapper {
         let bytes = self.0.as_bytes();
         let hex_str = encode(bytes);
         serializer.serialize_str(&hex_str)
-    }
-}
-
-impl PartialEq for FilterWrapper {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.as_bytes() == other.0.as_bytes()
     }
 }
 
@@ -47,11 +47,36 @@ impl<'de> Deserialize<'de> for FilterWrapper {
             {
                 let bytes = decode(v).map_err(E::custom)?;
                 sbbf_rs_safe::Filter::from_bytes(&bytes)
-                    .map(|f| FilterWrapper(f))
+                    .map(FilterWrapper)
                     .ok_or_else(|| E::custom("invalid bytes for FilterWrapper"))
             }
         }
 
         deserializer.deserialize_str(FilterWrapperVisitor)
+    }
+}
+
+impl From<sbbf_rs_safe::Filter> for FilterWrapper {
+    fn from(filter: sbbf_rs_safe::Filter) -> Self {
+        FilterWrapper(filter)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sbbf_rs_safe::Filter;
+
+    #[test]
+    fn test_serialize_deserialize() {
+        let set = [0, 12, 99];
+
+        let filter = FilterWrapper(Filter::new(32, set.len()));
+
+        let serialized_filter = serde_json::to_string(&filter).unwrap();
+
+        let deserialized_filter: FilterWrapper = serde_json::from_str(&serialized_filter).unwrap();
+
+        assert_eq!(filter, deserialized_filter);
     }
 }
