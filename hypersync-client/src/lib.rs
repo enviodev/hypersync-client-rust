@@ -240,7 +240,7 @@ impl Client {
     }
 
     /// Internal implementation of getting height of Client instance.
-    async fn get_height_impl(&self, http_timout_overrides: Option<u64>) -> Result<u64> {
+    async fn get_height_impl(&self, http_timeout_override: Option<Duration>) -> Result<u64> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("height");
@@ -251,8 +251,8 @@ impl Client {
             req = req.bearer_auth(bearer_token);
         }
 
-        if let Some(http_timout_overrides) = http_timout_overrides {
-            req = req.timeout(tokio::time::Duration::from_millis(http_timout_overrides));
+        if let Some(http_timeout_override) = http_timeout_override {
+            req = req.timeout(http_timeout_override);
         }
 
         let res = req.send().await.context("execute http req")?;
@@ -301,7 +301,7 @@ impl Client {
 
     /// Get the height of the Client instance for health checks.
     pub async fn health(&self) -> Result<u64> {
-        self.get_height_impl(Some(100)).await
+        self.get_height_impl(Some(Duration::from_millis(500))).await
     }
 
     /// Executes query with retries and returns the response.
