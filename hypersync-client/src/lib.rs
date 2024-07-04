@@ -295,6 +295,28 @@ impl Client {
         Err(err)
     }
 
+    /// Get the height of the Client instance for health checks.
+    pub async fn health(&self) -> Result<u64> {
+        let base = self.retry_base_ms;
+
+        let mut err = anyhow!("");
+
+        for _ in 0..self.max_num_retries + 1 {
+            match self.get_height_impl().await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    log::debug!(
+                        "failed to get height from server, retrying... The error was: {:?}",
+                        e
+                    );
+                    err = err.context(e);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(base)).await;
+        }
+        Err(err)
+    }
+
     /// Executes query with retries and returns the response.
     pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
         let arrow_response = self.get_arrow(query).await.context("get data")?;
