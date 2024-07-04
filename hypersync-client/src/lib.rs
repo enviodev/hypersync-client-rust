@@ -240,7 +240,7 @@ impl Client {
     }
 
     /// Internal implementation of getting height of Client instance.
-    async fn get_height_impl(&self) -> Result<u64> {
+    async fn get_height_impl(&self, http_timout_overrides: Option<u64>) -> Result<u64> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("height");
@@ -249,6 +249,10 @@ impl Client {
 
         if let Some(bearer_token) = &self.bearer_token {
             req = req.bearer_auth(bearer_token);
+        }
+
+        if let Some(http_timout_overrides) = http_timout_overrides {
+            req = req.timeout(tokio::time::Duration::from_millis(http_timout_overrides));
         }
 
         let res = req.send().await.context("execute http req")?;
@@ -270,7 +274,7 @@ impl Client {
         let mut err = anyhow!("");
 
         for _ in 0..self.max_num_retries + 1 {
-            match self.get_height_impl().await {
+            match self.get_height_impl(None).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!(
@@ -297,24 +301,7 @@ impl Client {
 
     /// Get the height of the Client instance for health checks.
     pub async fn health(&self) -> Result<u64> {
-        let base = self.retry_base_ms;
-
-        let mut err = anyhow!("");
-
-        for _ in 0..self.max_num_retries + 1 {
-            match self.get_height_impl().await {
-                Ok(res) => return Ok(res),
-                Err(e) => {
-                    log::debug!(
-                        "failed to get height from server, retrying... The error was: {:?}",
-                        e
-                    );
-                    err = err.context(e);
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(base)).await;
-        }
-        Err(err)
+        self.get_height_impl(Some(100)).await
     }
 
     /// Executes query with retries and returns the response.
