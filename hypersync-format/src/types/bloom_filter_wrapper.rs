@@ -15,7 +15,7 @@ pub struct FilterWrapper(pub Filter);
 
 impl FilterWrapper {
     pub fn new(bits_per_key: usize, num_keys: usize) -> Self {
-        FilterWrapper(Filter::new(bits_per_key, num_keys))
+        Self(Filter::new(bits_per_key, num_keys))
     }
 
     pub fn contains_hash(&self, hash: u64) -> bool {
