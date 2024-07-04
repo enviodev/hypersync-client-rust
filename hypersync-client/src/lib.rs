@@ -300,8 +300,9 @@ impl Client {
     }
 
     /// Get the height of the Client instance for health checks.
-    pub async fn health(&self) -> Result<u64> {
-        self.get_height_impl(Some(Duration::from_millis(500))).await
+    /// Doesn't do any retries and the `http_req_timeout` parameter will override the http timeout config set when creating the client.
+    pub async fn health_check(&self, http_req_timeout: Option<Duration>) -> Result<u64> {
+        self.get_height_impl(http_req_timeout).await
     }
 
     /// Executes query with retries and returns the response.

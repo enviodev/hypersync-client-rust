@@ -353,7 +353,7 @@ async fn test_api_preset_query_logs() {
     let client = Client::new(ClientConfig::default()).unwrap();
 
     let usdt_addr = Address::decode_hex("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap();
-    let query = preset_query::logs(18_000_000, Some(18_001_000), usdt_addr);
+    let query = preset_query::logs(18_000_000, Some(18_000_010), usdt_addr);
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_logs: usize = res
@@ -363,7 +363,7 @@ async fn test_api_preset_query_logs() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_001_000);
+    assert_eq!(res.next_block, 18_000_010);
     assert!(num_logs > 1);
 }
 
@@ -378,7 +378,7 @@ async fn test_api_preset_query_logs_of_event() {
     )
     .unwrap();
     let query =
-        preset_query::logs_of_event(18_000_000, Some(18_001_000), transfer_topic0, usdt_addr);
+        preset_query::logs_of_event(18_000_000, Some(18_000_010), transfer_topic0, usdt_addr);
 
     let res = client.get_arrow(&query).await.unwrap();
 
@@ -389,7 +389,7 @@ async fn test_api_preset_query_logs_of_event() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_001_000);
+    assert_eq!(res.next_block, 18_000_010);
     assert!(num_logs > 1);
 }
 
