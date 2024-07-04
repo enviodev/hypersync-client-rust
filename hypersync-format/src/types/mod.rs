@@ -1,6 +1,7 @@
 use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 
+mod bloom_filter_wrapper;
 mod data;
 mod fixed_size_data;
 mod hex;
@@ -10,6 +11,7 @@ mod transaction_type;
 mod uint;
 mod util;
 
+pub use bloom_filter_wrapper::FilterWrapper;
 pub use data::Data;
 pub use fixed_size_data::FixedSizeData;
 pub use hex::Hex;

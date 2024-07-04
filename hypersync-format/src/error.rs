@@ -17,6 +17,8 @@ pub enum Error {
     UnexpectedQuantity(String),
     #[error("Invalid Number from Hex. {0}")]
     DecodeNumberFromHex(String),
+    #[error("Invalid Bloom Filter from bytes")]
+    BloomFilterFromBytes,
 }
 
 pub type Result<T> = StdResult<T, Error>;
