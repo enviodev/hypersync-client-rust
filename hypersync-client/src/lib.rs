@@ -298,17 +298,17 @@ impl Client {
     /// Get the height of the Client instance for health checks.
     pub async fn health(&self) -> Result<u64> {
         match self.get_height_impl().await {
-            Ok(res) =>  Ok(res),
+            Ok(res) => Ok(res),
             Err(e) => {
                 log::debug!(
-                    "failed to get height from the server {}. The error was: {:?}", self.url,
+                    "failed to get height from the server {}. The error was: {:?}",
+                    self.url,
                     e
                 );
                 Err(e)
             }
         }
     }
-
 
     /// Executes query with retries and returns the response.
     pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
