@@ -1,10 +1,14 @@
-use hex::{decode, encode};
+use crate::{Error, Hex, Result};
+use sbbf_rs_safe::Filter;
 use std::fmt;
+use std::result::Result as StdResult;
 
 use serde::{
     de::{self, Visitor},
     Deserialize, Deserializer, Serialize, Serializer,
 };
+
+use crate::Data;
 
 #[derive(Debug, Clone)]
 pub struct FilterWrapper(sbbf_rs_safe::Filter);
@@ -17,18 +21,17 @@ impl PartialEq for FilterWrapper {
 
 // Implement Serialize and Deserialize for FilterWrapper using hex encoding
 impl Serialize for FilterWrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let bytes = self.0.as_bytes();
-        let hex_str = encode(bytes);
+        let hex_str = self.encode_hex();
         serializer.serialize_str(&hex_str)
     }
 }
 
 impl<'de> Deserialize<'de> for FilterWrapper {
-    fn deserialize<D>(deserializer: D) -> Result<FilterWrapper, D::Error>
+    fn deserialize<D>(deserializer: D) -> StdResult<FilterWrapper, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -41,14 +44,11 @@ impl<'de> Deserialize<'de> for FilterWrapper {
                 formatter.write_str("a hex-encoded string representing a FilterWrapper")
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<FilterWrapper, E>
+            fn visit_str<E>(self, v: &str) -> StdResult<FilterWrapper, E>
             where
                 E: de::Error,
             {
-                let bytes = decode(v).map_err(E::custom)?;
-                sbbf_rs_safe::Filter::from_bytes(&bytes)
-                    .map(FilterWrapper)
-                    .ok_or_else(|| E::custom("invalid bytes for FilterWrapper"))
+                FilterWrapper::decode_hex(v).map_err(|e| E::custom(e.to_string()))
             }
         }
 
@@ -62,6 +62,20 @@ impl From<sbbf_rs_safe::Filter> for FilterWrapper {
     }
 }
 
+impl Hex for FilterWrapper {
+    fn encode_hex(&self) -> String {
+        let data = Data::from(self.0.as_bytes());
+        data.encode_hex()
+    }
+
+    fn decode_hex(hex: &str) -> Result<Self> {
+        let data = Data::decode_hex(hex)?;
+        Filter::from_bytes(data.as_ref())
+            .ok_or(Error::BloomFilterFromBytes)
+            .map(FilterWrapper)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,7 +86,7 @@ mod tests {
     fn test_serialize_deserialize() {
         let set = [
             xxh3_64("hello".as_bytes()),
-            xxh3_64("cruel world".as_bytes()),
+            xxh3_64("cool world".as_bytes()),
         ];
 
         let mut filter = FilterWrapper(Filter::new(32, set.len()));
@@ -90,7 +104,7 @@ mod tests {
 
         assert!(deserialized_filter
             .0
-            .contains_hash(xxh3_64("cruel world".as_bytes())));
+            .contains_hash(xxh3_64("cool world".as_bytes())));
 
         assert_eq!(filter, deserialized_filter);
     }

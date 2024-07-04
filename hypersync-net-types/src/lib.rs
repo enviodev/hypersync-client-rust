@@ -1,10 +1,7 @@
 use std::collections::BTreeSet;
 
-mod bloom_filter_wrapper;
-
 use arrayvec::ArrayVec;
-use bloom_filter_wrapper::FilterWrapper;
-use hypersync_format::{Address, FixedSizeData, Hash, LogArgument};
+use hypersync_format::{Address, FilterWrapper, FixedSizeData, Hash, LogArgument};
 use serde::{Deserialize, Serialize};
 
 pub type Sighash = FixedSizeData<4>;
