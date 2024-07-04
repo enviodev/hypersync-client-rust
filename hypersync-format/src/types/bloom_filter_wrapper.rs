@@ -11,7 +11,21 @@ use serde::{
 use crate::Data;
 
 #[derive(Debug, Clone)]
-pub struct FilterWrapper(sbbf_rs_safe::Filter);
+pub struct FilterWrapper(pub Filter);
+
+impl FilterWrapper {
+    pub fn new(bits_per_key: usize, num_keys: usize) -> Self {
+        FilterWrapper(Filter::new(bits_per_key, num_keys))
+    }
+
+    pub fn contains_hash(&self, hash: u64) -> bool {
+        self.0.contains_hash(hash)
+    }
+
+    pub fn insert_hash(&mut self, hash: u64) -> bool {
+        self.0.insert_hash(hash)
+    }
+}
 
 impl PartialEq for FilterWrapper {
     fn eq(&self, other: &Self) -> bool {
