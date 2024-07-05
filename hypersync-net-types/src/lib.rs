@@ -49,11 +49,18 @@ pub struct TransactionSelection {
     #[serde(rename = "type")]
     #[serde(default)]
     pub kind: Vec<u8>,
-    // If transaction.contract_address matches any of these values, the transaction will be returned.
+    /// If transaction.contract_address matches any of these values, the transaction will be returned.
     #[serde(default)]
     pub contract_address: Vec<Address>,
+    /// Bloom filter to filter by transaction.contract_address field. If the bloom filter contains the hash
+    /// of transaction.contract_address then the transaction will be returned. This field doesn't utilize the server side filtering
+    /// so it should be used alongside some non-probabilistic filters if possible.
     #[serde(default)]
     pub contract_address_filter: Option<FilterWrapper>,
+    /// If transaction.hash matches any of these values the transaction will be returned.
+    /// empty means match all.
+    #[serde(default)]
+    pub hash: Vec<Hash>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]

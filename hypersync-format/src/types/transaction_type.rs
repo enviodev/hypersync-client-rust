@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_serde_max() {
-        assert_tokens(&TransactionType::from(std::u8::MAX), &[Token::Str("0xff")]);
+        assert_tokens(&TransactionType::from(u8::MAX), &[Token::Str("0xff")]);
     }
 
     #[test]

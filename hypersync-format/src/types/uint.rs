@@ -96,10 +96,7 @@ mod tests {
 
     #[test]
     fn test_serde_max() {
-        assert_tokens(
-            &UInt::from(std::u64::MAX),
-            &[Token::Str("0xffffffffffffffff")],
-        );
+        assert_tokens(&UInt::from(u64::MAX), &[Token::Str("0xffffffffffffffff")]);
     }
 
     #[test]
