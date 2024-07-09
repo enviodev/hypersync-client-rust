@@ -468,6 +468,11 @@ impl Client {
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
         stream::stream_arrow(self, query, config).await
     }
+
+    /// Getter for url field.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
 }
 
 fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
