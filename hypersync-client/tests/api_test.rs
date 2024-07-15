@@ -1,7 +1,9 @@
 use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
-use hypersync_client::{preset_query, Client, ClientConfig, ColumnMapping, StreamConfig};
+use hypersync_client::{
+    preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping, StreamConfig,
+};
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
 use hypersync_net_types::{FieldSelection, Query, TransactionSelection};
 use hypersync_schema::transaction;
@@ -431,9 +433,11 @@ async fn test_api_preset_query_transactions_from_address() {
         .sum();
 
     assert!(res.next_block == 19_300_000);
-    assert!(num_txs > 1);
+    assert!(num_txs == 21);
 }
 
+// same query as above (test_api_preset_query_transactions_from_address) except it uses a bloom filter instead of a
+// vector of addresses to target the specified address
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_small_bloom_filter_query() {
@@ -458,9 +462,9 @@ async fn test_small_bloom_filter_query() {
             ..Default::default()
         }],
         field_selection: FieldSelection {
-            block: txn_field_selection,
+            block: Default::default(),
             log: Default::default(),
-            transaction: Default::default(),
+            transaction: txn_field_selection,
             trace: Default::default(),
         },
         ..Default::default()
@@ -470,13 +474,15 @@ async fn test_small_bloom_filter_query() {
 
     let res = client.collect(query, stream_config).await.unwrap();
 
-    for txn_batch in res.data.transactions {
-        for txn in txn_batch {
-            if txn.from.as_ref() != Some(&vitalik_eth_addr) {
-                panic!("returned an address not in the bloom filter")
-            }
+    let txns: Vec<Transaction> = res.data.transactions.into_iter().flatten().collect();
+    let num_txns = txns.len();
+
+    for txn in txns {
+        if txn.from.as_ref() != Some(&vitalik_eth_addr) {
+            panic!("returned an address not in the bloom filter")
         }
     }
 
-    dbg!(res.next_block);
+    assert_eq!(res.next_block, 19_300_000);
+    assert_eq!(num_txns, 21);
 }
