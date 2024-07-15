@@ -1,4 +1,5 @@
 use crate::{Address, Error, Hex, Result};
+use core::num;
 use nohash_hasher::IntSet;
 use sbbf_rs_safe::Filter;
 use std::fmt;
@@ -24,14 +25,10 @@ impl FilterWrapper {
         self.0.contains_hash(hash)
     }
 
-    pub fn insert_hash(&mut self, hash: u64) -> bool {
-        self.0.insert_hash(hash)
-    }
-
-    /// Creates a bloom filter out of a vec of Addresses as bytes.  Suitable for using
+    /// Creates a bloom filter out of a vec of bytes.  Suitable for using
     /// as a query param that takes a filter.
     /// bits_per_key defaults to 16
-    pub fn from_addresses<'a, I>(addresses: I, bits_per_key: Option<usize>) -> Result<Self>
+    pub fn from_keys<'a, I>(keys: I, bits_per_key: Option<usize>) -> Result<Self>
     where
         I: Iterator<Item = &'a [u8]>,
     {
@@ -41,24 +38,21 @@ impl FilterWrapper {
             16
         };
 
-        let addresses: Vec<Address> = addresses
-            .map(|b| b.try_into())
-            .collect::<Result<Vec<Address>>>()?;
-
-        let mut filter = FilterWrapper::new(bits_per_key, addresses.len());
-
         // first put into hash set to remove duplicates
-        let addresses = addresses
+        let keys = keys
             .into_iter()
-            .map(|addr| xxh3_64(addr.as_slice()))
+            .map(|key| xxh3_64(key))
             .collect::<IntSet<u64>>();
+        let num_keys = keys.len();
+
+        let mut filter = Filter::new(bits_per_key, num_keys);
 
         // insert each address into the filter
-        for hash in addresses {
+        for hash in keys {
             filter.insert_hash(hash);
         }
 
-        Ok(filter)
+        Ok(FilterWrapper(filter))
     }
 }
 

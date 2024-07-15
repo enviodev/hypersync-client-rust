@@ -452,7 +452,7 @@ async fn test_small_bloom_filter_query() {
 
     let addrs = vec![vitalik_eth_addr.clone()];
     let from_address_filter =
-        FilterWrapper::from_addresses(addrs.iter().map(|d| d.as_ref()), None).unwrap();
+        FilterWrapper::from_keys(addrs.iter().map(|d| d.as_ref()), None).unwrap();
 
     let query = Query {
         from_block: 19_000_000,
