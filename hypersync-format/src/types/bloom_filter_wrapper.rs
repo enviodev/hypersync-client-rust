@@ -1,5 +1,4 @@
-use crate::{Address, Error, Hex, Result};
-use core::num;
+use crate::{Error, Hex, Result};
 use nohash_hasher::IntSet;
 use sbbf_rs_safe::Filter;
 use std::fmt;
@@ -39,10 +38,7 @@ impl FilterWrapper {
         };
 
         // first put into hash set to remove duplicates
-        let keys = keys
-            .into_iter()
-            .map(|key| xxh3_64(key))
-            .collect::<IntSet<u64>>();
+        let keys = keys.into_iter().map(xxh3_64).collect::<IntSet<u64>>();
         let num_keys = keys.len();
 
         let mut filter = Filter::new(bits_per_key, num_keys);
