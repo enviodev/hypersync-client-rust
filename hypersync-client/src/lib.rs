@@ -3,7 +3,6 @@
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use hypersync_format::{Address, FilterWrapper};
 use hypersync_net_types::{ArchiveHeight, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
 use reqwest::Method;
@@ -37,7 +36,6 @@ pub use config::HexOutput;
 pub use config::{ClientConfig, StreamConfig};
 pub use decode::Decoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
-use xxhash_rust::xxh3::xxh3_64;
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
 

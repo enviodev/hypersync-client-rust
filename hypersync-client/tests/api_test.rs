@@ -6,7 +6,6 @@ use hypersync_client::{
 };
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
 use hypersync_net_types::{FieldSelection, Query, TransactionSelection};
-use hypersync_schema::transaction;
 use polars_arrow::array::UInt64Array;
 
 #[tokio::test(flavor = "multi_thread")]
