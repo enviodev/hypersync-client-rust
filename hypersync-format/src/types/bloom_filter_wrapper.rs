@@ -1,7 +1,8 @@
 use crate::{Address, Error, Hex, Result};
+use nohash_hasher::IntSet;
 use sbbf_rs_safe::Filter;
+use std::fmt;
 use std::result::Result as StdResult;
-use std::{collections::HashSet, fmt};
 use xxhash_rust::xxh3::xxh3_64;
 
 use serde::{
@@ -47,11 +48,13 @@ impl FilterWrapper {
         let mut filter = FilterWrapper::new(bits_per_key, addresses.len());
 
         // first put into hash set to remove duplicates
-        let addresses: HashSet<Address> = addresses.into_iter().collect();
+        let addresses = addresses
+            .into_iter()
+            .map(|addr| xxh3_64(addr.as_slice()))
+            .collect::<IntSet<u64>>();
 
         // insert each address into the filter
-        for val in addresses {
-            let hash = xxh3_64(val.as_slice());
+        for hash in addresses {
             filter.insert_hash(hash);
         }
 
