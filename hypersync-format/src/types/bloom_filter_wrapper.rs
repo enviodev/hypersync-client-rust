@@ -1,7 +1,9 @@
 use crate::{Error, Hex, Result};
+use nohash_hasher::IntSet;
 use sbbf_rs_safe::Filter;
 use std::fmt;
 use std::result::Result as StdResult;
+use xxhash_rust::xxh3::xxh3_64;
 
 use serde::{
     de::{self, Visitor},
@@ -22,8 +24,31 @@ impl FilterWrapper {
         self.0.contains_hash(hash)
     }
 
-    pub fn insert_hash(&mut self, hash: u64) -> bool {
-        self.0.insert_hash(hash)
+    /// Creates a bloom filter out of a vec of bytes.  Suitable for using
+    /// as a query param that takes a filter.
+    /// bits_per_key defaults to 16
+    pub fn from_keys<'a, I>(keys: I, bits_per_key: Option<usize>) -> Result<Self>
+    where
+        I: Iterator<Item = &'a [u8]>,
+    {
+        let bits_per_key = if let Some(bits) = bits_per_key {
+            bits
+        } else {
+            16
+        };
+
+        // first put into hash set to remove duplicates
+        let keys = keys.into_iter().map(xxh3_64).collect::<IntSet<u64>>();
+        let num_keys = keys.len();
+
+        let mut filter = Filter::new(bits_per_key, num_keys);
+
+        // insert each address into the filter
+        for hash in keys {
+            filter.insert_hash(hash);
+        }
+
+        Ok(FilterWrapper(filter))
     }
 }
 
