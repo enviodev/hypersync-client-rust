@@ -8,15 +8,7 @@ use std::result::Result as StdResult;
 use super::Hex;
 
 #[derive(
-    Debug,
-    Default,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
+    Default, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref,
 )]
 pub struct Data(Box<[u8]>);
 
@@ -112,6 +104,12 @@ fn encode_hex(buf: &[u8]) -> String {
     }
 
     format!("0x{}", faster_hex::hex_string(buf))
+}
+
+impl fmt::Debug for Data {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Data({})", self.encode_hex())
+    }
 }
 
 #[cfg(test)]

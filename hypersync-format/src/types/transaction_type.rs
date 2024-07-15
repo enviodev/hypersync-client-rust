@@ -8,7 +8,6 @@ use super::Hex;
 use crate::{Error, Result};
 
 #[derive(
-    Debug,
     Default,
     Clone,
     Copy,
@@ -72,6 +71,12 @@ impl Hex for TransactionType {
         u8::from_str_radix(value, 16)
             .map_err(|_| Error::DecodeNumberFromHex(hex.to_string()))
             .map(Into::into)
+    }
+}
+
+impl fmt::Debug for TransactionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TransactionType({})", self.encode_hex())
     }
 }
 

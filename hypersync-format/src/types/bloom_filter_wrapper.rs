@@ -10,7 +10,7 @@ use serde::{
 
 use crate::Data;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FilterWrapper(pub Filter);
 
 impl FilterWrapper {
@@ -87,6 +87,12 @@ impl Hex for FilterWrapper {
         Filter::from_bytes(data.as_ref())
             .ok_or(Error::BloomFilterFromBytes)
             .map(FilterWrapper)
+    }
+}
+
+impl fmt::Debug for FilterWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FilterWrapper({})", self.encode_hex())
     }
 }
 

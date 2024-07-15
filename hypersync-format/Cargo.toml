@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-format"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "evm format library"
 license = "MPL-2.0"
@@ -13,7 +13,6 @@ thiserror = "1"
 serde = { version = "1", features = ["derive"] }
 alloy-primitives = "0.7.4"
 sbbf-rs-safe = "0.3.2"
-
 
 [dev-dependencies]
 serde_test = "1"

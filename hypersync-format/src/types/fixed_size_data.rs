@@ -8,7 +8,6 @@ use std::result::Result as StdResult;
 use super::Hex;
 
 #[derive(
-    Debug,
     Clone,
     PartialEq,
     Eq,
@@ -130,6 +129,12 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .ok_or_else(|| Error::InvalidHexPrefix(value.to_owned()))?;
 
     super::util::decode_hex(val).map_err(Error::DecodeHex)
+}
+
+impl<const N: usize> fmt::Debug for FixedSizeData<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FixedSizeData<{}>({})", N, self.encode_hex())
+    }
 }
 
 #[cfg(test)]

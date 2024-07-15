@@ -7,9 +7,7 @@ use std::result::Result as StdResult;
 
 use super::Hex;
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref,
-)]
+#[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref)]
 pub struct Quantity(Box<[u8]>);
 
 impl AsRef<[u8]> for Quantity {
@@ -124,6 +122,12 @@ pub fn encode_hex(buf: &[u8]) -> String {
     match hex_val.find(|c| c != '0') {
         Some(idx) => format!("0x{}", &hex_val[idx..]),
         None => "0x0".into(),
+    }
+}
+
+impl fmt::Debug for Quantity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Quantity({})", self.encode_hex())
     }
 }
 

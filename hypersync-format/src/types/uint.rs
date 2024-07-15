@@ -7,7 +7,6 @@ use std::result::Result as StdResult;
 use std::str::FromStr;
 
 #[derive(
-    Debug,
     Default,
     Clone,
     Copy,
@@ -79,6 +78,12 @@ impl Hex for UInt {
 
     fn decode_hex(hex: &str) -> crate::Result<Self> {
         Self::from_str(hex)
+    }
+}
+
+impl fmt::Debug for UInt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "UInt({})", self.encode_hex())
     }
 }
 

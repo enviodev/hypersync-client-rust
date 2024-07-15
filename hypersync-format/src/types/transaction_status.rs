@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use super::Hex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum TransactionStatus {
     Success,
     Failure,
@@ -93,6 +93,12 @@ impl Hex for TransactionStatus {
 
     fn decode_hex(hex: &str) -> Result<Self> {
         Self::from_str(hex)
+    }
+}
+
+impl fmt::Debug for TransactionStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TransactionStatus({})", self.encode_hex())
     }
 }
 
