@@ -450,7 +450,9 @@ async fn test_small_bloom_filter_query() {
     txn_field_selection.insert("from".to_owned());
     txn_field_selection.insert("hash".to_owned());
 
-    let from_address_filter = FilterWrapper::from_addresses(vec![vitalik_eth_addr.clone()], None);
+    let addrs = vec![vitalik_eth_addr.clone()];
+    let from_address_filter =
+        FilterWrapper::from_addresses(addrs.iter().map(|d| d.as_ref()), None).unwrap();
 
     let query = Query {
         from_block: 19_000_000,

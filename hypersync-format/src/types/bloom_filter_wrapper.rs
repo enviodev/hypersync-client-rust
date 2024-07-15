@@ -27,27 +27,35 @@ impl FilterWrapper {
         self.0.insert_hash(hash)
     }
 
-    /// Creates a bloom filter out of a vec of Addresses.  Suitable for using
+    /// Creates a bloom filter out of a vec of Addresses as bytes.  Suitable for using
     /// as a query param that takes a filter.
     /// bits_per_key defaults to 16
-    pub fn from_addresses(addresses: Vec<Address>, bits_per_key: Option<usize>) -> Self {
+    pub fn from_addresses<'a, I>(addresses: I, bits_per_key: Option<usize>) -> Result<Self>
+    where
+        I: Iterator<Item = &'a [u8]>,
+    {
         let bits_per_key = if let Some(bits) = bits_per_key {
             bits
         } else {
             16
         };
 
+        let addresses: Vec<Address> = addresses
+            .map(|b| b.try_into())
+            .collect::<Result<Vec<Address>>>()?;
+
         let mut filter = FilterWrapper::new(bits_per_key, addresses.len());
 
         // first put into hash set to remove duplicates
         let addresses: HashSet<Address> = addresses.into_iter().collect();
 
+        // insert each address into the filter
         for val in addresses {
             let hash = xxh3_64(val.as_slice());
             filter.insert_hash(hash);
         }
 
-        filter
+        Ok(filter)
     }
 }
 
