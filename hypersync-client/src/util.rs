@@ -112,7 +112,7 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
             .values_iter()
             .map(|val| {
                 let tuple = tuple_decoder
-                    .abi_decode_params(val)
+                    .abi_decode_sequence(val)
                     .context("decode body tuple")
                     .and_then(|v| {
                         let tuple = v
