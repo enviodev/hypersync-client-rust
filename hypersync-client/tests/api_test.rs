@@ -303,7 +303,7 @@ async fn test_parquet_out() {
 #[ignore]
 async fn test_api_preset_query_blocks_and_transactions() {
     let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
-    let query = preset_query::blocks_and_transactions(18_000_000, Some(18_000_100));
+    let query = preset_query::blocks_and_transactions(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_blocks: usize = res
@@ -319,8 +319,8 @@ async fn test_api_preset_query_blocks_and_transactions() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_000_100);
-    assert!(num_blocks == 100);
+    assert_eq!(res.next_block, 18_000_010);
+    assert_eq!(num_blocks, 10);
     assert!(num_txs > 1);
 }
 
@@ -328,7 +328,7 @@ async fn test_api_preset_query_blocks_and_transactions() {
 #[ignore]
 async fn test_api_preset_query_blocks_and_transaction_hashes() {
     let client = Client::new(ClientConfig::default()).unwrap();
-    let query = preset_query::blocks_and_transaction_hashes(18_000_000, Some(18_000_100));
+    let query = preset_query::blocks_and_transaction_hashes(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_blocks: usize = res
@@ -344,8 +344,8 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_000_100);
-    assert!(num_blocks == 100);
+    assert_eq!(res.next_block, 18_000_010);
+    assert_eq!(num_blocks, 10);
     assert!(num_txs > 1);
 }
 
@@ -399,7 +399,7 @@ async fn test_api_preset_query_logs_of_event() {
 #[ignore]
 async fn test_api_preset_query_transactions() {
     let client = Client::new(ClientConfig::default()).unwrap();
-    let query = preset_query::transactions(18_000_000, Some(18_000_100));
+    let query = preset_query::transactions(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
     let num_txs: usize = res
@@ -409,7 +409,7 @@ async fn test_api_preset_query_transactions() {
         .map(|batch| batch.chunk.len())
         .sum();
 
-    assert!(res.next_block == 18_000_100);
+    assert_eq!(res.next_block, 18_000_010);
     assert!(num_txs > 1);
 }
 
