@@ -450,7 +450,7 @@ async fn test_small_bloom_filter_query() {
     txn_field_selection.insert("from".to_owned());
     txn_field_selection.insert("hash".to_owned());
 
-    let addrs = vec![vitalik_eth_addr.clone()];
+    let addrs = [vitalik_eth_addr.clone()];
     let from_address_filter =
         FilterWrapper::from_keys(addrs.iter().map(|d| d.as_ref()), None).unwrap();
 
@@ -486,4 +486,37 @@ async fn test_small_bloom_filter_query() {
 
     assert_eq!(res.next_block, 19_300_000);
     assert_eq!(num_txns, 21);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_decode_string_param_into_arrow() {
+    let client = Arc::new(
+        Client::new(ClientConfig {
+            url: Some("https://mev-commit.hypersync.xyz".parse().unwrap()),
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": 0,
+        "logs": [{
+            "address": ["0xCAC68D97a56b19204Dd3dbDC103CB24D47A825A3"],
+            "topics": [["0xe44dd4d002deb2c79cf08ce285a9d80c69753f31ca65c8e49f0a60d27ed9fea3"]],
+        }],
+        "field_selection": {
+            "log": ["block_number", "topic0", "topic1", "topic2", "topic3", "data", "address"],
+        }
+    }))
+    .unwrap();
+
+    let conf = StreamConfig {
+        event_signature: Some("CommitmentStored(bytes32 indexed commitmentIndex, address bidder, address commiter, uint256 bid, uint64 blockNumber, bytes32 bidHash, uint64 decayStartTimeStamp, uint64 decayEndTimeStamp, string txnHash, string revertingTxHashes, bytes32 commitmentHash, bytes bidSignature, bytes commitmentSignature, uint64 dispatchTimestamp, bytes sharedSecretKey)".into()),
+        ..Default::default()
+    };
+
+    let data = client.collect_arrow(query, conf).await.unwrap();
+
+    dbg!(data.data.decoded_logs);
 }
