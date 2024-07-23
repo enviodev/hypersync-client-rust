@@ -216,6 +216,31 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
 
             Ok(builder.as_box())
         }
+        DynSolType::String => {
+            let mut builder = MutableUtf8Array::<i32>::new();
+
+            for val in vals {
+                let val = match val {
+                    Some(val) => val,
+                    None => {
+                        builder.push_null();
+                        continue;
+                    }
+                };
+
+                match val {
+                    DynSolValue::String(v) => builder.push(Some(v)),
+                    v => {
+                        return Err(anyhow!(
+                            "unexpected output type from decode: {:?}",
+                            v.as_type()
+                        ))
+                    }
+                }
+            }
+
+            Ok(builder.as_box())
+        }
         _ => {
             let mut builder = MutableBinaryArray::<i32>::new();
 
@@ -234,7 +259,6 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
                     DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
                     DynSolValue::Address(v) => builder.push(Some(v)),
                     DynSolValue::Bytes(v) => builder.push(Some(v)),
-                    DynSolValue::String(v) => builder.push(Some(v)),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -275,6 +299,31 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
 
             Ok(builder.as_box())
         }
+        DynSolType::String => {
+            let mut builder = MutableUtf8Array::<i32>::new();
+
+            for val in col.iter() {
+                let val = match val {
+                    Some(val) => val,
+                    None => {
+                        builder.push_null();
+                        continue;
+                    }
+                };
+
+                match decoder.abi_decode(val).context("decode sol value")? {
+                    DynSolValue::String(v) => builder.push(Some(v)),
+                    v => {
+                        return Err(anyhow!(
+                            "unexpected output type from decode: {:?}",
+                            v.as_type()
+                        ))
+                    }
+                }
+            }
+
+            Ok(builder.as_box())
+        }
         _ => {
             let mut builder = MutableBinaryArray::<i32>::new();
 
@@ -293,7 +342,6 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
                     DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
                     DynSolValue::Address(v) => builder.push(Some(v)),
                     DynSolValue::Bytes(v) => builder.push(Some(v)),
-                    DynSolValue::String(v) => builder.push(Some(v)),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -375,7 +423,7 @@ fn simple_type_to_data_type(ty: &DynSolType) -> Result<DataType> {
         DynSolType::FixedBytes(_) => Ok(DataType::Binary),
         DynSolType::Address => Ok(DataType::Binary),
         DynSolType::Bytes => Ok(DataType::Binary),
-        DynSolType::String => Ok(DataType::Binary),
+        DynSolType::String => Ok(DataType::Utf8),
         ty => Err(anyhow!(
             "Complex types are not supported. Unexpected type: {}",
             ty
