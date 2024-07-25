@@ -1,13 +1,21 @@
-use alloy_dyn_abi::{DecodedEvent, DynSolEvent, Specifier};
-use anyhow::{anyhow, Context, Result};
-use hypersync_format::LogArgument;
-
 use crate::simple_types::Log;
+use alloy_dyn_abi::{DecodedEvent, DynSolEvent, Specifier};
+use anyhow::{Context, Result};
+use hypersync_format::LogArgument;
+use std::collections::HashMap;
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+struct EventKey {
+    topic0: Vec<u8>,
+    num_topics: usize,
+}
+
+type DecoderMap = HashMap<EventKey, DynSolEvent>;
 
 /// Decode logs parsing topics and log data.
 pub struct Decoder {
     // A map of topic0 => Event decoder
-    map: Vec<(Vec<u8>, DynSolEvent)>,
+    map: DecoderMap,
 }
 
 impl Decoder {
@@ -18,32 +26,19 @@ impl Decoder {
     ///        "Transfer(address indexed from, address indexed to, uint amount)",
     ///     ]).unwrap();
     pub fn from_signatures<S: AsRef<str>>(signatures: &[S]) -> Result<Self> {
-        let mut map = signatures
+        let map: DecoderMap = signatures
             .iter()
             .map(|sig| {
                 let event =
                     alloy_json_abi::Event::parse(sig.as_ref()).context("parse event signature")?;
                 let topic0 = event.selector().to_vec();
+                let num_topics = event.num_topics();
+                let event_key = EventKey { topic0, num_topics };
                 let event = event.resolve().context("resolve event")?;
-                Ok((topic0, event))
+                Ok((event_key, event))
             })
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<DecoderMap>>()
             .context("construct event decoder map")?;
-
-        map.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-
-        let initial_len = map.len();
-
-        map.dedup_by(|a, b| a.0 == b.0);
-
-        let new_len = map.len();
-
-        if initial_len != new_len {
-            return Err(anyhow!(
-                "duplicate event signature selectors (topic0) found.
-This might be because the 'indexed' keyword doesn't effect the selector of an event signature."
-            ));
-        }
 
         Ok(Self { map })
     }
@@ -69,8 +64,22 @@ This might be because the 'indexed' keyword doesn't effect the selector of an ev
         topics: &[Option<LogArgument>],
         data: &[u8],
     ) -> Result<Option<DecodedEvent>> {
-        let event = match self.map.iter().find(|e| e.0 == topic0) {
-            Some(event) => &event.1,
+        let event_key = EventKey {
+            topic0: topic0.into(),
+            num_topics: topics.iter().fold(
+                0,
+                |accum, topic| {
+                    if topic.is_some() {
+                        accum + 1
+                    } else {
+                        accum
+                    }
+                },
+            ),
+        };
+
+        let event = match self.map.get(&event_key) {
+            Some(event) => event,
             None => return Ok(None),
         };
 
