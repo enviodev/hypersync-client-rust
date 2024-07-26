@@ -54,6 +54,8 @@ pub struct StreamConfig {
     pub response_bytes_ceiling: Option<u64>,
     /// Size of a response in bytes from which step size will be increased
     pub response_bytes_floor: Option<u64>,
+    /// Stream data in reverse order
+    pub reverse: Option<bool>,
 }
 
 /// Determines format of Binary column

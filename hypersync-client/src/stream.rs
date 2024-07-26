@@ -7,8 +7,13 @@ use std::{
     },
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::Query;
+use polars_arrow::{
+    array::{Array, BinaryArray, BooleanArray, UInt64Array, UInt8Array, Utf8Array},
+    datatypes::ArrowDataType,
+    record_batch::RecordBatch,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -31,6 +36,7 @@ pub async fn stream_arrow(
     let min_batch_size = config.min_batch_size.unwrap_or(200);
     let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(500_000);
     let response_size_floor = config.response_bytes_floor.unwrap_or(250_000);
+    let reverse = config.reverse.unwrap_or_default();
 
     let step = Arc::new(AtomicU64::new(batch_size));
 
@@ -43,29 +49,32 @@ pub async fn stream_arrow(
 
     tokio::spawn(async move {
         let mut query = query;
-        let initial_res = client.get_arrow(&query).await.context("get initial data");
-        match initial_res {
-            Ok(res) => {
-                let res = match map_responses(config.clone(), vec![res]).await {
-                    Ok(mut resps) => resps.remove(0),
-                    Err(e) => {
-                        tx.send(Err(e)).await.ok();
+
+        if !reverse {
+            let initial_res = client.get_arrow(&query).await.context("get initial data");
+            match initial_res {
+                Ok(res) => {
+                    let res = match map_responses(config.clone(), vec![res], reverse).await {
+                        Ok(mut resps) => resps.remove(0),
+                        Err(e) => {
+                            tx.send(Err(e)).await.ok();
+                            return;
+                        }
+                    };
+
+                    query.from_block = res.next_block;
+                    if tx.send(Ok(res)).await.is_err() {
                         return;
                     }
-                };
-
-                query.from_block = res.next_block;
-                if tx.send(Ok(res)).await.is_err() {
+                }
+                Err(e) => {
+                    tx.send(Err(e)).await.ok();
                     return;
                 }
             }
-            Err(e) => {
-                tx.send(Err(e)).await.ok();
-                return;
-            }
         }
 
-        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone());
+        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone(), reverse);
 
         let mut futs = range_iter
             .enumerate()
@@ -142,7 +151,7 @@ pub async fn stream_arrow(
             };
 
             let (resps, resps_size) = resps;
-            let resps = match map_responses(config.clone(), resps).await {
+            let resps = match map_responses(config.clone(), resps, reverse).await {
                 Ok(resps) => resps,
                 Err(e) => {
                     tx.send(Err(e)).await.ok();
@@ -216,8 +225,13 @@ fn check_entity_limit(val: usize, limit: Option<usize>) -> bool {
 
 async fn map_responses(
     cfg: StreamConfig,
-    responses: Vec<ArrowResponse>,
+    mut responses: Vec<ArrowResponse>,
+    reverse: bool,
 ) -> Result<Vec<ArrowResponse>> {
+    if reverse {
+        responses.reverse();
+    }
+
     rayon_async::spawn(move || {
         responses
             .into_iter()
@@ -236,6 +250,7 @@ async fn map_responses(
                                         cfg.column_mapping.as_ref().map(|cm| &cm.decoded_log),
                                         cfg.hex_output,
                                         batch,
+                                        reverse,
                                     )
                                     .context("map batch")
                                 })
@@ -251,6 +266,7 @@ async fn map_responses(
                                     cfg.column_mapping.as_ref().map(|cm| &cm.block),
                                     cfg.hex_output,
                                     batch,
+                                    reverse,
                                 )
                             })
                             .collect::<Result<Vec<_>>>()?,
@@ -263,6 +279,7 @@ async fn map_responses(
                                     cfg.column_mapping.as_ref().map(|cm| &cm.transaction),
                                     cfg.hex_output,
                                     batch,
+                                    reverse,
                                 )
                             })
                             .collect::<Result<Vec<_>>>()?,
@@ -275,6 +292,7 @@ async fn map_responses(
                                     cfg.column_mapping.as_ref().map(|cm| &cm.log),
                                     cfg.hex_output,
                                     batch,
+                                    reverse,
                                 )
                             })
                             .collect::<Result<Vec<_>>>()?,
@@ -287,6 +305,7 @@ async fn map_responses(
                                     cfg.column_mapping.as_ref().map(|cm| &cm.trace),
                                     cfg.hex_output,
                                     batch,
+                                    reverse,
                                 )
                             })
                             .collect::<Result<Vec<_>>>()?,
@@ -304,7 +323,24 @@ fn map_batch(
     column_mapping: Option<&BTreeMap<String, crate::DataType>>,
     hex_output: HexOutput,
     mut batch: ArrowBatch,
+    reverse: bool,
 ) -> Result<ArrowBatch> {
+    if reverse {
+        let cols = batch
+            .chunk
+            .columns()
+            .iter()
+            .rev()
+            .map(|a| reverse_array(a.as_ref()))
+            .collect::<Result<Vec<_>>>()
+            .context("reverse the arrays")?;
+        let chunk = Arc::new(RecordBatch::new(cols));
+        batch = ArrowBatch {
+            chunk,
+            schema: batch.schema,
+        };
+    }
+
     if let Some(map) = column_mapping {
         batch =
             crate::column_mapping::apply_to_batch(&batch, map).context("apply column mapping")?;
@@ -317,6 +353,62 @@ fn map_batch(
     }
 
     Ok(batch)
+}
+
+fn reverse_array(array: &dyn Array) -> Result<Box<dyn Array>> {
+    match array.data_type() {
+        ArrowDataType::Binary => Ok(BinaryArray::<i32>::from_iter(
+            array
+                .as_any()
+                .downcast_ref::<BinaryArray<i32>>()
+                .unwrap()
+                .iter()
+                .rev(),
+        )
+        .boxed()),
+        ArrowDataType::Utf8 => Ok(Utf8Array::<i32>::from_iter(
+            array
+                .as_any()
+                .downcast_ref::<Utf8Array<i32>>()
+                .unwrap()
+                .iter()
+                .rev(),
+        )
+        .boxed()),
+        ArrowDataType::Boolean => Ok(BooleanArray::from_iter(
+            array
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .iter()
+                .rev(),
+        )
+        .boxed()),
+        ArrowDataType::UInt64 => Ok(UInt64Array::from_iter(
+            array
+                .as_any()
+                .downcast_ref::<UInt64Array>()
+                .unwrap()
+                .iter()
+                .map(|opt| opt.copied())
+                .rev(),
+        )
+        .boxed()),
+        ArrowDataType::UInt8 => Ok(UInt8Array::from_iter(
+            array
+                .as_any()
+                .downcast_ref::<UInt8Array>()
+                .unwrap()
+                .iter()
+                .map(|opt| opt.copied())
+                .rev(),
+        )
+        .boxed()),
+        dt => Err(anyhow!(
+            "reversing an array of datatype {:?} is not supported",
+            dt
+        )),
+    }
 }
 
 async fn run_query_to_end(
@@ -356,11 +448,17 @@ pub struct BlockRangeIterator {
     offset: u64,
     end: u64,
     step: Arc<AtomicU64>,
+    reverse: bool,
 }
 
 impl BlockRangeIterator {
-    pub fn new(offset: u64, end: u64, step: Arc<AtomicU64>) -> Self {
-        Self { offset, end, step }
+    pub fn new(offset: u64, end: u64, step: Arc<AtomicU64>, reverse: bool) -> Self {
+        Self {
+            offset,
+            end,
+            step,
+            reverse,
+        }
     }
 }
 
@@ -380,7 +478,12 @@ impl Iterator for BlockRangeIterator {
         let generation = (step >> 32) as u32;
         let batch_size = step as u32;
 
-        self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
-        Some((start, self.offset, generation))
+        if self.reverse {
+            self.offset = cmp::max(self.offset - u64::from(batch_size), start);
+            Some((start, self.offset, generation))
+        } else {
+            self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
+            Some((start, self.offset, generation))
+        }
     }
 }
