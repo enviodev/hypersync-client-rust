@@ -230,6 +230,12 @@ async fn map_responses(
 ) -> Result<Vec<ArrowResponse>> {
     if reverse {
         responses.reverse();
+        for resp in responses.iter_mut() {
+            resp.data.blocks.reverse();
+            resp.data.transactions.reverse();
+            resp.data.logs.reverse();
+            resp.data.traces.reverse();
+        }
     }
 
     rayon_async::spawn(move || {
@@ -330,7 +336,6 @@ fn map_batch(
             .chunk
             .columns()
             .iter()
-            .rev()
             .map(|a| reverse_array(a.as_ref()))
             .collect::<Result<Vec<_>>>()
             .context("reverse the arrays")?;
@@ -452,12 +457,21 @@ pub struct BlockRangeIterator {
 }
 
 impl BlockRangeIterator {
-    pub fn new(offset: u64, end: u64, step: Arc<AtomicU64>, reverse: bool) -> Self {
-        Self {
-            offset,
-            end,
-            step,
-            reverse,
+    pub fn new(start: u64, end: u64, step: Arc<AtomicU64>, reverse: bool) -> Self {
+        if reverse {
+            Self {
+                offset: end,
+                end: start,
+                step,
+                reverse,
+            }
+        } else {
+            Self {
+                offset: start,
+                end,
+                step,
+                reverse,
+            }
         }
     }
 }
@@ -479,8 +493,8 @@ impl Iterator for BlockRangeIterator {
         let batch_size = step as u32;
 
         if self.reverse {
-            self.offset = cmp::max(self.offset - u64::from(batch_size), start);
-            Some((start, self.offset, generation))
+            self.offset = cmp::max(self.offset.saturating_sub(u64::from(batch_size)), self.end);
+            Some((self.offset, start, generation))
         } else {
             self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
             Some((start, self.offset, generation))
