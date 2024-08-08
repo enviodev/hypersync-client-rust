@@ -281,7 +281,7 @@ impl Client {
                         "failed to get height from server, retrying... The error was: {:?}",
                         e
                     );
-                    err = err.context(e);
+                    err = err.context(format!("{:?}", e));
                 }
             }
 
@@ -373,7 +373,7 @@ impl Client {
                         "failed to get arrow data from server, retrying... The error was: {:?}",
                         e
                     );
-                    err = err.context(e);
+                    err = err.context(format!("{:?}", e));
                 }
             }
 
