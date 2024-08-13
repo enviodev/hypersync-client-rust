@@ -56,12 +56,12 @@ impl CallDecoder {
         Ok(Some(decoded))
     }
 
-    /// Parse input data and return result
+    /// Parse output data and return result
     ///
     /// Returns Ok(None) if signature not found.
     pub fn decode_output(&self, data: &Data) -> Result<Option<Vec<DynSolValue>>> {
         let function_key = FunctionKey {
-            signature: data.to_vec(),
+            signature: data[0..4].to_vec(),
         };
         let function = match self.map.get(&function_key) {
             Some(function) => function,
