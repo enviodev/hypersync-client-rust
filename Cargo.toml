@@ -8,5 +8,7 @@ members = [
     "hypersync-schema",
     "examples/all_erc20",
     "examples/wallet",
-    "examples/watch", "examples/reverse_wallet",
+    "examples/watch",
+    "examples/reverse_wallet",
+    "examples/call_watch",
 ]

@@ -28,8 +28,7 @@ impl CallDecoder {
         let map: DecoderMap = signatures
             .iter()
             .map(|sig| {
-                let function = alloy_json_abi::Function::parse(sig.as_ref())
-                    .context("parse event signature")?;
+                let function = Function::parse(sig.as_ref()).context("parse event signature")?;
                 let signature = function.selector().to_vec();
                 let event_key = FunctionKey { signature };
                 Ok((event_key, function))
@@ -45,7 +44,7 @@ impl CallDecoder {
     /// Returns Ok(None) if signature not found.
     pub fn decode_input(&self, data: &Data) -> Result<Option<Vec<DynSolValue>>> {
         let function_key = FunctionKey {
-            signature: data.to_vec(),
+            signature: data[0..4].to_vec(),
         };
         let function = match self.map.get(&function_key) {
             Some(function) => function,
