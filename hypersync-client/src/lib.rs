@@ -10,6 +10,7 @@ use reqwest::Method;
 mod column_mapping;
 mod config;
 mod decode;
+mod decode_call;
 mod from_arrow;
 mod parquet_out;
 mod parse_response;
