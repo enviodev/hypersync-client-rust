@@ -36,7 +36,11 @@ async fn main() {
     }))
     .unwrap();
 
-    let decoder = CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
+    let decoder = CallDecoder::from_signatures(&[
+        "transfer(address dst, uint256 wad)",
+        "transferFrom(address src, address dst, uint256 wad)",
+    ])
+    .unwrap();
 
     loop {
         let res = client.get(&query).await.unwrap();
