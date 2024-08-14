@@ -10,6 +10,7 @@ use reqwest::Method;
 mod column_mapping;
 mod config;
 mod decode;
+mod decode_call;
 mod from_arrow;
 mod parquet_out;
 mod parse_response;
@@ -35,6 +36,7 @@ pub use column_mapping::{ColumnMapping, DataType};
 pub use config::HexOutput;
 pub use config::{ClientConfig, StreamConfig};
 pub use decode::Decoder;
+pub use decode_call::CallDecoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
