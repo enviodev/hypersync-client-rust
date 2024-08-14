@@ -101,6 +101,7 @@ pub struct TraceSelection {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Query {
     /// The block to start the query from
     pub from_block: u64,
