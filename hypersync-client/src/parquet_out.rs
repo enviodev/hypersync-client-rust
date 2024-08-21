@@ -5,11 +5,13 @@ use hypersync_net_types::Query;
 use hypersync_schema::concat_chunks;
 use polars_arrow::{datatypes::ArrowSchema as Schema, legacy::error::PolarsError};
 use polars_parquet::parquet::write::FileStreamer;
+use polars_parquet::write::StatisticsOptions;
 use polars_parquet::{
     read::ParquetError,
     write::{
         array_to_columns, to_parquet_schema, to_parquet_type, transverse, CompressedPage, DynIter,
-        DynStreamingIterator, Encoding, FallibleStreamingIterator, RowGroupIter, WriteOptions,
+        DynStreamingIterator, Encoding, FallibleStreamingIterator,
+        RowGroupIterColumns as RowGroupIter, WriteOptions,
     },
 };
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -254,10 +256,10 @@ async fn run_writer(mut rx: mpsc::Receiver<ArrowBatch>, path: PathBuf) -> Result
                 let rg = encode_row_group(
                     batch,
                     WriteOptions {
-                        write_statistics: true,
+                        statistics: StatisticsOptions::default(),
                         version: polars_parquet::write::Version::V2,
                         compression: polars_parquet::write::CompressionOptions::Lz4Raw,
-                        data_pagesize_limit: None,
+                        data_page_size: None,
                     },
                 )
                 .context("encode row group")?;

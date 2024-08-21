@@ -1,13 +1,13 @@
 [package]
 name = "hypersync-format"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "evm format library"
 license = "MPL-2.0"
 
 [dependencies]
 arrayvec = { version = "0.7", features = ["serde"] }
-derive_more = "0.99"
+derive_more = { version = "1", features = ["full"] }
 faster-hex = "0.9"
 thiserror = "1"
 serde = { version = "1", features = ["derive"] }

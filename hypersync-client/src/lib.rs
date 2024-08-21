@@ -4,7 +4,7 @@ use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::{ArchiveHeight, Query};
-use polars_arrow::{array::Array, record_batch::RecordBatch as Chunk};
+use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
 use reqwest::Method;
 
 mod column_mapping;
