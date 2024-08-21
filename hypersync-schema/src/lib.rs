@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use polars_arrow::array::{new_empty_array, Array};
+use polars_arrow::array::{new_empty_array, Array, BinaryArray, Utf8Array};
 use polars_arrow::compute;
 use polars_arrow::datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field, SchemaRef};
 use polars_arrow::record_batch::RecordBatchT as Chunk;
@@ -154,17 +154,43 @@ pub fn concat_chunks(chunks: &[Arc<ArrowChunk>]) -> Result<ArrowChunk> {
 
     let cols = (0..num_cols)
         .map(|col| {
+            let mut is_utf8 = false;
             let arrs = chunks
                 .iter()
                 .map(|chunk| {
-                    chunk
+                    let col = chunk
                         .columns()
                         .get(col)
                         .map(|col| col.as_ref())
-                        .context("get column")
+                        .context("get column")?;
+                    is_utf8 = col.data_type() == &DataType::Utf8;
+                    Ok(col)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            compute::concatenate::concatenate(&arrs).context("concat arrays")
+            if !is_utf8 {
+                compute::concatenate::concatenate(&arrs).context("concat arrays")
+            } else {
+                let arrs = arrs
+                    .into_iter()
+                    .map(|a| {
+                        a.as_any()
+                            .downcast_ref::<Utf8Array<i32>>()
+                            .unwrap()
+                            .to_binary()
+                            .boxed()
+                    })
+                    .collect::<Vec<_>>();
+                let arrs = arrs.iter().map(|a| a.as_ref()).collect::<Vec<_>>();
+                let arr =
+                    compute::concatenate::concatenate(arrs.as_slice()).context("concat arrays")?;
+
+                Ok(compute::cast::binary_to_utf8(
+                    arr.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+                    DataType::Utf8,
+                )
+                .unwrap()
+                .boxed())
+            }
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -188,5 +214,31 @@ mod tests {
         block_header();
         transaction();
         log();
+        trace();
+    }
+
+    #[test]
+    fn test_concat_utf8() {
+        let chunks = [
+            Arc::new(Chunk::new(vec![Utf8Array::<i32>::from(&[Some(
+                "hello".to_owned(),
+            )])
+            .boxed()])),
+            Arc::new(Chunk::new(vec![Utf8Array::<i32>::from(&[Some(
+                "world".to_owned(),
+            )])
+            .boxed()])),
+        ];
+
+        let out = concat_chunks(&chunks).unwrap();
+
+        assert_eq!(
+            out,
+            ArrowChunk::new(vec![Utf8Array::<i32>::from(&[
+                Some("hello".to_owned()),
+                Some("world".to_owned())
+            ])
+            .boxed(),])
+        )
     }
 }
