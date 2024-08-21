@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use polars_arrow::array::{new_empty_array, Array};
 use polars_arrow::compute;
 use polars_arrow::datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field, SchemaRef};
-use polars_arrow::record_batch::RecordBatch as Chunk;
+use polars_arrow::record_batch::RecordBatchT as Chunk;
 
 mod util;
 

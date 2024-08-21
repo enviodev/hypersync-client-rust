@@ -6,7 +6,7 @@ use polars_arrow::array::{
     Array, BinaryArray, Float32Array, Float64Array, Int32Array, Int64Array, MutablePrimitiveArray,
     PrimitiveArray, UInt32Array, UInt64Array,
 };
-use polars_arrow::compute::cast::CastOptions;
+use polars_arrow::compute::cast::CastOptionsImpl as CastOptions;
 use polars_arrow::compute::{self, cast};
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
 use polars_arrow::types::NativeType;
