@@ -190,6 +190,11 @@ pub struct ArchiveHeight {
     pub height: Option<u64>,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize, Debug)]
+pub struct ChainId {
+    pub chain_id: u64,
+}
+
 /// Guard for detecting rollbacks
 #[derive(Debug, Clone, Serialize)]
 pub struct RollbackGuard {

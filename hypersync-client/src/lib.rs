@@ -3,7 +3,7 @@
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use hypersync_net_types::{ArchiveHeight, Query};
+use hypersync_net_types::{ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
 use reqwest::Method;
 
@@ -241,7 +241,31 @@ impl Client {
         parquet_out::collect_parquet(self, path, query, config).await
     }
 
-    /// Internal implementation of getting height of Client instance.
+    /// Internal implementation of getting chain_id from server
+    async fn get_chain_id_impl(&self) -> Result<u64> {
+        let mut url = self.url.clone();
+        let mut segments = url.path_segments_mut().ok().context("get path segments")?;
+        segments.push("chain_id");
+        std::mem::drop(segments);
+        let mut req = self.http_client.request(Method::GET, url);
+
+        if let Some(bearer_token) = &self.bearer_token {
+            req = req.bearer_auth(bearer_token);
+        }
+
+        let res = req.send().await.context("execute http req")?;
+
+        let status = res.status();
+        if !status.is_success() {
+            return Err(anyhow!("http response status code {}", status));
+        }
+
+        let chain_id: ChainId = res.json().await.context("read response body json")?;
+
+        Ok(chain_id.chain_id)
+    }
+
+    /// Internal implementation of getting height from server
     async fn get_height_impl(&self, http_timeout_override: Option<Duration>) -> Result<u64> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
@@ -269,7 +293,39 @@ impl Client {
         Ok(height.height.unwrap_or(0))
     }
 
-    /// Get the height of the Client instance with retries.
+    /// Get the chain_id from the server with retries.
+    pub async fn get_chain_id(&self) -> Result<u64> {
+        let mut base = self.retry_base_ms;
+
+        let mut err = anyhow!("");
+
+        for _ in 0..self.max_num_retries + 1 {
+            match self.get_chain_id_impl().await {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    log::error!(
+                        "failed to get chain_id from server, retrying... The error was: {:?}",
+                        e
+                    );
+                    err = err.context(format!("{:?}", e));
+                }
+            }
+
+            let base_ms = Duration::from_millis(base);
+            let jitter = Duration::from_millis(fastrange_rs::fastrange_64(
+                rand::random(),
+                self.retry_backoff_ms,
+            ));
+
+            tokio::time::sleep(base_ms + jitter).await;
+
+            base = std::cmp::min(base + self.retry_backoff_ms, self.retry_ceiling_ms);
+        }
+
+        Err(err)
+    }
+
+    /// Get the height of from server with retries.
     pub async fn get_height(&self) -> Result<u64> {
         let mut base = self.retry_base_ms;
 
