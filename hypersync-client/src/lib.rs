@@ -18,6 +18,8 @@ pub mod preset_query;
 mod rayon_async;
 pub mod simple_types;
 mod stream;
+#[cfg(feature = "ethers")]
+pub mod to_ethers;
 mod types;
 mod util;
 
@@ -42,7 +44,7 @@ pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 type ArrowChunk = Chunk<Box<dyn Array>>;
 
 /// Internal client to handle http requests and retries.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Client {
     /// Initialized reqwest instance for client url.
     http_client: reqwest::Client,

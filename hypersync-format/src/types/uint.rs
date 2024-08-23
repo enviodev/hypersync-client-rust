@@ -36,6 +36,27 @@ impl FromStr for UInt {
     }
 }
 
+#[cfg(feature = "ethers")]
+impl From<ethabi::ethereum_types::U64> for UInt {
+    fn from(value: ethabi::ethereum_types::U64) -> Self {
+        value.0[0].into()
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<UInt> for ethabi::ethereum_types::U64 {
+    fn from(value: UInt) -> Self {
+        value.0.into()
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<UInt> for ethabi::ethereum_types::U256 {
+    fn from(value: UInt) -> Self {
+        value.0.into()
+    }
+}
+
 struct UIntVisitor;
 
 impl<'de> Visitor<'de> for UIntVisitor {

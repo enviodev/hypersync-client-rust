@@ -1,11 +1,10 @@
+use super::Hex;
 use crate::{Error, Result};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt;
 use std::result::Result as StdResult;
-
-use super::Hex;
 
 #[derive(Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref)]
 pub struct Quantity(Box<[u8]>);
@@ -22,6 +21,50 @@ impl From<Vec<u8>> for Quantity {
         assert!(buf.len() == 1 || buf[0] != 0);
 
         Self(buf.into())
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<ethabi::ethereum_types::U256> for Quantity {
+    fn from(value: ethabi::ethereum_types::U256) -> Self {
+        let mut buf = Box::new([]);
+        value.to_big_endian(buf.as_mut());
+        Self(buf)
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl TryFrom<Quantity> for ethabi::ethereum_types::U256 {
+    type Error = ();
+
+    fn try_from(value: Quantity) -> StdResult<Self, Self::Error> {
+        // Comparison comes from assert!($n_words * 8 >= slice.len());
+        if value.0.len() > 32 {
+            return Err(());
+        }
+        Ok(ethabi::ethereum_types::U256::from_big_endian(&value.0))
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<ethabi::ethereum_types::U64> for Quantity {
+    fn from(value: ethabi::ethereum_types::U64) -> Self {
+        let mut buf = Box::new([]);
+        value.to_big_endian(buf.as_mut());
+        Self(buf)
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl TryFrom<Quantity> for ethabi::ethereum_types::U64 {
+    type Error = ();
+
+    fn try_from(value: Quantity) -> StdResult<Self, Self::Error> {
+        // Comparison comes from assert!($n_words * 8 >= slice.len());
+        if value.0.len() > 32 {
+            return Err(());
+        }
+        Ok(ethabi::ethereum_types::U64::from_big_endian(&value.0))
     }
 }
 

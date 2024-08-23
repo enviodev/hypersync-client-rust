@@ -1,11 +1,10 @@
+use super::Hex;
 use crate::{Error, Result};
 use alloy_primitives::FixedBytes;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::result::Result as StdResult;
-
-use super::Hex;
 
 #[derive(
     Clone,
@@ -68,6 +67,41 @@ impl<const N: usize> TryFrom<Vec<u8>> for FixedSizeData<N> {
         })?;
 
         Ok(FixedSizeData(buf))
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<FixedSizeData<32>> for ethabi::ethereum_types::H256 {
+    fn from(value: FixedSizeData<32>) -> Self {
+        ethabi::ethereum_types::H256(*value.0)
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<ethabi::ethereum_types::H256> for FixedSizeData<32> {
+    fn from(value: ethabi::ethereum_types::H256) -> Self {
+        value.0.into()
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<FixedSizeData<20>> for ethabi::ethereum_types::H160 {
+    fn from(value: FixedSizeData<20>) -> Self {
+        ethabi::ethereum_types::H160(*value.0)
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<FixedSizeData<8>> for ethabi::ethereum_types::H64 {
+    fn from(value: FixedSizeData<8>) -> Self {
+        ethabi::ethereum_types::H64(*value.0)
+    }
+}
+
+#[cfg(feature = "ethers")]
+impl From<ethabi::ethereum_types::H160> for FixedSizeData<20> {
+    fn from(value: ethabi::ethereum_types::H160) -> Self {
+        FixedSizeData::<20>(Box::new(value.0))
     }
 }
 
