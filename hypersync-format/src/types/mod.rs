@@ -97,6 +97,8 @@ pub struct Transaction {
     pub to: Option<Address>,
     pub transaction_index: TransactionIndex,
     pub value: Quantity,
+    #[serde(rename = "type")]
+    pub kind: Option<TransactionType>,
     pub v: Option<Quantity>,
     pub r: Option<Quantity>,
     pub s: Option<Quantity>,
