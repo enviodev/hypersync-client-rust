@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-net-types"
-version = "0.7.2"
+version = "0.8.0"
 edition = "2021"
 description = "hypersync types for transport over network"
 license = "MPL-2.0"
@@ -10,7 +10,7 @@ capnp = "0.19"
 serde = { version = "1", features = ["derive"] }
 arrayvec = { version = "0.7", features = ["serde"] }
 
-hypersync-format = { path = "../hypersync-format", version = "0.2" }
+hypersync-format = { path = "../hypersync-format", version = "0.3" }
 
 [build-dependencies]
 capnpc = "0.19"
