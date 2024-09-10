@@ -46,7 +46,7 @@ bincode = "1"
 nohash-hasher = "0.2.0"
 
 hypersync-net-types = { path = "../hypersync-net-types", version = "0.7" }
-hypersync-format = { path = "../hypersync-format", version = "0.3" }
+hypersync-format = { path = "../hypersync-format", version = "0.2" }
 hypersync-schema = { path = "../hypersync-schema", version = "0.2" }
 
 [dependencies.reqwest]
