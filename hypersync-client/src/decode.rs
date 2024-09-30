@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use hypersync_format::LogArgument;
 use std::collections::HashMap;
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone)]
 struct EventKey {
     topic0: Vec<u8>,
     num_topics: usize,
@@ -13,6 +13,7 @@ struct EventKey {
 type DecoderMap = HashMap<EventKey, DynSolEvent>;
 
 /// Decode logs parsing topics and log data.
+#[derive(Debug)]
 pub struct Decoder {
     // A map of topic0 => Event decoder
     map: DecoderMap,

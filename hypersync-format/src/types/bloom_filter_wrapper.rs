@@ -31,11 +31,7 @@ impl FilterWrapper {
     where
         I: Iterator<Item = &'a [u8]>,
     {
-        let bits_per_key = if let Some(bits) = bits_per_key {
-            bits
-        } else {
-            16
-        };
+        let bits_per_key = bits_per_key.unwrap_or(16);
 
         // first put into hash set to remove duplicates
         let keys = keys.into_iter().map(xxh3_64).collect::<IntSet<u64>>();

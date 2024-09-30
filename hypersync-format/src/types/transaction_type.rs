@@ -21,7 +21,7 @@ use crate::{Error, Result};
     derive_more::Add,
     derive_more::Sub,
 )]
-pub struct TransactionType(u8);
+pub struct TransactionType(pub u8);
 
 struct TransactionTypeVisitor;
 

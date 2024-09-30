@@ -10,6 +10,7 @@ mod transaction_status;
 mod transaction_type;
 mod uint;
 mod util;
+mod withdrawal;
 
 pub use bloom_filter_wrapper::FilterWrapper;
 pub use data::Data;
@@ -18,6 +19,7 @@ pub use hex::Hex;
 pub use quantity::Quantity;
 pub use transaction_status::TransactionStatus;
 pub use transaction_type::TransactionType;
+pub use withdrawal::Withdrawal;
 
 /// Evm block header object
 ///
@@ -54,18 +56,6 @@ pub struct BlockHeader {
     pub send_count: Option<Quantity>,
     pub send_root: Option<Hash>,
     pub mix_hash: Option<Hash>,
-}
-
-/// Evm withdrawal object
-///
-/// See ethereum rpc spec for the meaning of fields
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Withdrawal {
-    pub index: Option<Quantity>,
-    pub validator_index: Option<Quantity>,
-    pub address: Option<Address>,
-    pub amount: Option<Quantity>,
 }
 
 /// Evm block object
