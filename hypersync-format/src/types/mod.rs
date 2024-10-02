@@ -207,6 +207,31 @@ pub struct TraceResult {
     pub output: Option<Data>,
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugBlockTrace {
+    pub result: DebugTxTrace,
+    pub tx_hash: Hash,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugTxTrace {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub from: Option<Address>,
+    pub to: Option<Address>,
+    pub value: Option<Quantity>,
+    pub gas: Option<Quantity>,
+    pub gas_used: Option<Quantity>,
+    pub input: Option<Data>,
+    pub output: Option<Data>,
+    pub error: Option<String>,
+    pub revert_reason: Option<String>,
+    #[serde(default)]
+    pub calls: Vec<DebugTxTrace>,
+}
+
 /// EVM hash is 32 bytes of data
 pub type Hash = FixedSizeData<32>;
 
