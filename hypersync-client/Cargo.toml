@@ -35,8 +35,8 @@ log = "0.4"
 fastrange-rs = "0.1"
 rand = "0.8"
 tokio-util = { version = "0.7.10", features = ["compat"] }
-alloy-dyn-abi = "0.7"
-alloy-json-abi = "0.7"
+alloy-dyn-abi = "0.8"
+alloy-json-abi = "0.8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 num_cpus = "1"
 rayon = "1"
@@ -44,11 +44,11 @@ faster-hex = "0.9"
 ruint = "1"
 bincode = "1"
 nohash-hasher = "0.2.0"
+ethers = { version = "2.0.14", optional = true }
 
 hypersync-net-types = { path = "../hypersync-net-types", version = "0.8" }
-hypersync-format = { path = "../hypersync-format", version = "0.3" }
+hypersync-format = { path = "../hypersync-format", version = "0.4" }
 hypersync-schema = { path = "../hypersync-schema", version = "0.2" }
-ethers = { version = "2.0.14", optional = true }
 
 [dependencies.reqwest]
 version = "0.12"
@@ -60,7 +60,7 @@ maplit = "1"
 hex-literal = "0.4"
 uuid = { version = "1", features = ["v4"] }
 env_logger = "0.11"
-alloy-primitives="0.7"
+alloy-primitives="0.8"
 
 [features]
 ethers = ["dep:ethers"]
