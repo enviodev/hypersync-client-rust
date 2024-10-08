@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use anyhow::{Context, Error};
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, FixedSizeData, Hash, LogArgument};
 use schemars::{
@@ -42,9 +43,25 @@ impl JsonSchema for HashWrapper {
     }
 }
 
+impl TryFrom<&[u8]> for HashWrapper {
+    type Error = Error;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Hash::try_from(value)
+            .map(HashWrapper)
+            .context("Failed to convert bytes to HashWrapper")
+    }
+}
+
 /// Wrapper for `Address` to implement `JsonSchema`
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct AddressWrapper(pub Address);
+
+impl From<FixedSizeData<20>> for AddressWrapper {
+    fn from(address: FixedSizeData<20>) -> Self {
+        AddressWrapper(address)
+    }
+}
 
 impl JsonSchema for AddressWrapper {
     fn schema_name() -> String {
@@ -157,7 +174,7 @@ pub struct BlockSelection {
     pub miner: Vec<AddressWrapper>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct LogSelection {
     /// Address of the contract, any logs that has any of these addresses will be returned.
     /// Empty means match all.

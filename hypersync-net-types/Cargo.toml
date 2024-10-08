@@ -12,6 +12,11 @@ serde = { version = "1", features = ["derive"] }
 arrayvec = { version = "0.7", features = ["serde"] }
 hypersync-format = { path = "../hypersync-format", version = "0.4" }
 serde_json = "1.0.128"
+anyhow = "1"
 
 [build-dependencies]
 capnpc = "0.19"
+
+[[bin]]
+name = "generate_schema"
+path = "src/generate_schema.rs"
