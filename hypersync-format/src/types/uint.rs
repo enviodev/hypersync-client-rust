@@ -36,6 +36,18 @@ impl FromStr for UInt {
     }
 }
 
+impl From<u64> for UInt {
+    fn from(value: u64) -> Self {
+        UInt(value)
+    }
+}
+
+impl From<UInt> for u64 {
+    fn from(value: UInt) -> Self {
+        value.0
+    }
+}
+
 #[cfg(feature = "ethers")]
 impl From<ethabi::ethereum_types::U64> for UInt {
     fn from(value: ethabi::ethereum_types::U64) -> Self {
