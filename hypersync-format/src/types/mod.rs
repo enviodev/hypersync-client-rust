@@ -140,6 +140,11 @@ pub struct TransactionReceipt {
     // This is a float value printed as string, e.g. "0.69"
     pub l1_fee_scalar: Option<String>,
     pub gas_used_for_l1: Option<Quantity>,
+    pub blob_gas_price: Option<Quantity>,
+    // NOTE: These fields are needed for Optimism (not pressent on other chains)
+    pub deposit_nonce: Option<Quantity>,
+    pub deposit_receipt_version: Option<Quantity>,
+    pub blob_gas_used: Option<Quantity>,
 }
 
 /// Evm log object
@@ -157,6 +162,9 @@ pub struct Log {
     pub address: Address,
     pub data: Data,
     pub topics: ArrayVec<LogArgument, 4>,
+    // Many Modern RPCs return blockTimestamp, but it's not part of the official spec (yet).
+    // EIP: https://ethereum-magicians.org/t/proposal-for-adding-blocktimestamp-to-logs-object-returned-by-eth-getlogs-and-related-requests/11183/7 - reth has already merged this: https://github.com/paradigmxyz/reth/pull/7606
+    pub block_timestamp: Option<Quantity>,
 }
 
 /// Evm trace object (parity style, returned from trace_block request on RPC)
