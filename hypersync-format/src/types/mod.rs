@@ -99,6 +99,10 @@ pub struct Transaction {
     pub access_list: Option<Vec<AccessList>>,
     pub max_fee_per_blob_gas: Option<Quantity>,
     pub blob_versioned_hashes: Option<Vec<Hash>>,
+    // OP stack fields
+    pub deposit_receipt_version: Option<Quantity>,
+    pub mint: Option<Quantity>,
+    pub source_hash: Option<Hash>,
 }
 
 /// Evm access list object
