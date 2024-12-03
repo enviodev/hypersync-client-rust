@@ -149,6 +149,14 @@ pub struct TransactionReceipt {
     pub deposit_nonce: Option<Quantity>,
     pub deposit_receipt_version: Option<Quantity>,
     pub blob_gas_used: Option<Quantity>,
+
+    // Optimism fields
+    pub l1_base_fee_scalar: Option<Quantity>,
+    pub l1_blob_base_fee: Option<Quantity>,
+    pub l1_blob_base_fee_scalar: Option<Quantity>,
+
+    // Arbitrum fields
+    pub l1_block_number: Option<Quantity>,
 }
 
 /// Evm log object
@@ -205,6 +213,10 @@ pub struct TraceAction {
     pub value: Option<Quantity>,
     pub author: Option<Address>,
     pub reward_type: Option<String>,
+    // For suicide traces
+    pub address: Option<Address>,
+    pub refund_address: Option<Address>,
+    pub balance: Option<Quantity>,
 }
 
 /// Result object inside trace object (parity style, returned from trace_block request on RPC)
