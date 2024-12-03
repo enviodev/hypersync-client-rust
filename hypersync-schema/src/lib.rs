@@ -95,6 +95,7 @@ pub fn transaction() -> SchemaRef {
         Field::new("gas_used_for_l1", quantity_dt(), true),
         Field::new("max_fee_per_blob_gas", quantity_dt(), true),
         Field::new("blob_versioned_hashes", DataType::BinaryView, true),
+        Field::new("deposit_nonce", quantity_dt(), true),
     ])
     .into()
 }

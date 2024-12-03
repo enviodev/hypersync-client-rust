@@ -174,9 +174,9 @@ pub struct Log {
     pub address: Address,
     pub data: Data,
     pub topics: ArrayVec<LogArgument, 4>,
-    // Many Modern RPCs return blockTimestamp, but it's not part of the official spec (yet).
-    // EIP: https://ethereum-magicians.org/t/proposal-for-adding-blocktimestamp-to-logs-object-returned-by-eth-getlogs-and-related-requests/11183/7 - reth has already merged this: https://github.com/paradigmxyz/reth/pull/7606
-    pub block_timestamp: Option<Quantity>,
+    // // Many Modern RPCs return blockTimestamp, but it's not part of the official spec (yet).
+    // // EIP: https://ethereum-magicians.org/t/proposal-for-adding-blocktimestamp-to-logs-object-returned-by-eth-getlogs-and-related-requests/11183/7 - reth has already merged this: https://github.com/paradigmxyz/reth/pull/7606
+    // pub block_timestamp: Option<Quantity>,
 }
 
 /// Evm trace object (parity style, returned from trace_block request on RPC)
