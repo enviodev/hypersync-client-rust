@@ -151,6 +151,9 @@ pub fn trace() -> SchemaRef {
         Field::new("type", DataType::Utf8View, true),
         Field::new("error", DataType::Utf8View, true),
         Field::new("sighash", DataType::BinaryView, true),
+        Field::new("action_address", addr_dt(), true),
+        Field::new("balance", quantity_dt(), true),
+        Field::new("refund_address", addr_dt(), true),
     ])
     .into()
 }
