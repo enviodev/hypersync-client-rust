@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use alloy_primitives::I256;
 use anyhow::{anyhow, Context, Result};
 use hypersync_schema::ArrowChunk;
 use polars_arrow::array::{
@@ -148,9 +149,10 @@ fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Arr
 
 fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            binary_to_f64,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::Float64,
@@ -161,9 +163,10 @@ fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
 
 fn map_to_f32(col: &dyn Array) -> Result<Float32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            binary_to_f32,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::Float32,
@@ -174,9 +177,10 @@ fn map_to_f32(col: &dyn Array) -> Result<Float32Array> {
 
 fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            unsigned_binary_to_target::<u64>,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::UInt64,
@@ -187,9 +191,10 @@ fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
 
 fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            unsigned_binary_to_target::<u32>,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::UInt32,
@@ -200,9 +205,10 @@ fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
 
 fn map_to_int64(col: &dyn Array) -> Result<Int64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            signed_binary_to_target::<i64>,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::Int64,
@@ -213,9 +219,10 @@ fn map_to_int64(col: &dyn Array) -> Result<Int64Array> {
 
 fn map_to_int32(col: &dyn Array) -> Result<Int32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => {
-            binary_to_target_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
-        }
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            signed_binary_to_target::<i32>,
+        ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
             &ArrowDataType::Int32,
@@ -224,21 +231,76 @@ fn map_to_int32(col: &dyn Array) -> Result<Int32Array> {
     }
 }
 
-fn binary_to_target_array<T: NativeType + TryFrom<U256>>(
+fn binary_to_target_array<T: NativeType>(
     src: &BinaryArray<i32>,
+    convert: fn(&[u8]) -> Result<T>,
 ) -> Result<PrimitiveArray<T>> {
     let mut out = MutablePrimitiveArray::with_capacity(src.len());
 
     for val in src.iter() {
-        out.push(val.map(binary_to_target).transpose()?);
+        out.push(val.map(convert).transpose()?);
     }
 
     Ok(out.into())
 }
 
-fn binary_to_target<T: TryFrom<U256>>(src: &[u8]) -> Result<T> {
+fn unsigned_binary_to_target<T: TryFrom<U256>>(src: &[u8]) -> Result<T> {
     let big_num = U256::from_be_slice(src);
     big_num
         .try_into()
-        .map_err(|_e| anyhow!("failed to cast number to requested type"))
+        .map_err(|_e| anyhow!("failed to cast number to requested unsigned type"))
+}
+
+fn signed_binary_to_target<T: TryFrom<I256>>(src: &[u8]) -> Result<T> {
+    let big_num = I256::try_from_be_slice(src).context("failed to parse number into I256")?;
+
+    big_num
+        .try_into()
+        .map_err(|_e| anyhow!("failed to cast number to requested signed type"))
+}
+
+// Special case for float because floats don't implement TryFrom<I256>
+fn binary_to_f64(src: &[u8]) -> Result<f64> {
+    let big_num = I256::try_from_be_slice(src).context("failed to parse number into I256")?;
+
+    let x = f64::from(U256::try_from(big_num.abs()).unwrap());
+
+    if !big_num.is_negative() {
+        Ok(x)
+    } else {
+        Ok(-x)
+    }
+}
+
+// Special case for float because floats don't implement TryFrom<I256>
+fn binary_to_f32(src: &[u8]) -> Result<f32> {
+    let big_num = I256::try_from_be_slice(src).context("failed to parse number into I256")?;
+
+    let x = f32::from(U256::try_from(big_num.abs()).unwrap());
+
+    if !big_num.is_negative() {
+        Ok(x)
+    } else {
+        Ok(-x)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signed_binary_to_target() {
+        const RAW_INPUT: &[i64] = &[-69, 0, 69, -1, 1];
+
+        for &input_num in RAW_INPUT {
+            let input = I256::try_from(input_num).unwrap();
+            let output =
+                signed_binary_to_target::<i64>(input.to_be_bytes::<32>().as_slice()).unwrap();
+            assert_eq!(i64::try_from(input).unwrap(), output);
+
+            let float_output = binary_to_f64(input.to_be_bytes::<32>().as_slice()).unwrap();
+            assert_eq!(I256::try_from(float_output as i64).unwrap(), input);
+        }
+    }
 }
