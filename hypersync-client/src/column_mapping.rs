@@ -179,7 +179,7 @@ fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
     match col.data_type() {
         &ArrowDataType::Binary => binary_to_target_array(
             col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            unsigned_binary_to_target::<u64>,
+            signed_binary_to_target::<u64>,
         ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -193,7 +193,7 @@ fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
     match col.data_type() {
         &ArrowDataType::Binary => binary_to_target_array(
             col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            unsigned_binary_to_target::<u32>,
+            signed_binary_to_target::<u32>,
         ),
         &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
             col.as_any().downcast_ref::<UInt64Array>().unwrap(),
@@ -242,13 +242,6 @@ fn binary_to_target_array<T: NativeType>(
     }
 
     Ok(out.into())
-}
-
-fn unsigned_binary_to_target<T: TryFrom<U256>>(src: &[u8]) -> Result<T> {
-    let big_num = U256::from_be_slice(src);
-    big_num
-        .try_into()
-        .map_err(|_e| anyhow!("failed to cast number to requested unsigned type"))
 }
 
 fn signed_binary_to_target<T: TryFrom<I256>>(src: &[u8]) -> Result<T> {
