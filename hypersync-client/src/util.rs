@@ -253,19 +253,7 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
                     }
                 };
 
-                match val {
-                    DynSolValue::Int(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-                    DynSolValue::Uint(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-                    DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
-                    DynSolValue::Address(v) => builder.push(Some(v)),
-                    DynSolValue::Bytes(v) => builder.push(Some(v)),
-                    v => {
-                        return Err(anyhow!(
-                            "unexpected output type from decode: {:?}",
-                            v.as_type()
-                        ))
-                    }
-                }
+                push_sol_value_to_binary(val, &mut builder)?;
             }
 
             Ok(builder.as_box())
@@ -336,24 +324,33 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
                     }
                 };
 
-                match decoder.abi_decode(val).context("decode sol value")? {
-                    DynSolValue::Int(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-                    DynSolValue::Uint(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-                    DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
-                    DynSolValue::Address(v) => builder.push(Some(v)),
-                    DynSolValue::Bytes(v) => builder.push(Some(v)),
-                    v => {
-                        return Err(anyhow!(
-                            "unexpected output type from decode: {:?}",
-                            v.as_type()
-                        ))
-                    }
-                }
+                let val = decoder.abi_decode(val).context("decode sol value")?;
+                push_sol_value_to_binary(&val, &mut builder)?;
             }
 
             Ok(builder.as_box())
         }
     }
+}
+
+fn push_sol_value_to_binary(
+    val: &DynSolValue,
+    builder: &mut MutableBinaryArray<i32>,
+) -> Result<()> {
+    match val {
+        DynSolValue::Int(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
+        DynSolValue::Uint(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
+        DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
+        DynSolValue::Address(v) => builder.push(Some(v)),
+        DynSolValue::Bytes(v) => builder.push(Some(v)),
+        v => {
+            return Err(anyhow!(
+                "unexpected output type from decode: {:?}",
+                v.as_type()
+            ))
+        }
+    }
+    Ok(())
 }
 
 fn schema_from_event_signature(sig: &alloy_json_abi::Event) -> Result<Schema> {
@@ -481,6 +478,7 @@ pub fn map_batch_to_binary_view(batch: ArrowBatch) -> ArrowBatch {
 #[cfg(test)]
 mod tests {
     use alloy_json_abi::Event;
+    use alloy_primitives::I256;
 
     use super::*;
 
@@ -501,5 +499,20 @@ mod tests {
                 Field::new("amount1Out", DataType::Binary, true),
             ])
         );
+    }
+
+    #[test]
+    fn test_sol_value_to_binary() {
+        let mut builder = MutableBinaryArray::<i32>::new();
+        let input_val = I256::try_from(69).unwrap();
+        let val = DynSolValue::Int(input_val, 24);
+
+        push_sol_value_to_binary(&val, &mut builder).unwrap();
+
+        let raw_output = builder.pop().unwrap();
+
+        let output_val = I256::try_from_be_slice(&raw_output).unwrap();
+
+        assert_eq!(input_val, output_val);
     }
 }
