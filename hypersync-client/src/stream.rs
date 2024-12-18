@@ -8,12 +8,17 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
+use futures::{Stream, StreamExt};
 use hypersync_net_types::Query;
+use pin_project::pin_project;
 use polars_arrow::{
     array::{Array, BinaryArray, BooleanArray, UInt64Array, UInt8Array, Utf8Array},
     datatypes::ArrowDataType,
     record_batch::RecordBatch,
 };
+use std::collections::VecDeque;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -25,190 +30,212 @@ use crate::{
     ArrowBatch, ArrowResponseData, StreamConfig,
 };
 
+#[pin_project]
+pub struct ArrowResponseStream {
+    #[pin]
+    client: Arc<crate::Client>,
+    query: Query,
+    config: StreamConfig,
+    current_block: u64,
+    to_block: u64,
+    step: Arc<AtomicU64>,
+    reverse: bool,
+    pending_responses: VecDeque<ArrowResponse>,
+    current_batch: Option<JoinHandle<Result<(Vec<ArrowResponse>, u64)>>>,
+    next_generation: u32,
+    stats: StreamStats,
+}
+
+struct StreamStats {
+    num_blocks: usize,
+    num_transactions: usize,
+    num_logs: usize,
+    num_traces: usize,
+}
+
+impl ArrowResponseStream {
+    pub async fn new(
+        client: Arc<crate::Client>,
+        query: Query,
+        config: StreamConfig,
+    ) -> Result<Self> {
+        let to_block = match query.to_block {
+            Some(to_block) => to_block,
+            None => client.get_height().await.context("get height")?,
+        };
+
+        let batch_size = config.batch_size.unwrap_or(1000);
+        let reverse = config.reverse.unwrap_or_default();
+        let step = Arc::new(AtomicU64::new(batch_size));
+
+        let current_block = if reverse { to_block } else { query.from_block };
+
+        Ok(Self {
+            client,
+            query,
+            config,
+            current_block,
+            to_block,
+            step,
+            reverse,
+            pending_responses: VecDeque::new(),
+            current_batch: None,
+            next_generation: 0,
+            stats: StreamStats {
+                num_blocks: 0,
+                num_transactions: 0,
+                num_logs: 0,
+                num_traces: 0,
+            },
+        })
+    }
+
+    fn spawn_next_batch(&mut self) -> Result<()> {
+        let step_val = self.step.load(Ordering::SeqCst);
+        let batch_size = step_val as u32;
+
+        let (start, end) = if self.reverse {
+            let end = self.current_block;
+            let start = end.saturating_sub(u64::from(batch_size));
+            (start, end)
+        } else {
+            let start = self.current_block;
+            let end = std::cmp::min(start + u64::from(batch_size), self.to_block);
+            (start, end)
+        };
+
+        let mut query = self.query.clone();
+        query.from_block = start;
+        query.to_block = Some(end);
+
+        let client = self.client.clone();
+        self.current_batch = Some(tokio::spawn(async move {
+            run_query_to_end(client, query).await
+        }));
+
+        Ok(())
+    }
+
+    async fn process_batch_response(
+        &mut self,
+        responses: Vec<ArrowResponse>,
+        response_size: u64,
+    ) -> Result<()> {
+        // Update current block position
+        if !self.pending_responses.is_empty() {
+            let last_resp = self.pending_responses.back().unwrap();
+            self.current_block = last_resp.next_block;
+        }
+
+        // Adjust batch size based on response size
+        if response_size > self.config.response_bytes_ceiling.unwrap_or(500_000) {
+            self.adjust_batch_size(response_size, true);
+        } else if response_size < self.config.response_bytes_floor.unwrap_or(250_000) {
+            self.adjust_batch_size(response_size, false);
+        }
+
+        // Map and store responses
+        let responses = map_responses(self.config.clone(), responses, self.reverse).await?;
+        self.pending_responses.extend(responses);
+
+        Ok(())
+    }
+
+    fn adjust_batch_size(&self, response_size: u64, decrease: bool) {
+        let ceiling = self.config.response_bytes_ceiling.unwrap_or(500_000) as f64;
+        let floor = self.config.response_bytes_floor.unwrap_or(250_000) as f64;
+        let target = if decrease { ceiling } else { floor };
+
+        let ratio = target / response_size as f64;
+
+        self.step
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
+                let batch_size = x as u32;
+                let new_size = if decrease {
+                    cmp::max(
+                        (batch_size as f64 * ratio) as u64,
+                        self.config.min_batch_size.unwrap_or(200),
+                    )
+                } else {
+                    cmp::min(
+                        (batch_size as f64 * ratio) as u64,
+                        self.config.max_batch_size.unwrap_or(200_000),
+                    )
+                };
+
+                Some(new_size | u64::from(self.next_generation) << 32)
+            })
+            .ok();
+    }
+}
+
+impl Stream for ArrowResponseStream {
+    type Item = Result<ArrowResponse>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        // Return pending response if available
+        if let Some(response) = this.pending_responses.pop_front() {
+            // Update statistics
+            this.stats.num_blocks += count_rows(&response.data.blocks);
+            this.stats.num_transactions += count_rows(&response.data.transactions);
+            this.stats.num_logs += count_rows(&response.data.logs);
+            this.stats.num_traces += count_rows(&response.data.traces);
+
+            // Check limits
+            if check_entity_limit(*this.stats.num_blocks, this.config.max_num_blocks)
+                || check_entity_limit(
+                    *this.stats.num_transactions,
+                    this.config.max_num_transactions,
+                )
+                || check_entity_limit(*this.stats.num_logs, this.config.max_num_logs)
+                || check_entity_limit(*this.stats.num_traces, this.config.max_num_traces)
+            {
+                return Poll::Ready(None);
+            }
+
+            return Poll::Ready(Some(Ok(response)));
+        }
+
+        // Check if we're done
+        if *this.current_block == *this.to_block {
+            return Poll::Ready(None);
+        }
+
+        // Start new batch if needed
+        if this.current_batch.is_none() {
+            if let Err(e) = this.spawn_next_batch() {
+                return Poll::Ready(Some(Err(e)));
+            }
+        }
+
+        // Check current batch
+        if let Some(batch) = this.current_batch.as_mut() {
+            match batch.poll_unpin(cx) {
+                Poll::Ready(Ok(Ok((responses, size)))) => {
+                    *this.current_batch = None;
+                    match this.process_batch_response(responses, size).await {
+                        Ok(()) => this.poll_next(cx),
+                        Err(e) => Poll::Ready(Some(Err(e))),
+                    }
+                }
+                Poll::Ready(Ok(Err(e))) => Poll::Ready(Some(Err(e))),
+                Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e.into()))),
+                Poll::Pending => Poll::Pending,
+            }
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
 pub async fn stream_arrow(
     client: Arc<crate::Client>,
     query: Query,
     config: StreamConfig,
-) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
-    let concurrency = config.concurrency.unwrap_or(10);
-    let batch_size = config.batch_size.unwrap_or(1000);
-    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
-    let min_batch_size = config.min_batch_size.unwrap_or(200);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(500_000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(250_000);
-    let reverse = config.reverse.unwrap_or_default();
-
-    let step = Arc::new(AtomicU64::new(batch_size));
-
-    let (tx, rx) = mpsc::channel(concurrency * 2);
-
-    let to_block = match query.to_block {
-        Some(to_block) => to_block,
-        None => client.get_height().await.context("get height")?,
-    };
-
-    tokio::spawn(async move {
-        let mut query = query;
-
-        if !reverse {
-            let initial_res = client.get_arrow(&query).await.context("get initial data");
-            match initial_res {
-                Ok(res) => {
-                    let res = match map_responses(config.clone(), vec![res], reverse).await {
-                        Ok(mut resps) => resps.remove(0),
-                        Err(e) => {
-                            tx.send(Err(e)).await.ok();
-                            return;
-                        }
-                    };
-
-                    query.from_block = res.next_block;
-                    if tx.send(Ok(res)).await.is_err() {
-                        return;
-                    }
-                }
-                Err(e) => {
-                    tx.send(Err(e)).await.ok();
-                    return;
-                }
-            }
-        }
-
-        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone(), reverse);
-
-        let mut futs = range_iter
-            .enumerate()
-            .map(move |(req_idx, (start, end, generation))| {
-                let mut query = query.clone();
-                query.from_block = start;
-                query.to_block = Some(end);
-                let client = client.clone();
-                async move { (generation, req_idx, run_query_to_end(client, query).await) }
-            })
-            .peekable();
-
-        // we use unordered parallelization here so need to order the responses later.
-        // Using unordered parallelization gives a big boost in performance.
-        let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
-
-        tokio::spawn(async move {
-            let mut set = JoinSet::new();
-            let mut queue = BTreeMap::new();
-            let mut next_req_idx = 0;
-
-            while futs.peek().is_some() {
-                while let Some(res) = set.try_join_next() {
-                    let (generation, req_idx, resps) = res.unwrap();
-                    queue.insert(req_idx, (generation, resps));
-                }
-                while set.len() >= concurrency {
-                    let (generation, req_idx, resps) = set.join_next().await.unwrap().unwrap();
-                    queue.insert(req_idx, (generation, resps));
-                }
-                if queue.len() < concurrency * 2 {
-                    futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
-                        set.spawn(fut);
-                    });
-                } else {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                }
-                while let Some(resps) = queue.remove(&next_req_idx) {
-                    if res_tx.send(resps).await.is_err() {
-                        return;
-                    }
-                    next_req_idx += 1;
-                }
-            }
-
-            while let Some(res) = set.join_next().await {
-                let (generation, req_idx, resps) = res.unwrap();
-                queue.insert(req_idx, (generation, resps));
-            }
-            while let Some(resps) = queue.remove(&next_req_idx) {
-                if res_tx.send(resps).await.is_err() {
-                    return;
-                }
-                next_req_idx += 1;
-            }
-        });
-
-        let mut num_blocks = 0;
-        let mut num_transactions = 0;
-        let mut num_logs = 0;
-        let mut num_traces = 0;
-
-        // Generation is used so if we change batch_size we only want to change it again
-        // based on the new batch size we just set.
-        // If we don't check generations then we might apply same change to batch size multiple times.
-        let mut next_generation = 0;
-        while let Some((generation, resps)) = res_rx.recv().await {
-            let resps = match resps {
-                Ok(resps) => resps,
-                Err(e) => {
-                    tx.send(Err(e)).await.ok();
-                    return;
-                }
-            };
-
-            let (resps, resps_size) = resps;
-            let resps = match map_responses(config.clone(), resps, reverse).await {
-                Ok(resps) => resps,
-                Err(e) => {
-                    tx.send(Err(e)).await.ok();
-                    return;
-                }
-            };
-
-            if generation == next_generation {
-                next_generation += 1;
-                if resps_size > response_size_ceiling {
-                    let ratio = response_size_ceiling as f64 / resps_size as f64;
-
-                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        // extract batch_size value
-                        let x = x as u32;
-
-                        let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
-                        let step = batch_size | u64::from(next_generation) << 32;
-                        Some(step)
-                    })
-                    .ok();
-                } else if resps_size < response_size_floor {
-                    let ratio = response_size_floor as f64 / resps_size as f64;
-
-                    step.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |x| {
-                        let x = x as u32;
-
-                        let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
-                        let step = batch_size | u64::from(next_generation) << 32;
-                        Some(step)
-                    })
-                    .ok();
-                }
-            }
-
-            for resp in resps {
-                num_blocks += count_rows(&resp.data.blocks);
-                num_transactions += count_rows(&resp.data.transactions);
-                num_logs += count_rows(&resp.data.logs);
-                num_traces += count_rows(&resp.data.traces);
-
-                if tx.send(Ok(resp)).await.is_err() {
-                    return;
-                }
-            }
-
-            if check_entity_limit(num_blocks, config.max_num_blocks)
-                || check_entity_limit(num_transactions, config.max_num_transactions)
-                || check_entity_limit(num_logs, config.max_num_logs)
-                || check_entity_limit(num_traces, config.max_num_traces)
-            {
-                return;
-            }
-        }
-    });
-
-    Ok(rx)
+) -> Result<impl Stream<Item = Result<ArrowResponse>>> {
+    ArrowResponseStream::new(client, query, config).await
 }
 
 fn count_rows(batches: &[ArrowBatch]) -> usize {
@@ -447,57 +474,4 @@ async fn run_query_to_end(
     }
 
     Ok((resps, size))
-}
-
-pub struct BlockRangeIterator {
-    offset: u64,
-    end: u64,
-    step: Arc<AtomicU64>,
-    reverse: bool,
-}
-
-impl BlockRangeIterator {
-    pub fn new(start: u64, end: u64, step: Arc<AtomicU64>, reverse: bool) -> Self {
-        if reverse {
-            Self {
-                offset: end,
-                end: start,
-                step,
-                reverse,
-            }
-        } else {
-            Self {
-                offset: start,
-                end,
-                step,
-                reverse,
-            }
-        }
-    }
-}
-
-impl Iterator for BlockRangeIterator {
-    type Item = (u64, u64, u32);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.offset == self.end {
-            return None;
-        }
-        let start = self.offset;
-
-        let step = self.step.load(Ordering::SeqCst);
-
-        // we extract two u32 values from u64
-        // unsafe casts are intentional
-        let generation = (step >> 32) as u32;
-        let batch_size = step as u32;
-
-        if self.reverse {
-            self.offset = cmp::max(self.offset.saturating_sub(u64::from(batch_size)), self.end);
-            Some((self.offset, start, generation))
-        } else {
-            self.offset = cmp::min(self.offset + u64::from(batch_size), self.end);
-            Some((start, self.offset, generation))
-        }
-    }
 }
