@@ -5,7 +5,7 @@ use anyhow::{anyhow, Context, Result};
 use hypersync_schema::ArrowChunk;
 use polars_arrow::array::{
     Array, BinaryArray, Float32Array, Float64Array, Int32Array, Int64Array, MutablePrimitiveArray,
-    PrimitiveArray, UInt32Array, UInt64Array,
+    MutableUtf8Array, PrimitiveArray, UInt32Array, UInt64Array, Utf8Array,
 };
 use polars_arrow::compute::cast::CastOptionsImpl as CastOptions;
 use polars_arrow::compute::{self, cast};
@@ -50,6 +50,7 @@ pub enum DataType {
     UInt32,
     Int64,
     Int32,
+    IntStr,
 }
 
 impl From<DataType> for ArrowDataType {
@@ -61,6 +62,7 @@ impl From<DataType> for ArrowDataType {
             DataType::UInt32 => Self::UInt32,
             DataType::Int64 => Self::Int64,
             DataType::Int32 => Self::Int32,
+            DataType::IntStr => Self::Utf8,
         }
     }
 }
@@ -144,7 +146,32 @@ fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Arr
         DataType::UInt32 => map_to_uint32(col).map(to_box),
         DataType::Int64 => map_to_int64(col).map(to_box),
         DataType::Int32 => map_to_int32(col).map(to_box),
+        DataType::IntStr => map_to_int_str(col).map(to_box),
     }
+}
+
+fn map_to_int_str(col: &dyn Array) -> Result<Utf8Array<i32>> {
+    match col.data_type() {
+        &ArrowDataType::Binary => {
+            binary_to_int_str_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
+        }
+        dt => Err(anyhow!("Can't convert {:?} to intstr", dt)),
+    }
+}
+
+fn binary_to_int_str_array(arr: &BinaryArray<i32>) -> Result<Utf8Array<i32>> {
+    let mut out = MutableUtf8Array::with_capacity(arr.len());
+
+    for val in arr.iter() {
+        out.push(val.map(binary_to_int_str).transpose()?);
+    }
+
+    Ok(out.into())
+}
+
+fn binary_to_int_str(binary: &[u8]) -> Result<String> {
+    let big_num = I256::try_from_be_slice(binary).context("failed to parse number into I256")?;
+    Ok(format!("{}", big_num))
 }
 
 fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
@@ -294,6 +321,9 @@ mod tests {
 
             let float_output = binary_to_f64(input.to_be_bytes::<32>().as_slice()).unwrap();
             assert_eq!(I256::try_from(float_output as i64).unwrap(), input);
+
+            let string_output = binary_to_int_str(input.to_be_bytes::<32>().as_slice()).unwrap();
+            assert_eq!(string_output, format!("{}", input_num));
         }
     }
 }
