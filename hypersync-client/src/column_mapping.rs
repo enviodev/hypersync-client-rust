@@ -4,13 +4,14 @@ use alloy_primitives::I256;
 use anyhow::{anyhow, Context, Result};
 use hypersync_schema::ArrowChunk;
 use polars_arrow::array::{
-    Array, BinaryArray, Float32Array, Float64Array, Int32Array, Int64Array, MutablePrimitiveArray,
-    MutableUtf8Array, PrimitiveArray, UInt32Array, UInt64Array, Utf8Array,
+    Array, BinaryArray, Float32Array, Float64Array, Int128Array, Int256Array, Int256Vec,
+    Int32Array, Int64Array, MutablePrimitiveArray, MutableUtf8Array, PrimitiveArray, UInt32Array,
+    UInt64Array, Utf8Array,
 };
 use polars_arrow::compute::cast::CastOptionsImpl as CastOptions;
 use polars_arrow::compute::{self, cast};
 use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
-use polars_arrow::types::NativeType;
+use polars_arrow::types::{i256 as Decimal, NativeType};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,8 @@ pub enum DataType {
     Int64,
     Int32,
     IntStr,
+    Decimal256,
+    Decimal128,
 }
 
 impl From<DataType> for ArrowDataType {
@@ -63,6 +66,8 @@ impl From<DataType> for ArrowDataType {
             DataType::Int64 => Self::Int64,
             DataType::Int32 => Self::Int32,
             DataType::IntStr => Self::Utf8,
+            DataType::Decimal256 => Self::Decimal256(76, 0),
+            DataType::Decimal128 => Self::Decimal(38, 0),
         }
     }
 }
@@ -147,7 +152,35 @@ fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Arr
         DataType::Int64 => map_to_int64(col).map(to_box),
         DataType::Int32 => map_to_int32(col).map(to_box),
         DataType::IntStr => map_to_int_str(col).map(to_box),
+        DataType::Decimal256 => map_to_decimal(col).map(to_box),
+        DataType::Decimal128 => map_to_decimal128(col).map(to_box),
     }
+}
+
+fn map_to_decimal(col: &dyn Array) -> Result<Int256Array> {
+    match col.data_type() {
+        &ArrowDataType::Binary => {
+            binary_to_decimal_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
+        }
+        dt => Err(anyhow!("Can't convert {:?} to decimal", dt)),
+    }
+}
+
+fn binary_to_decimal_array(arr: &BinaryArray<i32>) -> Result<Int256Array> {
+    let mut out = Int256Vec::with_capacity(arr.len());
+
+    for val in arr.iter() {
+        out.push(val.map(binary_to_decimal).transpose()?);
+    }
+
+    Ok(out.into())
+}
+
+fn binary_to_decimal(binary: &[u8]) -> Result<Decimal> {
+    let big_num = I256::try_from_be_slice(binary).context("failed to parse number into I256")?;
+    let decimal = Decimal::from_be_bytes(big_num.to_be_bytes::<32>());
+
+    Ok(decimal)
 }
 
 fn map_to_int_str(col: &dyn Array) -> Result<Utf8Array<i32>> {
@@ -227,6 +260,20 @@ fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
             &ArrowDataType::UInt32,
         )),
         dt => Err(anyhow!("Can't convert {:?} to uint32", dt)),
+    }
+}
+
+fn map_to_decimal128(col: &dyn Array) -> Result<Int128Array> {
+    match col.data_type() {
+        &ArrowDataType::Binary => binary_to_target_array(
+            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
+            signed_binary_to_target::<i128>,
+        ),
+        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
+            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
+            &ArrowDataType::Decimal(38, 0),
+        )),
+        dt => Err(anyhow!("Can't convert {:?} to int64", dt)),
     }
 }
 
@@ -311,19 +358,24 @@ mod tests {
 
     #[test]
     fn test_signed_binary_to_target() {
-        const RAW_INPUT: &[i64] = &[-69, 0, 69, -1, 1];
+        const RAW_INPUT: &[i64] = &[-69, 0, 69, -1, 1, i64::MAX, i64::MIN];
 
         for &input_num in RAW_INPUT {
             let input = I256::try_from(input_num).unwrap();
-            let output =
-                signed_binary_to_target::<i64>(input.to_be_bytes::<32>().as_slice()).unwrap();
+            let input_bytes = input.to_be_bytes::<32>();
+            let input_bytes = input_bytes.as_slice();
+            let output = signed_binary_to_target::<i64>(input_bytes).unwrap();
             assert_eq!(i64::try_from(input).unwrap(), output);
 
-            let float_output = binary_to_f64(input.to_be_bytes::<32>().as_slice()).unwrap();
+            let float_output = binary_to_f64(input_bytes).unwrap();
             assert_eq!(I256::try_from(float_output as i64).unwrap(), input);
 
-            let string_output = binary_to_int_str(input.to_be_bytes::<32>().as_slice()).unwrap();
+            let string_output = binary_to_int_str(input_bytes).unwrap();
             assert_eq!(string_output, format!("{}", input_num));
+
+            let decimal_output = binary_to_decimal(input_bytes).unwrap();
+            assert_eq!(decimal_output.to_be_bytes(), input_bytes);
+            assert_eq!(format!("{}", decimal_output), format!("{}", input));
         }
     }
 }
