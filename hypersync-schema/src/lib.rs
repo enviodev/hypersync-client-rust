@@ -95,6 +95,16 @@ pub fn transaction() -> SchemaRef {
         Field::new("gas_used_for_l1", quantity_dt(), true),
         Field::new("max_fee_per_blob_gas", quantity_dt(), true),
         Field::new("blob_versioned_hashes", DataType::BinaryView, true),
+        Field::new("blob_gas_price", quantity_dt(), true),
+        Field::new("deposit_nonce", quantity_dt(), true),
+        Field::new("deposit_receipt_version", quantity_dt(), true),
+        Field::new("blob_gas_used", quantity_dt(), true),
+        Field::new("l1_base_fee_scalar", quantity_dt(), true),
+        Field::new("l1_blob_base_fee", quantity_dt(), true),
+        Field::new("l1_blob_base_fee_scalar", quantity_dt(), true),
+        Field::new("l1_block_number", quantity_dt(), true),
+        Field::new("mint", quantity_dt(), true),
+        Field::new("source_hash", hash_dt(), true),
     ])
     .into()
 }
@@ -141,6 +151,9 @@ pub fn trace() -> SchemaRef {
         Field::new("type", DataType::Utf8View, true),
         Field::new("error", DataType::Utf8View, true),
         Field::new("sighash", DataType::BinaryView, true),
+        Field::new("action_address", addr_dt(), true),
+        Field::new("balance", quantity_dt(), true),
+        Field::new("refund_address", addr_dt(), true),
     ])
     .into()
 }
