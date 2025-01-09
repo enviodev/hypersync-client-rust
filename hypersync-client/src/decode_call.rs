@@ -1,4 +1,4 @@
-use alloy_dyn_abi::{DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
 use alloy_json_abi::Function;
 use anyhow::{Context, Result};
 use hypersync_format::Data;
@@ -55,7 +55,48 @@ impl CallDecoder {
             .context("decoding input data")?;
         Ok(Some(decoded))
     }
+
+    /// Parse output data and return result
+    ///
+    /// Decodes the output field from a trace
+    /// and returns the decoded values in a `Vec<DynSolValue>`. If the function
+    /// signature is not found or the decoding fails, it returns `Ok(None)` as
+    /// the result to match the behavior of `decode_input`
+    pub fn decode_output(&self, data: &Data, function_signature: &str) -> Result<Option<Vec<DynSolValue>>>{
+        // Parse the provided function signature into a Function object
+        let function = Function::parse(function_signature).context("parsing function signature")?;
+
+        //Extract the output types of the function
+        let output_types = function.outputs;
+
+        // Convert the output types into the corresponding DynSolType representations,
+        let output_types: Vec<DynSolType> = output_types
+            .into_iter()
+            .map(|param| param.ty.parse::<DynSolType>())
+            .collect::<Result<_, _>>()  // Parse each type as DynSolType
+            .context("parsing output types")?;
+
+        // Create a tuple type from the output parameters
+        let tuple_type = DynSolType::Tuple(output_types);
+
+        // Attempt to decode the data using the constructed tuple type
+        match tuple_type.abi_decode(data.as_ref()) {
+            // If decoding succeeds, return the decoded values as a tuple or single value
+            Ok(decoded) => {
+                if let DynSolValue::Tuple(values) = decoded {
+                    Ok(Some(values)) // Return the decoded values as a Vec if it's a tuple
+                } else {
+                    Ok(Some(vec![decoded])) // Return a single value wrapped in a Vec
+                }
+            }
+            // If decoding fails, return None (to match the behavior of decode_input)
+            Err(_) => {
+                Ok(None) // Return None to signal that decoding failed
+            }
+        }
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -91,7 +132,7 @@ mod tests {
             "transfer(address dst, uint256 wad)",
             "approve(address usr, uint256 wad)",
         ])
-        .unwrap();
+            .unwrap();
         let got = decoder.decode_input(&input).unwrap().unwrap();
 
         for (expected, got) in expected.iter().zip(got.iter()) {
