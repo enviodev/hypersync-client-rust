@@ -145,4 +145,54 @@ mod tests {
     fn test_decode_input_with_incorrect_signature() {
         let _function = alloy_json_abi::Function::parse("incorrect signature").unwrap();
     }
+
+    #[test]
+    fn test_decode_output_single_value() {
+        let output = "0x0000000000000000000000000000000000000000000000056bc75e2d63100000";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "balanceOf(address)(uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+
+        assert_eq!(result.len(), 1, "Should return a single value");
+        assert!(matches!(result[0], DynSolValue::Uint(..)), "Should be a uint value");
+    }
+
+    #[test]
+    fn test_decode_output_multiple_values() {
+        let output = "0x000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "someFunction()(address,uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["someFunction()"]).unwrap();
+        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+
+        assert_eq!(result.len(), 2, "Should return two values");
+        assert!(matches!(result[0], DynSolValue::Address(..)), "First value should be an address");
+        assert!(matches!(result[1], DynSolValue::Uint(..)), "Second value should be a uint");
+    }
+
+    #[test]
+    fn test_decode_output_invalid_data() {
+        let output = "invalid_data";
+        let output = Data::decode_hex(output).unwrap_err();
+        let function_signature = "balanceOf(address)(uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        let result = decoder.decode_output(&Data::default(), function_signature).unwrap();
+
+        assert!(result.is_none(), "Should return None for invalid data");
+    }
+
+    #[test]
+    #[should_panic(expected = "parsing function signature")]
+    fn test_decode_output_invalid_signature() {
+        let output = "0x0000000000000000000000000000000000000000000000056bc75e2d63100000";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "invalid signature";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        decoder.decode_output(&output, function_signature).unwrap();
+    }
 }
