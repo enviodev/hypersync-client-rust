@@ -11,4 +11,5 @@ members = [
     "examples/watch",
     "examples/reverse_wallet",
     "examples/call_watch",
+    "examples/call_decode_output",
 ]
