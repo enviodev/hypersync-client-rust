@@ -51,22 +51,9 @@ async fn main() {
     //
     // This will parallelize internal requests so we don't have to worry about pipelining/parallelizing make request -> handle response -> handle data loop
     let mut receiver = client
-        .stream_arrow(
+        .stream(
             query,
             StreamConfig {
-                // Pass the event signature for decoding
-                event_signature: Some(
-                    "Transfer(address indexed from, address indexed to, uint amount)".to_owned(),
-                ),
-                column_mapping: Some(ColumnMapping {
-                    decoded_log: [
-                        // Map the amount column to float so we can do aggregation on it
-                        ("amount".to_owned(), DataType::Float64),
-                    ]
-                    .into_iter()
-                    .collect(),
-                    ..Default::default()
-                }),
                 ..Default::default()
             },
         )
@@ -83,8 +70,19 @@ async fn main() {
         println!(
             "scanned up to block: {}, found {} blocks",
             res.next_block,
-            res.data.blocks.len()
+            // Start of Selection
+            res.data
+                .blocks
+                .iter()
+                .map(|inner| inner.len())
+                .sum::<usize>()
         );
+
+        // res.data.blocks.iter().for_each(|blocks| {
+        //     blocks.iter().for_each(|block| {
+        //         println!("block: {:?}", block.number);
+        //     });
+        // });
 
         if res.next_block > 10129290 {
             let drainer = receiver.drain_and_stop();
@@ -102,7 +100,23 @@ async fn main() {
     count += drained.len();
 
     for data in drained {
-        println!("data: {:?}", data.unwrap().next_block);
+        let drained_data = data.unwrap();
+        println!(
+            "data: {:?}, found {} blocks",
+            drained_data.next_block,
+            drained_data
+                .data
+                .blocks
+                .iter()
+                .map(|inner| inner.len())
+                .sum::<usize>()
+        );
+
+        // drained_data.data.blocks.iter().for_each(|blocks| {
+        //     blocks.iter().for_each(|block| {
+        //         println!("block: {:?}", block.number);
+        //     });
+        // });
     }
 
     println!("response count: {}", count);

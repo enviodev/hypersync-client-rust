@@ -34,14 +34,14 @@ pub struct ArrowStream {
     // Receiver for the stream
     rx: mpsc::Receiver<Result<ArrowResponse>>,
 
-    /// The total "highest" block we intended to stream to. (In non-reverse mode,
-    /// this is taken from query.to_block or get_height() if none specified.)
-    end_block: Option<u64>,
+    /// The highest block number that any currently in-flight request is processing.
+    /// Only meaningful for non-reverse streams.
+    pub end_block: Arc<AtomicU64>,
 }
 
 /// A handle which holds the end_block and can be awaited to drain all leftover items.
 pub struct StreamDrainer {
-    /// The highest block that was intended to be streamed.
+    /// The highest block that any in-flight request was processing when drain started
     pub stream_end_block: Option<u64>,
 
     cancel_token: CancellationToken,
@@ -49,7 +49,7 @@ pub struct StreamDrainer {
 }
 
 impl StreamDrainer {
-    /// Actually drain the remaining items in the channel, returning them all in a vector.
+    /// Actually drain the remaining items in the channel, returning them in a vector.
     pub async fn drain(mut self) -> Vec<Result<ArrowResponse>> {
         let mut drained = Vec::new();
 
@@ -63,14 +63,17 @@ impl StreamDrainer {
 }
 
 impl ArrowStream {
-    /// Returns the highest end block (if known) and a future for draining leftover data.
-    /// You can read the end block immediately, then call `drain().await` afterward.
+    /// Returns the highest end_block (if known) and a future handle to drain leftover data.
     pub fn drain_and_stop(self) -> StreamDrainer {
         // Signal all tasks to stop
         self.cancel_token.cancel();
 
         StreamDrainer {
-            stream_end_block: self.end_block,
+            stream_end_block: if self.end_block.load(Ordering::SeqCst) > 0 {
+                Some(self.end_block.load(Ordering::SeqCst))
+            } else {
+                None
+            },
             cancel_token: self.cancel_token,
             rx: self.rx,
         }
@@ -107,6 +110,9 @@ pub async fn stream_arrow(
         Some(to_block) => to_block,
         None => client.get_height().await.context("get height")?,
     };
+
+    let end_block = Arc::new(AtomicU64::new(0));
+    let end_block_clone = end_block.clone();
 
     let handle = tokio::spawn(async move {
         if cancel_token.is_cancelled() {
@@ -147,7 +153,11 @@ pub async fn stream_arrow(
                 let mut query = query.clone();
                 query.from_block = start;
                 query.to_block = Some(end);
-                println!("query's end block: {:?}", query.to_block);
+
+                if !reverse {
+                    end_block.fetch_max(end, Ordering::SeqCst);
+                }
+
                 let client = client.clone();
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
             })
@@ -282,7 +292,7 @@ pub async fn stream_arrow(
         cancel_token: cancel_token_clone,
         handle,
         rx,
-        end_block: Some(to_block),
+        end_block: end_block_clone,
     })
 }
 

@@ -1,6 +1,13 @@
 #![deny(missing_docs)]
 //! Hypersync client library for interacting with hypersync server.
-use std::{num::NonZeroU64, sync::Arc, time::Duration};
+use std::{
+    num::NonZeroU64,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use anyhow::{anyhow, Context, Result};
 use hypersync_net_types::{ArchiveHeight, ChainId, Query};
@@ -61,6 +68,53 @@ pub struct Client {
     retry_base_ms: u64,
     /// Ceiling time for request backoff.
     retry_ceiling_ms: u64,
+}
+
+/// A wrapper around mpsc::Receiver that provides drain_and_stop functionality
+pub struct Stream<T> {
+    rx: mpsc::Receiver<Result<T>>,
+    end_block: Arc<AtomicU64>,
+}
+
+/// A handle which holds the end_block and can be awaited to drain all leftover items.
+pub struct StreamDrainer<T> {
+    /// The highest block that any in-flight request was processing when drain started
+    pub stream_end_block: Option<u64>,
+    rx: mpsc::Receiver<Result<T>>,
+}
+
+impl<T> StreamDrainer<T> {
+    /// Actually drain the remaining items in the channel, returning them in a vector.
+    pub async fn drain(mut self) -> Vec<Result<T>> {
+        let mut drained = Vec::new();
+        while let Some(item) = self.rx.recv().await {
+            drained.push(item);
+        }
+        drained
+    }
+}
+
+impl<T> Stream<T> {
+    fn new(rx: mpsc::Receiver<Result<T>>, end_block: Arc<AtomicU64>) -> Self {
+        Self { rx, end_block }
+    }
+
+    /// a
+    pub async fn recv(&mut self) -> Option<Result<T>> {
+        self.rx.recv().await
+    }
+
+    /// b
+    pub fn drain_and_stop(self) -> StreamDrainer<T> {
+        StreamDrainer {
+            stream_end_block: if self.end_block.load(Ordering::SeqCst) > 0 {
+                Some(self.end_block.load(Ordering::SeqCst))
+            } else {
+                None
+            },
+            rx: self.rx,
+        }
+    }
 }
 
 impl Client {
@@ -457,7 +511,7 @@ impl Client {
         self: Arc<Self>,
         query: Query,
         config: StreamConfig,
-    ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
+    ) -> Result<Stream<QueryResponse>> {
         check_simple_stream_params(&config)?;
 
         let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
@@ -467,6 +521,9 @@ impl Client {
             .stream_arrow(query, config)
             .await
             .context("start inner stream")?;
+
+        // Get the end_block tracker from the ArrowStream
+        let end_block = inner_rx.end_block.clone();
 
         tokio::spawn(async move {
             while let Some(resp) = inner_rx.recv().await {
@@ -482,7 +539,7 @@ impl Client {
             }
         });
 
-        Ok(rx)
+        Ok(Stream::new(rx, end_block))
     }
 
     /// Add block, transaction and log fields selection to the query and spawns task to execute it,
