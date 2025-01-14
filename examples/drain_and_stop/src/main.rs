@@ -87,7 +87,13 @@ async fn main() {
         );
 
         if res.next_block > 10129290 {
-            drained = receiver.drain_and_stop().await;
+            let drainer = receiver.drain_and_stop();
+
+            let end_block = drainer.stream_end_block;
+            println!("Drain and stop will go until block: {:?}", end_block);
+
+            // now await draining
+            drained = drainer.drain().await;
             println!("Drained {} responses", drained.len());
             break;
         }

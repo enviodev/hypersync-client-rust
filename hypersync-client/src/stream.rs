@@ -33,26 +33,53 @@ pub struct ArrowStream {
     handle: JoinHandle<()>,
     // Receiver for the stream
     rx: mpsc::Receiver<Result<ArrowResponse>>,
+
+    /// The total "highest" block we intended to stream to. (In non-reverse mode,
+    /// this is taken from query.to_block or get_height() if none specified.)
+    end_block: Option<u64>,
+}
+
+/// A handle which holds the end_block and can be awaited to drain all leftover items.
+pub struct StreamDrainer {
+    /// The highest block that was intended to be streamed.
+    pub stream_end_block: Option<u64>,
+
+    cancel_token: CancellationToken,
+    rx: mpsc::Receiver<Result<ArrowResponse>>,
+}
+
+impl StreamDrainer {
+    /// Actually drain the remaining items in the channel, returning them all in a vector.
+    pub async fn drain(mut self) -> Vec<Result<ArrowResponse>> {
+        let mut drained = Vec::new();
+
+        // Then collect all leftover items
+        while let Some(item) = self.rx.recv().await {
+            drained.push(item);
+        }
+
+        drained
+    }
+}
+
+impl ArrowStream {
+    /// Returns the highest end block (if known) and a future for draining leftover data.
+    /// You can read the end block immediately, then call `drain().await` afterward.
+    pub fn drain_and_stop(self) -> StreamDrainer {
+        // Signal all tasks to stop
+        self.cancel_token.cancel();
+
+        StreamDrainer {
+            stream_end_block: self.end_block,
+            cancel_token: self.cancel_token,
+            rx: self.rx,
+        }
+    }
 }
 
 impl ArrowStream {
     pub async fn recv(&mut self) -> Option<Result<ArrowResponse>> {
         self.rx.recv().await
-    }
-
-    /// Signals all tasks to stop via cancellation, then waits for them
-    /// to finish and drains any leftover items.
-    pub async fn drain_and_stop(self) -> Vec<Result<ArrowResponse>> {
-        self.cancel_token.cancel();
-
-        let mut drained = Vec::new();
-        let mut rx = self.rx;
-
-        while let Some(item) = rx.recv().await {
-            drained.push(item);
-        }
-
-        drained
     }
 }
 
@@ -120,6 +147,7 @@ pub async fn stream_arrow(
                 let mut query = query.clone();
                 query.from_block = start;
                 query.to_block = Some(end);
+                println!("query's end block: {:?}", query.to_block);
                 let client = client.clone();
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
             })
@@ -254,6 +282,7 @@ pub async fn stream_arrow(
         cancel_token: cancel_token_clone,
         handle,
         rx,
+        end_block: Some(to_block),
     })
 }
 
