@@ -133,9 +133,9 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
                 let tuple = match tuple {
                     Err(e) => {
                         log::trace!(
-                        "failed to decode body of a log, will write null instead. Error was: {:?}",
-                        e
-                    );
+                            "failed to decode body of a log, will write null instead. Error was: {:?}",
+                            e
+                        );
                         None
                     }
                     Ok(v) => v,
@@ -263,6 +263,13 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
 
 fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Array>> {
     match decoder {
+        // DynSolType::Tuple(inner_types) => {
+        //     let mut cols = Vec::new();
+        //
+        //     for ty in inner_types.iter() {
+        //         let col = decode_col()
+        //     }
+        // }
         DynSolType::Bool => {
             let mut builder = MutableBooleanArray::with_capacity(col.len());
 
@@ -399,15 +406,8 @@ fn signature_input_to_field(
         return Err(anyhow!("duplicate param name: {}", input.name));
     }
 
-    let ty = DynSolType::parse(&input.ty).context("parse solidity type")?;
-
-    if &ty != resolved_type {
-        return Err(anyhow!(
-            "Internal error: Parsed type doesn't match resolved type. This should never happen."
-        ));
-    }
-
-    let dt = simple_type_to_data_type(&ty).context("convert simple type to arrow datatype")?;
+    let dt =
+        simple_type_to_data_type(resolved_type).context("convert simple type to arrow datatype")?;
 
     Ok(Field::new(input.name.clone(), dt, true))
 }
@@ -421,6 +421,33 @@ fn simple_type_to_data_type(ty: &DynSolType) -> Result<DataType> {
         DynSolType::Address => Ok(DataType::Binary),
         DynSolType::Bytes => Ok(DataType::Binary),
         DynSolType::String => Ok(DataType::Utf8),
+        DynSolType::Array(inner) | DynSolType::FixedArray(inner, _) => Ok(DataType::List(
+            simple_type_to_data_type(inner).map(|dt| Box::new(Field::new("", dt, true)))?,
+        )),
+        DynSolType::Tuple(inner_types) => {
+            let mut fields = Vec::new();
+
+            for (i, dt) in inner_types.iter().enumerate() {
+                let ty = simple_type_to_data_type(dt)?;
+                fields.push(Field::new(format!("param{}", i), ty, true));
+            }
+
+            Ok(DataType::Struct(fields))
+        }
+        DynSolType::CustomStruct {
+            name,
+            prop_names,
+            tuple,
+        } => {
+            let mut fields = Vec::new();
+
+            for (dt, prop_name) in tuple.iter().zip(prop_names.iter()) {
+                let ty = simple_type_to_data_type(dt)?;
+                fields.push(Field::new(format!("{}_{}", name, prop_name), ty, true));
+            }
+
+            Ok(DataType::Struct(fields))
+        }
         ty => Err(anyhow!(
             "Complex types are not supported. Unexpected type: {}",
             ty
@@ -499,6 +526,15 @@ mod tests {
                 Field::new("amount1Out", DataType::Binary, true),
             ])
         );
+    }
+
+    #[test]
+    fn test_nested_sol_type_to_arrow() {
+        let event = &Event::parse(
+            "ConfiguredQuests(address editor, uint256[][] questIdList, (bool,bool,bool)[] questDetails)"
+        ).unwrap();
+
+        schema_from_event_signature(event).unwrap();
     }
 
     #[test]
