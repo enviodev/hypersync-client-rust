@@ -31,6 +31,8 @@ pub struct StreamConfig {
     pub column_mapping: Option<ColumnMapping>,
     /// Event signature used to populate decode logs. Decode logs would be empty if set to None.
     pub event_signature: Option<String>,
+    /// Trace signature used to populate decoded traces. Decoded traces would be empty if set to None.
+    pub trace_signature: Option<String>,
     /// Determines formatting of binary columns numbers into utf8 hex.
     #[serde(default)]
     pub hex_output: HexOutput,

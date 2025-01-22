@@ -23,6 +23,10 @@ pub struct ArrowResponseData {
     ///
     /// Populated only if event_singature is present.
     pub decoded_logs: Vec<ArrowBatch>,
+    /// Query decoded_traces response.
+    ///
+    /// Populated only if trace_singature is present.
+    pub decoded_traces: Vec<ArrowBatch>,
 }
 
 /// Query response data in Rust native format
