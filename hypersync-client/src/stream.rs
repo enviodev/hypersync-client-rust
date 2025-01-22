@@ -14,8 +14,9 @@ use polars_arrow::{
     datatypes::ArrowDataType,
     record_batch::RecordBatch,
 };
-use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::{sync::mpsc, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::HexOutput,
@@ -25,11 +26,41 @@ use crate::{
     ArrowBatch, ArrowResponseData, StreamConfig,
 };
 
+pub struct ArrowStream {
+    // Used to cancel the stream
+    cancel_token: CancellationToken,
+    // Join handle for waiting for the stream to finish
+    handle: JoinHandle<()>,
+    // Receiver for the stream
+    rx: mpsc::Receiver<Result<ArrowResponse>>,
+}
+
+impl ArrowStream {
+    pub async fn recv(&mut self) -> Option<Result<ArrowResponse>> {
+        self.rx.recv().await
+    }
+
+    /// Signals all tasks to stop via cancellation, then waits for them
+    /// to finish and drains any leftover items.
+    pub async fn drain_and_stop(self) -> Vec<Result<ArrowResponse>> {
+        self.cancel_token.cancel();
+
+        let mut drained = Vec::new();
+        let mut rx = self.rx;
+
+        while let Some(item) = rx.recv().await {
+            drained.push(item);
+        }
+
+        drained
+    }
+}
+
 pub async fn stream_arrow(
     client: Arc<crate::Client>,
     query: Query,
     config: StreamConfig,
-) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
+) -> Result<ArrowStream> {
     let concurrency = config.concurrency.unwrap_or(10);
     let batch_size = config.batch_size.unwrap_or(1000);
     let max_batch_size = config.max_batch_size.unwrap_or(200_000);
@@ -42,12 +73,19 @@ pub async fn stream_arrow(
 
     let (tx, rx) = mpsc::channel(concurrency * 2);
 
+    let cancel_token = CancellationToken::new();
+    let cancel_token_clone = cancel_token.clone();
+
     let to_block = match query.to_block {
         Some(to_block) => to_block,
         None => client.get_height().await.context("get height")?,
     };
 
-    tokio::spawn(async move {
+    let handle = tokio::spawn(async move {
+        if cancel_token.is_cancelled() {
+            return;
+        }
+
         let mut query = query;
 
         if !reverse {
@@ -97,6 +135,10 @@ pub async fn stream_arrow(
             let mut next_req_idx = 0;
 
             while futs.peek().is_some() {
+                if cancel_token.is_cancelled() {
+                    break;
+                }
+
                 while let Some(res) = set.try_join_next() {
                     let (generation, req_idx, resps) = res.unwrap();
                     queue.insert(req_idx, (generation, resps));
@@ -208,7 +250,11 @@ pub async fn stream_arrow(
         }
     });
 
-    Ok(rx)
+    Ok(ArrowStream {
+        cancel_token: cancel_token_clone,
+        handle,
+        rx,
+    })
 }
 
 fn count_rows(batches: &[ArrowBatch]) -> usize {
