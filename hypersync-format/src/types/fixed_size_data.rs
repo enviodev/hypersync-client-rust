@@ -116,6 +116,23 @@ impl<const N: usize> Hex for FixedSizeData<N> {
     }
 }
 
+impl<const N: usize> std::str::FromStr for FixedSizeData<N> {
+    type Err = Error;
+
+    fn from_str(s: &str) -> StdResult<Self, Self::Err> {
+        // Use your existing decode logic
+        let bytes = decode_hex(s)?;
+        FixedSizeData::try_from(bytes)
+    }
+}
+
+impl<const N: usize> fmt::Display for FixedSizeData<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Reuse your existing `encode_hex` function for printing
+        write!(f, "{}", self.encode_hex())
+    }
+}
+
 struct FixedSizeDataVisitor<const N: usize>;
 
 impl<'de, const N: usize> Visitor<'de> for FixedSizeDataVisitor<N> {
@@ -196,5 +213,34 @@ mod tests {
             &FixedSizeData::from(hex!("00000042")),
             &[Token::Str("0x00000042")],
         );
+    }
+
+    /// test from_string
+    #[test]
+    fn test_from_str_valid() {
+        let data = FSD4::from_str("0x00420000").expect("valid 4-byte hex");
+        assert_eq!(data, FSD4::from(hex!("00420000")));
+    }
+
+    #[test]
+    fn test_from_str_missing_prefix() {
+        // Missing "0x" prefix: should fail
+        let data = FSD4::from_str("00420000");
+        assert!(data.is_err());
+    }
+
+    #[test]
+    fn test_from_str_wrong_length() {
+        // Only 3 bytes (0x004200) instead of 4
+        let data = FSD4::from_str("0x004200");
+        assert!(data.is_err());
+    }
+
+    /// test to_string
+    #[test]
+    fn test_display() {
+        let data = FSD4::from(hex!("42feed00"));
+        // Check that Display prints the 0x-prefixed hex
+        assert_eq!(data.to_string(), "0x42feed00");
     }
 }
