@@ -38,7 +38,7 @@ impl<const N: usize> From<[u8; N]> for Data {
 
 struct DataVisitor;
 
-impl<'de> Visitor<'de> for DataVisitor {
+impl Visitor<'_> for DataVisitor {
     type Value = Data;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

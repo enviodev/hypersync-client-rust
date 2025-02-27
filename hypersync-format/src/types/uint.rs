@@ -59,7 +59,7 @@ impl From<UInt> for ethabi::ethereum_types::U256 {
 
 struct UIntVisitor;
 
-impl<'de> Visitor<'de> for UIntVisitor {
+impl Visitor<'_> for UIntVisitor {
     type Value = UInt;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

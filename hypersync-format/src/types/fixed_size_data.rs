@@ -135,7 +135,7 @@ impl<const N: usize> fmt::Display for FixedSizeData<N> {
 
 struct FixedSizeDataVisitor<const N: usize>;
 
-impl<'de, const N: usize> Visitor<'de> for FixedSizeDataVisitor<N> {
+impl<const N: usize> Visitor<'_> for FixedSizeDataVisitor<N> {
     type Value = FixedSizeData<N>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
