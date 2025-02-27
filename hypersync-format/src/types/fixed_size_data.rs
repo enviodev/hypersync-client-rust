@@ -191,6 +191,8 @@ impl<const N: usize> fmt::Debug for FixedSizeData<N> {
 #[cfg(test)]
 mod tests {
     type FixedSizeData = super::FixedSizeData<4>;
+    type FSD4 = FixedSizeData;
+    use derive_more::FromStr;
     use hex_literal::hex;
     use serde_test::{assert_tokens, Token};
 
