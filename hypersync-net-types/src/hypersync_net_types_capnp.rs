@@ -5,7 +5,6 @@
 pub mod query_response_data {
     #[derive(Copy, Clone)]
     pub struct Owned(());
-
     impl ::capnp::introspect::Introspect for Owned {
         fn introspect() -> ::capnp::introspect::Type {
             ::capnp::introspect::TypeVariant::Struct(::capnp::introspect::RawBrandedStructSchema {
