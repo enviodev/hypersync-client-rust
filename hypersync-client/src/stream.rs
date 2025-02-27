@@ -169,7 +169,7 @@ pub async fn stream_arrow(
                         let x = x as u32;
 
                         let batch_size = cmp::max((x as f64 * ratio) as u64, min_batch_size);
-                        let step = batch_size | u64::from(next_generation) << 32;
+                        let step = batch_size | (u64::from(next_generation) << 32);
                         Some(step)
                     })
                     .ok();
@@ -180,7 +180,7 @@ pub async fn stream_arrow(
                         let x = x as u32;
 
                         let batch_size = cmp::min((x as f64 * ratio) as u64, max_batch_size);
-                        let step = batch_size | u64::from(next_generation) << 32;
+                        let step = batch_size | (u64::from(next_generation) << 32);
                         Some(step)
                     })
                     .ok();
