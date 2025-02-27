@@ -37,7 +37,8 @@ brew install capnp
 To build the schema, run the following command:
 
 ```bash
-cargo build --features capnp-build
+cd hypersync-net-types
+make capnp-build
 ```
 
 This triggers the build script in hypersync-net-types, which will generate the `hypersync_net_types_capnp.rs` file in the `src` directory.

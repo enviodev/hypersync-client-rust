@@ -11,9 +11,3 @@ serde = { version = "1", features = ["derive"] }
 arrayvec = { version = "0.7", features = ["serde"] }
 
 hypersync-format = { path = "../hypersync-format", version = "0.4" }
-
-[build-dependencies]
-capnpc = "0.19"
-
-[features]
-capnp-build = []
