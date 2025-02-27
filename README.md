@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml)
 <a href="https://crates.io/crates/hypersync-client">
-    <img src="https://img.shields.io/crates/v/hypersync-client.svg?style=flat-square"
+<img src="https://img.shields.io/crates/v/hypersync-client.svg?style=flat-square"
     alt="Crates.io version" />
 </a>
 
@@ -12,7 +12,7 @@ Rust crate for [Envio's](https://envio.dev/) HyperSync client.
 
 ### Dependencies
 
-Need to install capnproto tool in order to build the library.
+In order to update the capnp schema on hypersync-net-types, you will need to install the `capnproto` tool.
 
 #### Linux
 
@@ -31,3 +31,13 @@ choco install capnproto
 ```bash
 brew install capnp
 ```
+
+## Building
+
+To build the schema, run the following command:
+
+```bash
+cargo build --features capnp-build
+```
+
+This triggers the build script in hypersync-net-types, which will generate the `hypersync_net_types_capnp.rs` file in the `src` directory.
