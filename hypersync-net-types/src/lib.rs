@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 pub type Sighash = FixedSizeData<4>;
 
 #[allow(clippy::all)]
-pub mod hypersync_net_types_capnp {
-    include!(concat!(env!("OUT_DIR"), "/hypersync_net_types_capnp.rs"));
-}
+pub mod hypersync_net_types_capnp;
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct BlockSelection {
