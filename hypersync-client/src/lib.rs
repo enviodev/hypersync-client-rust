@@ -30,6 +30,7 @@ pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
 use simple_types::Event;
+use stream::ArrowStream;
 use tokio::sync::mpsc;
 use types::{EventResponse, ResponseData};
 use url::Url;
@@ -525,7 +526,7 @@ impl Client {
         self: Arc<Self>,
         query: Query,
         config: StreamConfig,
-    ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
+    ) -> Result<ArrowStream> {
         stream::stream_arrow(self, query, config).await
     }
 
