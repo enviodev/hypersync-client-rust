@@ -29,5 +29,5 @@ RUN curl -O https://capnproto.org/capnproto-c++-1.1.0.tar.gz && \
 # Set environment variables
 ENV PATH="/usr/local/bin:$PATH"
 
-# Default shell
-CMD ["/bin/bash"]
+# Keep the container running
+CMD ["tail", "-f", "/dev/null"]
