@@ -18,7 +18,7 @@ env:
 jobs:
   test_dev:
     runs-on: ubuntu-latest
-    # see capnp-build.dockerfile
+    # see capnp-runner.dockerfile
     container: ghcr.io/jonoprest/capnp-runner:latest
     steps:
       - uses: actions/checkout@v3
