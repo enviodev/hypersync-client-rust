@@ -18,6 +18,8 @@ env:
 jobs:
   test_dev:
     runs-on: ubuntu-latest
+    # see capnp-build.dockerfile
+    container: ghcr.io/jonoprest/capnp-runner:latest
     steps:
       - uses: actions/checkout@v3
       # selecting a toolchain either by action or manual `rustup` calls should happen
@@ -31,8 +33,6 @@ jobs:
       - name: Check capnp schema should match the generated code
         working-directory: ./hypersync-net-types
         run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
           make capnp-build
           git diff --exit-code
 
