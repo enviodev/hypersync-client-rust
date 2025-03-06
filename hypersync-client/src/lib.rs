@@ -301,12 +301,14 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for i in 0..self.max_num_retries + 1 {
             match self.get_chain_id_impl().await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
-                    log::error!(
-                        "failed to get chain_id from server, retrying... The error was: {:?}",
+                    log::warn!(
+                        "An exception occured getting chain_id from server. Retrying request ({}/{}). The error was: {:?}",
+                        i - 1 ,
+                        self.max_num_retries,
                         e
                     );
                     err = err.context(format!("{:?}", e));
@@ -333,12 +335,14 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for i in 0..self.max_num_retries + 1 {
             match self.get_height_impl(None).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
-                    log::error!(
-                        "failed to get height from server, retrying... The error was: {:?}",
+                    log::warn!(
+                        "An exception occured getting height from server. Retrying request ({}/{}). The error was: {:?}",
+                        i,
+                        self.max_num_retries,
                         e
                     );
                     err = err.context(format!("{:?}", e));
@@ -425,12 +429,14 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for i in 0..self.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
-                    log::error!(
-                        "failed to get arrow data from server, retrying... The error was: {:?}",
+                    log::warn!(
+                        "An exception occured getting arrow data from server. Retrying request ({}/{}). The error was: {:?}",
+                        i - 1 ,
+                        self.max_num_retries,
                         e
                     );
                     err = err.context(format!("{:?}", e));
