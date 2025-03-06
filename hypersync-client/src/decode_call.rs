@@ -1,4 +1,4 @@
-use alloy_dyn_abi::{DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
 use alloy_json_abi::Function;
 use anyhow::{Context, Result};
 use hypersync_format::Data;
@@ -55,7 +55,48 @@ impl CallDecoder {
             .context("decoding input data")?;
         Ok(Some(decoded))
     }
+
+    /// Parse output data and return result
+    ///
+    /// Decodes the output field from a trace
+    /// and returns the decoded values in a `Vec<DynSolValue>`. If the function
+    /// signature is not found or the decoding fails, it returns `Ok(None)` as
+    /// the result to match the behavior of `decode_input`
+    pub fn decode_output(&self, data: &Data, function_signature: &str) -> Result<Option<Vec<DynSolValue>>>{
+        // Parse the provided function signature into a Function object
+        let function = Function::parse(function_signature).context("parsing function signature")?;
+
+        //Extract the output types of the function
+        let output_types = function.outputs;
+
+        // Convert the output types into the corresponding DynSolType representations,
+        let output_types: Vec<DynSolType> = output_types
+            .into_iter()
+            .map(|param| param.ty.parse::<DynSolType>())
+            .collect::<Result<_, _>>()  // Parse each type as DynSolType
+            .context("parsing output types")?;
+
+        // Create a tuple type from the output parameters
+        let tuple_type = DynSolType::Tuple(output_types);
+
+        // Attempt to decode the data using the constructed tuple type
+        match tuple_type.abi_decode(data.as_ref()) {
+            // If decoding succeeds, return the decoded values as a tuple or single value
+            Ok(decoded) => {
+                if let DynSolValue::Tuple(values) = decoded {
+                    Ok(Some(values)) // Return the decoded values as a Vec if it's a tuple
+                } else {
+                    Ok(Some(vec![decoded])) // Return a single value wrapped in a Vec
+                }
+            }
+            // If decoding fails, return None (to match the behavior of decode_input)
+            Err(_) => {
+                Ok(None) // Return None to signal that decoding failed
+            }
+        }
+    }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -91,7 +132,7 @@ mod tests {
             "transfer(address dst, uint256 wad)",
             "approve(address usr, uint256 wad)",
         ])
-        .unwrap();
+            .unwrap();
         let got = decoder.decode_input(&input).unwrap().unwrap();
 
         for (expected, got) in expected.iter().zip(got.iter()) {
@@ -103,5 +144,55 @@ mod tests {
     #[should_panic]
     fn test_decode_input_with_incorrect_signature() {
         let _function = alloy_json_abi::Function::parse("incorrect signature").unwrap();
+    }
+
+    #[test]
+    fn test_decode_output_single_value() {
+        let output = "0x0000000000000000000000000000000000000000000000056bc75e2d63100000";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "balanceOf(address)(uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+
+        assert_eq!(result.len(), 1, "Should return a single value");
+        assert!(matches!(result[0], DynSolValue::Uint(..)), "Should be a uint value");
+    }
+
+    #[test]
+    fn test_decode_output_multiple_values() {
+        let output = "0x000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "someFunction()(address,uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["someFunction()"]).unwrap();
+        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+
+        assert_eq!(result.len(), 2, "Should return two values");
+        assert!(matches!(result[0], DynSolValue::Address(..)), "First value should be an address");
+        assert!(matches!(result[1], DynSolValue::Uint(..)), "Second value should be a uint");
+    }
+
+    #[test]
+    fn test_decode_output_invalid_data() {
+        let output = "invalid_data";
+        let output = Data::decode_hex(output).unwrap_err();
+        let function_signature = "balanceOf(address)(uint256)";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        let result = decoder.decode_output(&Data::default(), function_signature).unwrap();
+
+        assert!(result.is_none(), "Should return None for invalid data");
+    }
+
+    #[test]
+    #[should_panic(expected = "parsing function signature")]
+    fn test_decode_output_invalid_signature() {
+        let output = "0x0000000000000000000000000000000000000000000000056bc75e2d63100000";
+        let output = Data::decode_hex(output).unwrap();
+        let function_signature = "invalid signature";
+
+        let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
+        decoder.decode_output(&output, function_signature).unwrap();
     }
 }
