@@ -135,7 +135,7 @@ impl<const N: usize> fmt::Display for FixedSizeData<N> {
 
 struct FixedSizeDataVisitor<const N: usize>;
 
-impl<'de, const N: usize> Visitor<'de> for FixedSizeDataVisitor<N> {
+impl<const N: usize> Visitor<'_> for FixedSizeDataVisitor<N> {
     type Value = FixedSizeData<N>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -191,6 +191,8 @@ impl<const N: usize> fmt::Debug for FixedSizeData<N> {
 #[cfg(test)]
 mod tests {
     type FixedSizeData = super::FixedSizeData<4>;
+    type FSD4 = FixedSizeData;
+    use derive_more::FromStr;
     use hex_literal::hex;
     use serde_test::{assert_tokens, Token};
 

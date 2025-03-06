@@ -53,7 +53,7 @@ impl TransactionStatus {
 
 struct TransactionStatusVisitor;
 
-impl<'de> Visitor<'de> for TransactionStatusVisitor {
+impl Visitor<'_> for TransactionStatusVisitor {
     type Value = TransactionStatus;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

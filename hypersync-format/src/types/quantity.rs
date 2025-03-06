@@ -91,7 +91,7 @@ impl<const N: usize> From<[u8; N]> for Quantity {
 
 struct QuantityVisitor;
 
-impl<'de> Visitor<'de> for QuantityVisitor {
+impl Visitor<'_> for QuantityVisitor {
     type Value = Quantity;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

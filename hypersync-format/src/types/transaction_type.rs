@@ -25,7 +25,7 @@ pub struct TransactionType(pub u8);
 
 struct TransactionTypeVisitor;
 
-impl<'de> Visitor<'de> for TransactionTypeVisitor {
+impl Visitor<'_> for TransactionTypeVisitor {
     type Value = TransactionType;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
