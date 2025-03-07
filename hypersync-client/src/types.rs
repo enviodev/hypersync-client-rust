@@ -21,7 +21,7 @@ pub struct ArrowResponseData {
     pub traces: Vec<ArrowBatch>,
     /// Query decoded_logs response.
     ///
-    /// Populated only if event_singature is present.
+    /// Populated only if event_signature is present.
     pub decoded_logs: Vec<ArrowBatch>,
 }
 
