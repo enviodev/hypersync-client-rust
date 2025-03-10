@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, LogArgument};
-use hypersync_net_types::{FieldSelection, LogSelection, Query, TransactionSelection};
+use hypersync_net_types::{
+    FieldSelection, LogArgumentSchema, LogSelection, Query, TransactionSelection,
+};
 
 /// Returns a query for all Blocks and Transactions within the block range (from_block, to_block]
 /// If to_block is None then query runs to the head of the chain.
@@ -82,7 +84,7 @@ pub fn logs(from_block: u64, to_block: Option<u64>, contract_address: Address) -
         from_block,
         to_block,
         logs: vec![LogSelection {
-            address: vec![contract_address],
+            address: vec![contract_address.into()],
             ..Default::default()
         }],
         field_selection: FieldSelection {
@@ -117,8 +119,11 @@ pub fn logs_of_event(
         from_block,
         to_block,
         logs: vec![LogSelection {
-            address: vec![contract_address],
-            topics,
+            address: vec![contract_address.into()],
+            topics: topics
+                .into_iter()
+                .map(|vec| vec.into_iter().map(LogArgumentSchema).collect())
+                .collect(),
             ..Default::default()
         }],
         field_selection: FieldSelection {
@@ -171,7 +176,7 @@ pub fn transactions_from_address(
         from_block,
         to_block,
         transactions: vec![TransactionSelection {
-            from: vec![address],
+            from: vec![address.into()],
             ..Default::default()
         }],
         field_selection: FieldSelection {
