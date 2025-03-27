@@ -1,0 +1,32 @@
+{
+  "type": "0x4",
+  "chainId": "0xaa36a7",
+  "nonce": "0x0",
+  "gas": "0x36812",
+  "maxFeePerGas": "0x277cd7a39",
+  "maxPriorityFeePerGas": "0xf4240",
+  "to": "0x28ff9da582788f270e4877ab302bfd995e213113",
+  "value": "0x0",
+  "accessList": [],
+  "authorizationList": [
+    {
+      "chainId": "0x0",
+      "address": "0x30045eefcb4a927cbb8d791a93956a67c5a0dee9",
+      "nonce": "0x1",
+      "yParity": "0x0",
+      "r": "0x1cd2e6e8bedb5ce949c1ded51078287b0f188768e85d3e909cf473f506749ef3",
+      "s": "0x67b26b3a8bc6b9c243255fc672a1de02d205674eef96acb7c33a19490509b179"
+    }
+  ],
+  "input": "0xb61d27f60000000000000000000000007827b69539b2f031e353a935b9fb66080a70a490000000000000000000000000000000000000000000000000000221b262dd800000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000",
+  "r": "0x9bf451333ae689bafd0e62f3e668b5f3776dc2aa3a9d7e95a0fa2b6c1be7abd4",
+  "s": "0x41abccd852934c34a536082cc67ffb473b0b6035dc6b150dea983165bc61c43",
+  "yParity": "0x0",
+  "v": "0x0",
+  "hash": "0x024d0b5c8f7775c381aca685aea0f60cd0263fdbea533ae99d7412aef96b64c1",
+  "blockHash": "0x6c0d630fb82547e0cf15d30093620b7eb8cdcac445ab2e5e435ac8b285a9a9bd",
+  "blockNumber": "0x79f095",
+  "transactionIndex": "0xa3",
+  "from": "0x28ff9da582788f270e4877ab302bfd995e213113",
+  "gasPrice": "0x214c1f8bc"
+}

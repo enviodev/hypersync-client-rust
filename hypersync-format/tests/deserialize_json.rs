@@ -28,6 +28,12 @@ fn test_transaction_deserialize() {
 }
 
 #[test]
+fn test_eip7702_transaction_deserialize() {
+    let file = read_json_file("eip7702_transaction.json");
+    let _: Transaction = serde_json::from_str(&file).unwrap();
+}
+
+#[test]
 fn test_transaction_receipt_deserialize() {
     let file = read_json_file("transaction_receipt.json");
     let _: TransactionReceipt = serde_json::from_str(&file).unwrap();

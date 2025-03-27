@@ -97,6 +97,7 @@ pub struct Transaction {
     pub max_fee_per_gas: Option<Quantity>,
     pub chain_id: Option<Quantity>,
     pub access_list: Option<Vec<AccessList>>,
+    pub authorization_list: Option<Vec<Authorization>>,
     pub max_fee_per_blob_gas: Option<Quantity>,
     pub blob_versioned_hashes: Option<Vec<Hash>>,
     // OP stack fields
@@ -113,6 +114,20 @@ pub struct Transaction {
 pub struct AccessList {
     pub address: Option<Address>,
     pub storage_keys: Option<Vec<Hash>>,
+}
+
+/// Evm transaction authorization object
+///
+/// See ethereum rpc spec for the meaning of fields
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Authorization {
+    pub chain_id: Quantity,
+    pub address: Address,
+    pub nonce: Quantity,
+    pub y_parity: Quantity,
+    pub r: Quantity,
+    pub s: Quantity,
 }
 
 /// Evm transaction receipt object
