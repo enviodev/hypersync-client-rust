@@ -190,29 +190,22 @@ impl<const N: usize> fmt::Debug for FixedSizeData<N> {
 
 #[cfg(test)]
 mod tests {
-    type FixedSizeData = super::FixedSizeData<4>;
+    type FSD4 = super::FixedSizeData<4>;
+    use std::str::FromStr;
+
     use hex_literal::hex;
     use serde_test::{assert_tokens, Token};
 
     #[test]
     fn test_serde_empty() {
-        assert_tokens(&FixedSizeData::default(), &[Token::Str("0x00000000")]);
+        assert_tokens(&FSD4::default(), &[Token::Str("0x00000000")]);
     }
 
     #[test]
     fn test_serde() {
-        assert_tokens(
-            &FixedSizeData::from(hex!("00420000")),
-            &[Token::Str("0x00420000")],
-        );
-        assert_tokens(
-            &FixedSizeData::from(hex!("42000000")),
-            &[Token::Str("0x42000000")],
-        );
-        assert_tokens(
-            &FixedSizeData::from(hex!("00000042")),
-            &[Token::Str("0x00000042")],
-        );
+        assert_tokens(&FSD4::from(hex!("00420000")), &[Token::Str("0x00420000")]);
+        assert_tokens(&FSD4::from(hex!("42000000")), &[Token::Str("0x42000000")]);
+        assert_tokens(&FSD4::from(hex!("00000042")), &[Token::Str("0x00000042")]);
     }
 
     /// test from_string
