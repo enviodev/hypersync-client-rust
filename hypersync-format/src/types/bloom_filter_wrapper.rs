@@ -72,7 +72,7 @@ impl<'de> Deserialize<'de> for FilterWrapper {
     {
         struct FilterWrapperVisitor;
 
-        impl<'de> Visitor<'de> for FilterWrapperVisitor {
+        impl Visitor<'_> for FilterWrapperVisitor {
             type Value = FilterWrapper;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
