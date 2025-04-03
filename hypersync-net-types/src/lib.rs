@@ -73,6 +73,20 @@ pub struct TransactionSelection {
     /// empty means match all.
     #[serde(default)]
     pub hash: Vec<Hash>,
+
+    /// List of authorizations from eip-7702 transactions, the query will return transactions that match any of these selections
+    #[serde(default)]
+    pub authorization_list: Vec<AuthorizationSelection>,
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct AuthorizationSelection {
+    /// List of chain ids to match in the transaction authorizationList
+    #[serde(default)]
+    pub chain_id: Vec<u64>,
+    /// List of addresses to match in the transaction authorizationList
+    #[serde(default)]
+    pub address: Vec<Address>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
