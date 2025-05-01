@@ -512,7 +512,14 @@ async fn test_decode_string_param_into_arrow() {
     .unwrap();
 
     let conf = StreamConfig {
-        event_signature: Some("CommitmentStored(bytes32 indexed commitmentIndex, address bidder, address commiter, uint256 bid, uint64 blockNumber, bytes32 bidHash, uint64 decayStartTimeStamp, uint64 decayEndTimeStamp, string txnHash, string revertingTxHashes, bytes32 commitmentHash, bytes bidSignature, bytes commitmentSignature, uint64 dispatchTimestamp, bytes sharedSecretKey)".into()),
+        event_signature: Some(
+            "CommitmentStored(bytes32 indexed commitmentIndex, address bidder, address commiter, \
+             uint256 bid, uint64 blockNumber, bytes32 bidHash, uint64 decayStartTimeStamp, uint64 \
+             decayEndTimeStamp, string txnHash, string revertingTxHashes, bytes32 commitmentHash, \
+             bytes bidSignature, bytes commitmentSignature, uint64 dispatchTimestamp, bytes \
+             sharedSecretKey)"
+                .into(),
+        ),
         ..Default::default()
     };
 

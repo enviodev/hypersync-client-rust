@@ -45,7 +45,7 @@ async fn main() {
     .unwrap();
 
     let decoder = Decoder::from_signatures(&[
-        "Transfer(address indexed from, address indexed to, uint amount)",
+        "Transfer(address indexed from, address indexed to, uint amount)"
     ])
     .unwrap();
 

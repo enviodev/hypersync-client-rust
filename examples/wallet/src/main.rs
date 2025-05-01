@@ -92,7 +92,7 @@ async fn main() {
     let mut receiver = client.stream(query, StreamConfig::default()).await.unwrap();
 
     let decoder = Decoder::from_signatures(&[
-        "Transfer(address indexed from, address indexed to, uint amount)",
+        "Transfer(address indexed from, address indexed to, uint amount)"
     ])
     .unwrap();
 
