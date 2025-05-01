@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
         .unwrap(),
     );
 
-    let signature = Function::parse(BALANCE_OF_SIGNATURE.as_ref())
+    let signature = Function::parse(BALANCE_OF_SIGNATURE)
         .context("parse function signature")?
         .selector();
 
@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
                                 .decode_output(&output, BALANCE_OF_SIGNATURE)
                                 .context("Failed to decode output")?
                             {
-                                if results.len() > 0 {
+                                if !results.is_empty() {
                                     let (balance, _) = results[0].as_uint().unwrap();
                                     println!("ADDRESS {} : {} DAI", address, balance);
                                 }
