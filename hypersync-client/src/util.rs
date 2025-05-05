@@ -133,9 +133,10 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
                 let tuple = match tuple {
                     Err(e) => {
                         log::trace!(
-                        "failed to decode body of a log, will write null instead. Error was: {:?}",
-                        e
-                    );
+                            "failed to decode body of a log, will write null instead. Error was: \
+                             {:?}",
+                            e
+                        );
                         None
                     }
                     Ok(v) => v,
@@ -484,9 +485,14 @@ mod tests {
 
     #[test]
     fn test_trailing_indexed_to_schema() {
-        let schema = schema_from_event_signature(&Event::parse(
-            "Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"
-        ).unwrap()).unwrap();
+        let schema = schema_from_event_signature(
+            &Event::parse(
+                "Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, \
+                 uint amount1Out, address indexed to)",
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(
             schema,

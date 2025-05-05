@@ -537,10 +537,16 @@ impl Client {
 
 fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
     if config.event_signature.is_some() {
-        return Err(anyhow!("config.event_signature can't be passed to simple type function. User is expected to decode the logs using Decoder."));
+        return Err(anyhow!(
+            "config.event_signature can't be passed to simple type function. User is expected to \
+             decode the logs using Decoder."
+        ));
     }
     if config.column_mapping.is_some() {
-        return Err(anyhow!("config.column_mapping can't be passed to single type function. User is expected to map values manually."));
+        return Err(anyhow!(
+            "config.column_mapping can't be passed to single type function. User is expected to \
+             map values manually."
+        ));
     }
 
     Ok(())

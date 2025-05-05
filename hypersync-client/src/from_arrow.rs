@@ -120,6 +120,7 @@ impl FromArrow for Transaction {
         let max_fee_per_gas = batch.column::<BinaryArray<i32>>("max_fee_per_gas").ok();
         let chain_id = batch.column::<BinaryArray<i32>>("chain_id").ok();
         let access_list = batch.column::<BinaryArray<i32>>("access_list").ok();
+        let authorization_list = batch.column::<BinaryArray<i32>>("authorization_list").ok();
         let max_fee_per_blob_gas = batch
             .column::<BinaryArray<i32>>("max_fee_per_blob_gas")
             .ok();
@@ -161,6 +162,8 @@ impl FromArrow for Transaction {
                 max_fee_per_gas: map_binary(idx, max_fee_per_gas),
                 chain_id: map_binary(idx, chain_id),
                 access_list: access_list
+                    .and_then(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap())),
+                authorization_list: authorization_list
                     .and_then(|arr| arr.get(idx).map(|v| bincode::deserialize(v).unwrap())),
                 max_fee_per_blob_gas: map_binary(idx, max_fee_per_blob_gas),
                 blob_versioned_hashes: blob_versioned_hashes.and_then(|arr| {

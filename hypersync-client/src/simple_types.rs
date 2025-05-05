@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use arrayvec::ArrayVec;
 use hypersync_format::{
-    AccessList, Address, BlockNumber, BloomFilter, Data, Hash, LogArgument, LogIndex, Nonce,
-    Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
+    AccessList, Address, Authorization, BlockNumber, BloomFilter, Data, Hash, LogArgument,
+    LogIndex, Nonce, Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
@@ -233,6 +233,9 @@ pub struct Transaction {
     /// A gas cost is charged, though at a discount relative to the cost of
     /// accessing outside the list.
     pub access_list: Option<Vec<AccessList>>,
+    /// The authorization_list specifies a list of authorizations for the transaction
+    /// (introduced in EIP-7702)
+    pub authorization_list: Option<Vec<Authorization>>,
     /// Max fee per data gas
     ///
     /// aka BlobFeeCap or blobGasFeeCap

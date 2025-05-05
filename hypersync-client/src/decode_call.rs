@@ -62,7 +62,11 @@ impl CallDecoder {
     /// and returns the decoded values in a `Vec<DynSolValue>`. If the function
     /// signature is not found or the decoding fails, it returns `Ok(None)` as
     /// the result to match the behavior of `decode_input`
-    pub fn decode_output(&self, data: &Data, function_signature: &str) -> Result<Option<Vec<DynSolValue>>>{
+    pub fn decode_output(
+        &self,
+        data: &Data,
+        function_signature: &str,
+    ) -> Result<Option<Vec<DynSolValue>>> {
         // Parse the provided function signature into a Function object
         let function = Function::parse(function_signature).context("parsing function signature")?;
 
@@ -73,7 +77,7 @@ impl CallDecoder {
         let output_types: Vec<DynSolType> = output_types
             .into_iter()
             .map(|param| param.ty.parse::<DynSolType>())
-            .collect::<Result<_, _>>()  // Parse each type as DynSolType
+            .collect::<Result<_, _>>() // Parse each type as DynSolType
             .context("parsing output types")?;
 
         // Create a tuple type from the output parameters
@@ -96,7 +100,6 @@ impl CallDecoder {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -132,7 +135,7 @@ mod tests {
             "transfer(address dst, uint256 wad)",
             "approve(address usr, uint256 wad)",
         ])
-            .unwrap();
+        .unwrap();
         let got = decoder.decode_input(&input).unwrap().unwrap();
 
         for (expected, got) in expected.iter().zip(got.iter()) {
@@ -153,10 +156,16 @@ mod tests {
         let function_signature = "balanceOf(address)(uint256)";
 
         let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
-        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+        let result = decoder
+            .decode_output(&output, function_signature)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(result.len(), 1, "Should return a single value");
-        assert!(matches!(result[0], DynSolValue::Uint(..)), "Should be a uint value");
+        assert!(
+            matches!(result[0], DynSolValue::Uint(..)),
+            "Should be a uint value"
+        );
     }
 
     #[test]
@@ -166,11 +175,20 @@ mod tests {
         let function_signature = "someFunction()(address,uint256)";
 
         let decoder = CallDecoder::from_signatures(&["someFunction()"]).unwrap();
-        let result = decoder.decode_output(&output, function_signature).unwrap().unwrap();
+        let result = decoder
+            .decode_output(&output, function_signature)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(result.len(), 2, "Should return two values");
-        assert!(matches!(result[0], DynSolValue::Address(..)), "First value should be an address");
-        assert!(matches!(result[1], DynSolValue::Uint(..)), "Second value should be a uint");
+        assert!(
+            matches!(result[0], DynSolValue::Address(..)),
+            "First value should be an address"
+        );
+        assert!(
+            matches!(result[1], DynSolValue::Uint(..)),
+            "Second value should be a uint"
+        );
     }
 
     #[test]
@@ -180,7 +198,9 @@ mod tests {
         let function_signature = "balanceOf(address)(uint256)";
 
         let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
-        let result = decoder.decode_output(&Data::default(), function_signature).unwrap();
+        let result = decoder
+            .decode_output(&Data::default(), function_signature)
+            .unwrap();
 
         assert!(result.is_none(), "Should return None for invalid data");
     }

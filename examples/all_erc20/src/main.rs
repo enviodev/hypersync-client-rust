@@ -97,10 +97,13 @@ async fn main() {
         }
 
         println!(
-            "scanned up to block: {}, found {} transfers, events per second: {}, average amount is: {:.2}",
+            "scanned up to block: {}, found {} transfers, events per second: {}, average amount \
+             is: {:.2}",
             res.next_block,
             num_transfers,
-            (num_transfers as u64).checked_div(start.elapsed().as_secs()).unwrap_or_default(),
+            (num_transfers as u64)
+                .checked_div(start.elapsed().as_secs())
+                .unwrap_or_default(),
             total_amount / num_transfers as f64
         );
     }

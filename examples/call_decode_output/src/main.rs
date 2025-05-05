@@ -1,9 +1,13 @@
 use alloy_json_abi::Function;
-use hypersync_client::{net_types::Query, simple_types::Trace, ArrowResponseData, CallDecoder, Client, ClientConfig, FromArrow, StreamConfig};
-use std::sync::Arc;
 use anyhow::Context;
+use hypersync_client::{
+    net_types::Query, simple_types::Trace, ArrowResponseData, CallDecoder, Client, ClientConfig,
+    FromArrow, StreamConfig,
+};
+use std::sync::Arc;
 
-const BALANCE_OF_SIGNATURE : &str= "function balanceOf(address account) external view returns (uint256)";
+const BALANCE_OF_SIGNATURE: &str =
+    "function balanceOf(address account) external view returns (uint256)";
 const DAI_ADDRESS: &str = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,10 +18,10 @@ async fn main() -> anyhow::Result<()> {
             max_num_retries: Some(10),
             ..ClientConfig::default()
         })
-            .unwrap(),
+        .unwrap(),
     );
 
-    let signature = Function::parse(BALANCE_OF_SIGNATURE.as_ref())
+    let signature = Function::parse(BALANCE_OF_SIGNATURE)
         .context("parse function signature")?
         .selector();
 
@@ -31,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
             "trace": ["input", "output"],
         }
     }))
-        .unwrap();
+    .unwrap();
 
     let decoder = CallDecoder::from_signatures(&[BALANCE_OF_SIGNATURE]).unwrap();
 
@@ -56,20 +60,24 @@ async fn main() -> anyhow::Result<()> {
                 let traces = convert_traces(response.data);
                 for trace in traces {
                     if let (Some(input), Some(output)) = (trace.input, trace.output) {
-                        if let Some(args) = decoder.decode_input(&input).context("Failed to decode input") ?{
+                        if let Some(args) = decoder
+                            .decode_input(&input)
+                            .context("Failed to decode input")?
+                        {
                             let address = args[0].as_address().unwrap();
-                            if let Some(results) = decoder.decode_output(&output, BALANCE_OF_SIGNATURE).context("Failed to decode output")? {
-                                if results.len() > 0 {
-                                    let (balance,_) = results[0].as_uint().unwrap();
+                            if let Some(results) = decoder
+                                .decode_output(&output, BALANCE_OF_SIGNATURE)
+                                .context("Failed to decode output")?
+                            {
+                                if !results.is_empty() {
+                                    let (balance, _) = results[0].as_uint().unwrap();
                                     println!("ADDRESS {} : {} DAI", address, balance);
-
                                 }
                             }
                         }
-
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Error: {:?}", e);
             }

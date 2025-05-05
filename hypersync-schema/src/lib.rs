@@ -88,6 +88,7 @@ pub fn transaction() -> SchemaRef {
         Field::new("sighash", DataType::BinaryView, true),
         Field::new("y_parity", quantity_dt(), true),
         Field::new("access_list", DataType::BinaryView, true),
+        Field::new("authorization_list", DataType::BinaryView, true),
         Field::new("l1_fee", quantity_dt(), true),
         Field::new("l1_gas_price", quantity_dt(), true),
         Field::new("l1_gas_used", quantity_dt(), true),
