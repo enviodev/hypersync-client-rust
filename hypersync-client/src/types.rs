@@ -126,8 +126,8 @@ pub struct ArrowBatch {
 }
 
 impl ArrowBatch {
-    /// Extract column from chunk by name
-    pub fn column<T: 'static>(&self, name: &str) -> Result<&T> {
+    /// Extract column from chunk by name if the name exists in the schema
+    pub fn optional_column<T: 'static>(&self, name: &str) -> Result<Option<&T>> {
         match self
             .schema
             .fields
@@ -148,9 +148,14 @@ impl ArrowBatch {
                         col.data_type()
                     )
                 })?;
-                Ok(col)
+                Ok(Some(col))
             }
-            None => Err(anyhow!("field {} not found in schema", name)),
+            None => Ok(None),
         }
+    }
+    /// Extract column from chunk by name
+    pub fn column<T: 'static>(&self, name: &str) -> Result<&T> {
+        self.optional_column(name)?
+            .with_context(|| anyhow!("field {} not found in schema", name))
     }
 }
