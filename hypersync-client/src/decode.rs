@@ -90,7 +90,7 @@ impl Decoder {
             .map(|t| t.as_ref().unwrap().into());
 
         let decoded = event
-            .decode_log_parts(topics, data, false)
+            .decode_log_parts(topics, data)
             .context("decode log parts")?;
 
         Ok(Some(decoded))
