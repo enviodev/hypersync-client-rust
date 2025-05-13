@@ -51,7 +51,7 @@ impl CallDecoder {
             None => return Ok(None),
         };
         let decoded = function
-            .abi_decode_input(data.as_ref(), false)
+            .abi_decode_input(data.as_ref())
             .context("decoding input data")?;
         Ok(Some(decoded))
     }
@@ -112,7 +112,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref(), false).unwrap();
+        let expected = function.abi_decode_input(input.as_ref()).unwrap();
 
         let decoder =
             CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
@@ -129,7 +129,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref(), false).unwrap();
+        let expected = function.abi_decode_input(input.as_ref()).unwrap();
 
         let decoder = CallDecoder::from_signatures(&[
             "transfer(address dst, uint256 wad)",
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_decode_output_invalid_data() {
         let output = "invalid_data";
-        let output = Data::decode_hex(output).unwrap_err();
+        let _output = Data::decode_hex(output).unwrap_err();
         let function_signature = "balanceOf(address)(uint256)";
 
         let decoder = CallDecoder::from_signatures(&["balanceOf(address)"]).unwrap();
