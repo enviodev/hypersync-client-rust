@@ -160,7 +160,7 @@ pub struct TransactionReceipt {
     pub l1_fee_scalar: Option<String>,
     pub gas_used_for_l1: Option<Quantity>,
     pub blob_gas_price: Option<Quantity>,
-    // NOTE: These fields are needed for Optimism (not pressent on other chains)
+    // NOTE: These fields are needed for Optimism (not present on other chains)
     pub deposit_nonce: Option<Quantity>,
     pub deposit_receipt_version: Option<Quantity>,
     pub blob_gas_used: Option<Quantity>,
