@@ -1,4 +1,5 @@
 use super::Hex;
+use crate::types::util::canonicalize_bytes;
 use crate::{Error, Result};
 use alloy_primitives::FixedBytes;
 use serde::de::{self, Visitor};
@@ -146,7 +147,23 @@ impl<const N: usize> Visitor<'_> for FixedSizeDataVisitor<N> {
     where
         E: de::Error,
     {
-        let buf = decode_hex(value).map_err(|e| E::custom(e.to_string()))?;
+        let mut buf = decode_hex(value).map_err(|e| E::custom(e.to_string()))?;
+
+        if buf.len() != N {
+            // To handle bad json hexes like on tron we need to pad the hex with 0s
+            // or remove additonal padded zeros
+            // Handle padding/truncating from the beginning for proper byte alignment
+
+            // Normalize to canonical form by removing leading zero bytes
+            buf = canonicalize_bytes(buf);
+
+            // Pad with zeros if the length is less than N (if the length is greater than N, it will fail at try_into so no need to handle that)
+            if buf.len() < N {
+                let mut padded = vec![0; N];
+                padded[N - buf.len()..].copy_from_slice(&buf);
+                buf = padded;
+            }
+        }
 
         Self::Value::try_from(buf).map_err(|e| E::custom(e.to_string()))
     }
