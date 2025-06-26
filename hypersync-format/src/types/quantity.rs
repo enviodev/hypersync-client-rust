@@ -146,7 +146,7 @@ pub fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .strip_prefix("0x")
         .ok_or_else(|| Error::InvalidHexPrefix(value.to_owned()))?;
 
-    if val.is_empty() || val.starts_with('0') {
+    if val.is_empty() {
         return Err(Error::UnexpectedQuantity(value.to_owned()));
     }
 
@@ -156,7 +156,22 @@ pub fn decode_hex(value: &str) -> Result<Vec<u8>> {
         val = format!("0{val}").into();
     }
 
-    super::util::decode_hex(val.as_ref()).map_err(Error::DecodeHex)
+    let bytes = super::util::decode_hex(val.as_ref()).map_err(Error::DecodeHex)?;
+
+    // Normalize to canonical form by removing leading zero bytes
+    // This handles zero-padded values from non-compliant RPCs like Tron
+    let canonical_bytes = if bytes.len() > 1 && bytes[0] == 0 {
+        // Find first non-zero byte
+        let first_non_zero = bytes
+            .iter()
+            .position(|&b| b != 0)
+            .unwrap_or(bytes.len() - 1);
+        bytes[first_non_zero..].to_vec()
+    } else {
+        bytes
+    };
+
+    Ok(canonical_bytes)
 }
 
 pub fn encode_hex(buf: &[u8]) -> String {
@@ -199,12 +214,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
     fn test_deserialize_leading_zeroes() {
-        assert_de_tokens(
-            &Quantity::from(hex!("00420000")),
-            &[Token::Str("0x00420000")],
-        );
+        // Should now accept zero-padded values and normalize them
+        assert_de_tokens(&Quantity::from(hex!("420000")), &[Token::Str("0x00420000")]);
     }
 
     #[test]
@@ -245,5 +257,23 @@ mod tests {
     #[should_panic]
     fn test_from_slice_leading_zeroes() {
         let _ = Quantity::from(vec![0, 1].as_slice());
+    }
+
+    #[test]
+    fn test_normalize_zero_padded_values() {
+        // Test various zero-padded scenarios
+        // These occur on chains like Tron and Taraxa RPC implementations
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::Str("0x0001")]);
+        assert_de_tokens(&Quantity::from(hex!("0a")), &[Token::Str("0x000a")]);
+        assert_de_tokens(&Quantity::from(hex!("42")), &[Token::Str("0x000042")]);
+        assert_de_tokens(&Quantity::from(hex!("1234")), &[Token::Str("0x00001234")]);
+    }
+
+    #[test]
+    fn test_zero_value_handling() {
+        // Zero should still be handled correctly
+        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0")]);
+        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x00")]);
+        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0000")]);
     }
 }
