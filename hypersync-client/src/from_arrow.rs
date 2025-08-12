@@ -1,6 +1,7 @@
 use arrayvec::ArrayVec;
 use polars_arrow::array::{
     BinaryArray, BinaryViewArray, BooleanArray, StaticArray, UInt64Array, UInt8Array, Utf8Array,
+    Utf8ViewArray,
 };
 
 use crate::{
@@ -13,37 +14,60 @@ pub trait FromArrow: Sized {
     /// Converts to the Vector type from the ArrowBatch type.
     /// B is the type of binary array used to downcast since we use both binary views and
     /// binary arrays
-    fn from_arrow_bin_array<B: BinArray + 'static>(batch: &ArrowBatch) -> Vec<Self>;
+    fn from_arrow_bin_array<B: List<Item = [u8]> + 'static, U: List<Item = str> + 'static>(
+        batch: &ArrowBatch,
+    ) -> Vec<Self>;
 
     /// Default implementation that uses the binary array type.
     /// IPC is written with regular binary arrays.
     /// Named 'from_arrow' for backwards compatibility.
     fn from_arrow(batch: &ArrowBatch) -> Vec<Self> {
-        Self::from_arrow_bin_array::<BinaryArray<i32>>(batch)
+        Self::from_arrow_bin_array::<BinaryArray<i32>, Utf8Array<i32>>(batch)
     }
 
     /// An additional method that uses the binary view array type.
     /// This is to be able to reuse the trait server side where Binary Views are
     /// used instead.
     fn from_arrow_bin_view_array(batch: &ArrowBatch) -> Vec<Self> {
-        Self::from_arrow_bin_array::<BinaryViewArray>(batch)
+        Self::from_arrow_bin_array::<BinaryViewArray, Utf8ViewArray>(batch)
     }
 }
 
 /// A simple trait to compose binary array types that need to be
 /// accessed by index
-pub trait BinArray {
-    fn get_idx(&self, i: usize) -> Option<&[u8]>;
+pub trait List {
+    type Item: ?Sized;
+
+    fn get_idx(&self, i: usize) -> Option<&Self::Item>;
 }
 
-impl BinArray for BinaryArray<i32> {
+impl List for BinaryArray<i32> {
+    type Item = [u8];
+
+    fn get_idx(&self, i: usize) -> Option<&[u8]> {
+        self.get(i)
+    }
+}
+impl List for BinaryViewArray {
+    type Item = [u8];
+
     fn get_idx(&self, i: usize) -> Option<&[u8]> {
         self.get(i)
     }
 }
 
-impl BinArray for BinaryViewArray {
-    fn get_idx(&self, i: usize) -> Option<&[u8]> {
+impl List for Utf8Array<i32> {
+    type Item = str;
+
+    fn get_idx(&self, i: usize) -> Option<&str> {
+        self.get(i)
+    }
+}
+
+impl List for Utf8ViewArray {
+    type Item = str;
+
+    fn get_idx(&self, i: usize) -> Option<&str> {
         self.get(i)
     }
 }
@@ -52,13 +76,13 @@ fn map_binary<'a, T, B>(i: usize, arr: Option<&'a B>) -> Option<T>
 where
     T: TryFrom<&'a [u8]>,
     <T as TryFrom<&'a [u8]>>::Error: std::fmt::Debug,
-    B: BinArray,
+    B: List<Item = [u8]>,
 {
-    arr.and_then(|arr| arr.get_idx(i).map(|v| v.try_into().unwrap()))
+    arr.and_then(|arr| arr.get_idx(i).map(|v| T::try_from(v).unwrap()))
 }
 
 impl FromArrow for Block {
-    fn from_arrow_bin_array<B: BinArray + 'static>(batch: &ArrowBatch) -> Vec<Self> {
+    fn from_arrow_bin_array<B: List<Item = [u8]> + 'static, U>(batch: &ArrowBatch) -> Vec<Self> {
         let number = batch.column::<UInt64Array>("number").ok();
         let hash = batch.column::<B>("hash").ok();
         let parent_hash = batch.column::<B>("parent_hash").ok();
@@ -131,7 +155,7 @@ impl FromArrow for Block {
 }
 
 impl FromArrow for Transaction {
-    fn from_arrow_bin_array<B: BinArray + 'static>(batch: &ArrowBatch) -> Vec<Self> {
+    fn from_arrow_bin_array<B: List<Item = [u8]> + 'static, U>(batch: &ArrowBatch) -> Vec<Self> {
         let block_hash = batch.column::<B>("block_hash").ok();
         let block_number = batch.column::<UInt64Array>("block_number").ok();
         let from = batch.column::<B>("from").ok();
@@ -225,7 +249,7 @@ impl FromArrow for Transaction {
 }
 
 impl FromArrow for Log {
-    fn from_arrow_bin_array<B: BinArray + 'static>(batch: &ArrowBatch) -> Vec<Self> {
+    fn from_arrow_bin_array<B: List<Item = [u8]> + 'static, U>(batch: &ArrowBatch) -> Vec<Self> {
         let removed = batch.column::<BooleanArray>("removed").ok();
         let log_index = batch.column::<UInt64Array>("log_index").ok();
         let transaction_index = batch.column::<UInt64Array>("transaction_index").ok();
@@ -265,16 +289,18 @@ impl FromArrow for Log {
 }
 
 impl FromArrow for Trace {
-    fn from_arrow_bin_array<B: BinArray + 'static>(batch: &ArrowBatch) -> Vec<Self> {
+    fn from_arrow_bin_array<B: List<Item = [u8]> + 'static, U: List<Item = str> + 'static>(
+        batch: &ArrowBatch,
+    ) -> Vec<Self> {
         let from = batch.column::<B>("from").ok();
         let to = batch.column::<B>("to").ok();
-        let call_type = batch.column::<Utf8Array<i32>>("call_type").ok();
+        let call_type = batch.column::<U>("call_type").ok();
         let gas = batch.column::<B>("gas").ok();
         let input = batch.column::<B>("input").ok();
         let init = batch.column::<B>("init").ok();
         let value = batch.column::<B>("value").ok();
         let author = batch.column::<B>("author").ok();
-        let reward_type = batch.column::<Utf8Array<i32>>("reward_type").ok();
+        let reward_type = batch.column::<U>("reward_type").ok();
         let block_hash = batch.column::<B>("block_hash").ok();
         let block_number = batch.column::<UInt64Array>("block_number").ok();
         let address = batch.column::<B>("address").ok();
@@ -285,20 +311,20 @@ impl FromArrow for Trace {
         let trace_address = batch.column::<B>("trace_address").ok();
         let transaction_hash = batch.column::<B>("transaction_hash").ok();
         let transaction_position = batch.column::<UInt64Array>("transaction_position").ok();
-        let kind = batch.column::<Utf8Array<i32>>("type").ok();
-        let error = batch.column::<Utf8Array<i32>>("error").ok();
+        let kind = batch.column::<U>("type").ok();
+        let error = batch.column::<U>("error").ok();
 
         (0..batch.chunk.len())
             .map(|idx| Self {
                 from: map_binary(idx, from),
                 to: map_binary(idx, to),
-                call_type: call_type.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
+                call_type: call_type.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
                 gas: map_binary(idx, gas),
                 input: map_binary(idx, input),
                 init: map_binary(idx, init),
                 value: map_binary(idx, value),
                 author: map_binary(idx, author),
-                reward_type: reward_type.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
+                reward_type: reward_type.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
                 block_hash: map_binary(idx, block_hash),
                 block_number: block_number.and_then(|arr| arr.get(idx)),
                 address: map_binary(idx, address),
@@ -310,8 +336,8 @@ impl FromArrow for Trace {
                     .and_then(|arr| arr.get_idx(idx).map(|v| bincode::deserialize(v).unwrap())),
                 transaction_hash: map_binary(idx, transaction_hash),
                 transaction_position: transaction_position.and_then(|arr| arr.get(idx)),
-                kind: kind.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
-                error: error.and_then(|arr| arr.get(idx).map(|v| v.to_owned())),
+                kind: kind.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
+                error: error.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
             })
             .collect()
     }
