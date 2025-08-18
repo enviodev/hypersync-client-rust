@@ -18,42 +18,43 @@ env:
 jobs:
   test_dev:
     runs-on: ubuntu-latest
+    # see capnp-runner.dockerfile
+    container: ghcr.io/jonoprest/capnp-runner:latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Dependencies
-      run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
-    - name: Build
-      run: cargo build
-    - name: Test
-      run: cargo test
+      - uses: actions/checkout@v3
+      # selecting a toolchain either by action or manual `rustup` calls should happen
+      # before the plugin, as the cache uses the current rustc version as its cache key
+      - run: rustup toolchain install stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build
+      - name: Test
+        run: cargo test
+      - name: Check capnp schema should match the generated code
+        working-directory: ./hypersync-net-types
+        run: |
+          make capnp-build
+          git diff --exit-code
 
   test_release:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Dependencies
-      run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
-    - name: Build
-      run: cargo build --release
-    - name: Test
-      run: cargo test --release
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test --release
 
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Dependencies
-      run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
-    - name: Rustfmt
-      run: cargo fmt --check
-    - name: Clippy
-      run: cargo clippy -- -Dwarnings
+      - uses: actions/checkout@v3
+      # selecting a toolchain either by action or manual `rustup` calls should happen
+      # before the plugin, as the cache uses the current rustc version as its cache key
+      - run: rustup toolchain install stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rustfmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy -- -Dwarnings

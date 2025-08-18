@@ -14,3 +14,6 @@ hypersync-format = { path = "../hypersync-format", version = "0.5" }
 
 [build-dependencies]
 capnpc = "0.19"
+
+[features]
+capnp-build = []
