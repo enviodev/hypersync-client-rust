@@ -8,7 +8,7 @@ mod hex;
 mod quantity;
 mod transaction_status;
 mod transaction_type;
-mod uint;
+pub mod uint;
 mod util;
 mod withdrawal;
 

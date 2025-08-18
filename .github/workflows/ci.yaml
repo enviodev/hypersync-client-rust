@@ -20,11 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
     - uses: Swatinem/rust-cache@v2
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get install -y capnproto libcapnp-dev
+    - name: Check Rust version
+      run: |
+          rustc --version
+          cargo --version
+          rustup show
     - name: Build
       run: cargo build
     - name: Test
@@ -34,11 +43,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
     - uses: Swatinem/rust-cache@v2
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get install -y capnproto libcapnp-dev
+    - name: Check Rust version
+      run: |
+          rustc --version
+          cargo --version
+          rustup show
     - name: Build
       run: cargo build --release
     - name: Test
@@ -48,11 +66,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
     - uses: Swatinem/rust-cache@v2
     - name: Install Dependencies
       run: |
           export DEBIAN_FRONTEND=noninteractive
           sudo apt-get install -y capnproto libcapnp-dev
+    - name: Check Rust version
+      run: |
+          rustc --version
+          cargo --version
+          rustup show
     - name: Rustfmt
       run: cargo fmt --check
     - name: Clippy
