@@ -95,7 +95,7 @@ impl Visitor<'_> for QuantityVisitor {
     type Value = Quantity;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("hex string for a quantity")
+        formatter.write_str("hex string or numeric value for a quantity")
     }
 
     fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
@@ -106,6 +106,27 @@ impl Visitor<'_> for QuantityVisitor {
 
         Ok(Quantity::from(buf))
     }
+
+    fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        // Convert the integer to big-endian bytes and canonicalize
+        let buf = canonicalize_bytes(value.to_be_bytes().to_vec());
+        Ok(Quantity::from(buf))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> StdResult<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if value < 0 {
+            return Err(E::custom("negative quantity not allowed"));
+        }
+        let unsigned = value as u64;
+        let buf = canonicalize_bytes(unsigned.to_be_bytes().to_vec());
+        Ok(Quantity::from(buf))
+    }
 }
 
 impl<'de> Deserialize<'de> for Quantity {
@@ -113,7 +134,8 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_str(QuantityVisitor)
+        // Accept either hex strings (0x...) or numeric JSON values
+        deserializer.deserialize_any(QuantityVisitor)
     }
 }
 
@@ -266,5 +288,20 @@ mod tests {
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x00")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0000")]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_u64() {
+        // Numeric JSON values should be accepted (e.g., Sonic timestamps)
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::U64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::U64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::U64(1)]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_i64() {
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::I64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::I64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::I64(1)]);
     }
 }
