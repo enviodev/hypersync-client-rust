@@ -4,7 +4,7 @@ use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
 use capnp::message::Builder;
-use capnp::serialize;
+use capnp::serialize_packed;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -102,7 +102,7 @@ impl Query {
         self.populate_capnp_query(query)?;
 
         let mut buf = Vec::new();
-        serialize::write_message(&mut buf, &message)?;
+        serialize_packed::write_message(&mut buf, &message)?;
         Ok(buf)
     }
 
