@@ -204,16 +204,20 @@ enum TraceField {
 
 struct Query {
     fromBlock @0 :UInt64;
-    toBlock @1 :UInt64;
+    toBlock @1 :OptUInt64;
     logs @2 :List(LogSelection);
     transactions @3 :List(TransactionSelection);
     traces @4 :List(TraceSelection);
     blocks @5 :List(BlockSelection);
     includeAllBlocks @6 :Bool;
     fieldSelection @7 :FieldSelection;
-    maxNumBlocks @8 :UInt64;
-    maxNumTransactions @9 :UInt64;
-    maxNumLogs @10 :UInt64;
-    maxNumTraces @11 :UInt64;
+    maxNumBlocks @8 :OptUInt64;
+    maxNumTransactions @9 :OptUInt64;
+    maxNumLogs @10 :OptUInt64;
+    maxNumTraces @11 :OptUInt64;
     joinMode @12 :JoinMode;
+}
+
+struct OptUInt64 {
+    value @0 :UInt64;
 }

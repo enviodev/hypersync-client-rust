@@ -122,27 +122,30 @@ impl Query {
         query.reborrow().set_from_block(self.from_block);
 
         if let Some(to_block) = self.to_block {
-            query.reborrow().set_to_block(to_block);
+            let mut to_block_builder = query.reborrow().init_to_block();
+            to_block_builder.set_value(to_block)
         }
 
         query
             .reborrow()
             .set_include_all_blocks(self.include_all_blocks);
 
-        // Set max nums
+        // Set max nums using OptUInt64
         if let Some(max_num_blocks) = self.max_num_blocks {
-            query.reborrow().set_max_num_blocks(max_num_blocks as u64);
+            let mut max_blocks_builder = query.reborrow().init_max_num_blocks();
+            max_blocks_builder.set_value(max_num_blocks as u64);
         }
         if let Some(max_num_transactions) = self.max_num_transactions {
-            query
-                .reborrow()
-                .set_max_num_transactions(max_num_transactions as u64);
+            let mut max_tx_builder = query.reborrow().init_max_num_transactions();
+            max_tx_builder.set_value(max_num_transactions as u64);
         }
         if let Some(max_num_logs) = self.max_num_logs {
-            query.reborrow().set_max_num_logs(max_num_logs as u64);
+            let mut max_logs_builder = query.reborrow().init_max_num_logs();
+            max_logs_builder.set_value(max_num_logs as u64);
         }
         if let Some(max_num_traces) = self.max_num_traces {
-            query.reborrow().set_max_num_traces(max_num_traces as u64);
+            let mut max_traces_builder = query.reborrow().init_max_num_traces();
+            max_traces_builder.set_value(max_num_traces as u64);
         }
 
         // Set join mode
@@ -235,7 +238,11 @@ impl Query {
         query: hypersync_net_types_capnp::query::Reader,
     ) -> Result<Self, capnp::Error> {
         let from_block = query.get_from_block();
-        let to_block = Some(query.get_to_block());
+        let to_block = if query.has_to_block() {
+            Some(query.get_to_block()?.get_value())
+        } else {
+            None
+        };
         let include_all_blocks = query.get_include_all_blocks();
 
         // Parse field selection
@@ -311,11 +318,35 @@ impl Query {
                 FieldSelection::default()
             };
 
-        // Parse max values
-        let max_num_blocks = Some(query.get_max_num_blocks() as usize);
-        let max_num_transactions = Some(query.get_max_num_transactions() as usize);
-        let max_num_logs = Some(query.get_max_num_logs() as usize);
-        let max_num_traces = Some(query.get_max_num_traces() as usize);
+        // Parse max values using OptUInt64
+        let max_num_blocks = if query.has_max_num_blocks() {
+            let max_blocks_reader = query.get_max_num_blocks()?;
+            let value = max_blocks_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_transactions = if query.has_max_num_transactions() {
+            let max_tx_reader = query.get_max_num_transactions()?;
+            let value = max_tx_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_logs = if query.has_max_num_logs() {
+            let max_logs_reader = query.get_max_num_logs()?;
+            let value = max_logs_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_traces = if query.has_max_num_traces() {
+            let max_traces_reader = query.get_max_num_traces()?;
+            let value = max_traces_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
 
         // Parse join mode
         let join_mode = match query.get_join_mode()? {
@@ -417,20 +448,40 @@ pub mod tests {
         let deser_json_elapsed = deser_json_start.elapsed();
 
         let bench = serde_json::json!({
-            "capnp_ser": ser_elapsed,
-            "capnp_deser": deser_elapsed,
+            "capnp_ser": ser_elapsed.as_micros(),
+            "capnp_deser": deser_elapsed.as_micros(),
             "capnp_ser_size": ser.len(),
-            "json_ser": ser_json_elapsed,
-            "json_deser": deser_json_elapsed,
+            "json_ser": ser_json_elapsed.as_micros(),
+            "json_deser": deser_json_elapsed.as_micros(),
             "json_ser_size": ser_json.len(),
         });
-        println!("{}", label);
-        println!("{}", bench);
+        println!("\nBenchmark {}", label);
+        println!("{}\n", bench);
     }
 
     #[test]
     pub fn test_query_serde_default() {
         let query = Query::default();
         test_query_serde(query, "default");
+    }
+
+    #[test]
+    pub fn test_query_serde_with_non_null_defaults() {
+        let query = Query {
+            from_block: u64::default(),
+            to_block: Some(u64::default()),
+            logs: Vec::default(),
+            transactions: Vec::default(),
+            traces: Vec::default(),
+            blocks: Vec::default(),
+            include_all_blocks: bool::default(),
+            field_selection: FieldSelection::default(),
+            max_num_blocks: Some(usize::default()),
+            max_num_transactions: Some(usize::default()),
+            max_num_logs: Some(usize::default()),
+            max_num_traces: Some(usize::default()),
+            join_mode: JoinMode::default(),
+        };
+        test_query_serde(query, "with_non_null_defaults");
     }
 }
