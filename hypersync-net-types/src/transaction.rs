@@ -675,7 +675,10 @@ impl TransactionField {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_format::Hex;
+
     use super::*;
+    use crate::{query::tests::test_query_serde, FieldSelection, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -699,5 +702,116 @@ mod tests {
             let strum = serde_json::to_string(&field.as_ref()).unwrap();
             assert_eq!(serialized, strum, "strum value should be the same as serde");
         }
+    }
+
+    #[test]
+    fn test_transaction_selection_serde_with_defaults() {
+        let transaction_selection = TransactionSelection::default();
+        let field_selection = FieldSelection {
+            transaction: TransactionField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            transactions: vec![transaction_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "transaction selection with defaults");
+    }
+    #[test]
+    fn test_transaction_selection_serde_with_explicit_defaults() {
+        let transaction_selection = TransactionSelection {
+            from: Vec::default(),
+            from_filter: Some(FilterWrapper::new(16, 0)),
+            to: Vec::default(),
+            to_filter: Some(FilterWrapper::new(16, 0)),
+            sighash: Vec::default(),
+            status: Some(u8::default()),
+            type_: Vec::default(),
+            contract_address: Vec::default(),
+            contract_address_filter: Some(FilterWrapper::new(16, 0)),
+            hash: Vec::default(),
+            authorization_list: Vec::default(),
+        };
+        let field_selection = FieldSelection {
+            transaction: TransactionField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            transactions: vec![transaction_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "transaction selection with explicit defaults");
+    }
+
+    #[test]
+    fn test_transaction_selection_serde_with_full_values() {
+        let transaction_selection = TransactionSelection {
+            from: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
+            from_filter: Some(FilterWrapper::new(16, 1)),
+            to: vec![Address::decode_hex("0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6").unwrap()],
+            to_filter: Some(FilterWrapper::new(16, 1)),
+            sighash: vec![Sighash::from([0x12, 0x34, 0x56, 0x78])],
+            status: Some(1),
+            type_: vec![2],
+            contract_address: vec![Address::decode_hex(
+                "0x1234567890123456789012345678901234567890",
+            )
+            .unwrap()],
+            contract_address_filter: Some(FilterWrapper::new(16, 1)),
+            hash: vec![Hash::decode_hex(
+                "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
+            )
+            .unwrap()],
+            authorization_list: Vec::default(),
+        };
+        let field_selection = FieldSelection {
+            transaction: TransactionField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            transactions: vec![transaction_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "transaction selection with full values");
+    }
+
+    #[test]
+    fn test_authorization_selection_serde_with_values() {
+        let auth_selection = AuthorizationSelection {
+            chain_id: vec![1, 137, 42161],
+            address: vec![
+                Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap(),
+            ],
+        };
+        let transaction_selection = TransactionSelection {
+            from: Vec::default(),
+            from_filter: Some(FilterWrapper::new(16, 0)),
+            to: Vec::default(),
+            to_filter: Some(FilterWrapper::new(16, 0)),
+            sighash: Vec::default(),
+            status: Some(u8::default()),
+            type_: Vec::default(),
+            contract_address: Vec::default(),
+            contract_address_filter: Some(FilterWrapper::new(16, 0)),
+            hash: Vec::default(),
+            authorization_list: vec![auth_selection],
+        };
+        let field_selection = FieldSelection {
+            transaction: TransactionField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            transactions: vec![transaction_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "authorization selection with rest defaults");
     }
 }
