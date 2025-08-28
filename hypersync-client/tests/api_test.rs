@@ -5,7 +5,9 @@ use hypersync_client::{
     preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping, StreamConfig,
 };
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
-use hypersync_net_types::{FieldSelection, Query, TransactionSelection};
+use hypersync_net_types::{
+    block::BlockField, transaction::TransactionField, FieldSelection, Query, TransactionSelection,
+};
 use polars_arrow::array::UInt64Array;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -14,9 +16,9 @@ async fn test_api_arrow_ipc() {
     let client = Client::new(ClientConfig::default()).unwrap();
 
     let mut block_field_selection = BTreeSet::new();
-    block_field_selection.insert("number".to_owned());
-    block_field_selection.insert("timestamp".to_owned());
-    block_field_selection.insert("hash".to_owned());
+    block_field_selection.insert(BlockField::Number);
+    block_field_selection.insert(BlockField::Timestamp);
+    block_field_selection.insert(BlockField::Hash);
 
     let res = client
         .get_arrow(&Query {
@@ -446,9 +448,9 @@ async fn test_small_bloom_filter_query() {
         Address::decode_hex("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").unwrap();
 
     let mut txn_field_selection = BTreeSet::new();
-    txn_field_selection.insert("block_number".to_owned());
-    txn_field_selection.insert("from".to_owned());
-    txn_field_selection.insert("hash".to_owned());
+    txn_field_selection.insert(TransactionField::BlockNumber);
+    txn_field_selection.insert(TransactionField::From);
+    txn_field_selection.insert(TransactionField::Hash);
 
     let addrs = [vitalik_eth_addr.clone()];
     let from_address_filter =
