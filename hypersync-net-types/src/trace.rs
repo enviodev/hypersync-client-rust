@@ -406,7 +406,10 @@ impl TraceField {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_format::Hex;
+
     use super::*;
+    use crate::{query::tests::test_query_serde, FieldSelection, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -430,5 +433,50 @@ mod tests {
             let strum = serde_json::to_string(&field.as_ref()).unwrap();
             assert_eq!(serialized, strum, "strum value should be the same as serde");
         }
+    }
+
+    #[test]
+    fn test_trace_selection_serde_with_defaults() {
+        let trace_selection = TraceSelection::default();
+        let field_selection = FieldSelection {
+            trace: TraceField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            traces: vec![trace_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "trace selection with defaults");
+    }
+
+    #[test]
+    fn test_trace_selection_serde_with_full_values() {
+        let trace_selection = TraceSelection {
+            from: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
+            from_filter: Some(FilterWrapper::new(16, 1)),
+            to: vec![Address::decode_hex("0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6").unwrap()],
+            to_filter: Some(FilterWrapper::new(16, 1)),
+            address: vec![
+                Address::decode_hex("0x1234567890123456789012345678901234567890").unwrap(),
+            ],
+            address_filter: Some(FilterWrapper::new(16, 1)),
+            call_type: vec!["call".to_string(), "create".to_string()],
+            reward_type: vec!["block".to_string(), "uncle".to_string()],
+            type_: vec!["call".to_string(), "create".to_string()],
+            sighash: vec![Sighash::from([0x12, 0x34, 0x56, 0x78])],
+        };
+        let field_selection = FieldSelection {
+            trace: TraceField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            traces: vec![trace_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "trace selection with full values");
     }
 }
