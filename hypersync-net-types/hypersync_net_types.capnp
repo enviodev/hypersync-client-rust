@@ -67,16 +67,139 @@ struct TraceSelection {
 }
 
 struct FieldSelection {
-    block @0 :List(Text);
-    transaction @1 :List(Text);
-    log @2 :List(Text);
-    trace @3 :List(Text);
+    block @0 :List(BlockField);
+    transaction @1 :List(TransactionField);
+    log @2 :List(LogField);
+    trace @3 :List(TraceField);
 }
 
 enum JoinMode {
     default @0;
     joinAll @1;
     joinNothing @2;
+}
+
+enum BlockField {
+    number @0;
+    hash @1;
+    parentHash @2;
+    sha3Uncles @3;
+    logsBloom @4;
+    transactionsRoot @5;
+    stateRoot @6;
+    receiptsRoot @7;
+    miner @8;
+    extraData @9;
+    size @10;
+    gasLimit @11;
+    gasUsed @12;
+    timestamp @13;
+    mixHash @14;
+    nonce @15;
+    difficulty @16;
+    totalDifficulty @17;
+    uncles @18;
+    baseFeePerGas @19;
+    blobGasUsed @20;
+    excessBlobGas @21;
+    parentBeaconBlockRoot @22;
+    withdrawalsRoot @23;
+    withdrawals @24;
+    l1BlockNumber @25;
+    sendCount @26;
+    sendRoot @27;
+}
+
+enum TransactionField {
+    blockHash @0;
+    blockNumber @1;
+    gas @2;
+    hash @3;
+    input @4;
+    nonce @5;
+    transactionIndex @6;
+    value @7;
+    cumulativeGasUsed @8;
+    effectiveGasPrice @9;
+    gasUsed @10;
+    logsBloom @11;
+    from @12;
+    gasPrice @13;
+    to @14;
+    v @15;
+    r @16;
+    s @17;
+    maxPriorityFeePerGas @18;
+    maxFeePerGas @19;
+    chainId @20;
+    contractAddress @21;
+    type @22;
+    root @23;
+    status @24;
+    yParity @25;
+    accessList @26;
+    authorizationList @27;
+    l1Fee @28;
+    l1GasPrice @29;
+    l1GasUsed @30;
+    l1FeeScalar @31;
+    gasUsedForL1 @32;
+    maxFeePerBlobGas @33;
+    blobVersionedHashes @34;
+    blobGasPrice @35;
+    blobGasUsed @36;
+    depositNonce @37;
+    depositReceiptVersion @38;
+    l1BaseFeeScalar @39;
+    l1BlobBaseFee @40;
+    l1BlobBaseFeeScalar @41;
+    l1BlockNumber @42;
+    mint @43;
+    sighash @44;
+    sourceHash @45;
+}
+
+enum LogField {
+    transactionHash @0;
+    blockHash @1;
+    blockNumber @2;
+    transactionIndex @3;
+    logIndex @4;
+    address @5;
+    data @6;
+    removed @7;
+    topic0 @8;
+    topic1 @9;
+    topic2 @10;
+    topic3 @11;
+}
+
+enum TraceField {
+    transactionHash @0;
+    blockHash @1;
+    blockNumber @2;
+    transactionPosition @3;
+    type @4;
+    error @5;
+    from @6;
+    to @7;
+    author @8;
+    gas @9;
+    gasUsed @10;
+    actionAddress @11;
+    address @12;
+    balance @13;
+    callType @14;
+    code @15;
+    init @16;
+    input @17;
+    output @18;
+    refundAddress @19;
+    rewardType @20;
+    sighash @21;
+    subtraces @22;
+    traceAddress @23;
+    value @24;
 }
 
 struct Query {
