@@ -21,7 +21,7 @@ impl Default for JoinMode {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FieldSelection {
     #[serde(default)]
     pub block: BTreeSet<BlockField>,
@@ -33,7 +33,7 @@ pub struct FieldSelection {
     pub trace: BTreeSet<TraceField>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Query {
     /// The block to start the query from
     pub from_block: u64,
@@ -388,5 +388,49 @@ impl Query {
             max_num_traces,
             join_mode,
         })
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    pub fn test_query_serde(query: Query, label: &str) {
+        // time start
+        let ser_start = std::time::Instant::now();
+        let ser = query.to_capnp_bytes().unwrap();
+        let ser_elapsed = ser_start.elapsed();
+
+        let deser_start = std::time::Instant::now();
+        let deser = Query::from_capnp_bytes(&ser).unwrap();
+        let deser_elapsed = deser_start.elapsed();
+
+        assert_eq!(query, deser);
+
+        let ser_json_start = std::time::Instant::now();
+        let ser_json = serde_json::to_string(&query).unwrap();
+        let ser_json_elapsed = ser_json_start.elapsed();
+
+        let deser_json_start = std::time::Instant::now();
+        let _deser_json: Query = serde_json::from_str(&ser_json).unwrap();
+        let deser_json_elapsed = deser_json_start.elapsed();
+
+        let bench = serde_json::json!({
+            "capnp_ser": ser_elapsed,
+            "capnp_deser": deser_elapsed,
+            "capnp_ser_size": ser.len(),
+            "json_ser": ser_json_elapsed,
+            "json_deser": deser_json_elapsed,
+            "json_ser_size": ser_json.len(),
+        });
+        println!("{}", label);
+        println!("{}", bench);
+    }
+
+    #[test]
+    pub fn test_query_serde_default() {
+        let query = Query::default();
+        test_query_serde(query, "default");
     }
 }

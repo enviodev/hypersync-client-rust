@@ -3,7 +3,7 @@ use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct BlockSelection {
     /// Hash of a block, any blocks that have one of these hashes will be returned.
     /// Empty means match all.

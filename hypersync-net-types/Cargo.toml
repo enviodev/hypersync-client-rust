@@ -20,4 +20,5 @@ capnpc = "0.19"
 
 [dev-dependencies]
 hypersync-schema = { path = "../hypersync-schema" }
+pretty_assertions = "1.4.1"
 serde_json = "1.0.143"

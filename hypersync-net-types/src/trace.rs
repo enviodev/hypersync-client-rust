@@ -2,7 +2,7 @@ use crate::{hypersync_net_types_capnp, types::Sighash};
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct TraceSelection {
     #[serde(default)]
     pub from: Vec<Address>,

@@ -2,7 +2,7 @@ use crate::{hypersync_net_types_capnp, types::Sighash};
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AuthorizationSelection {
     /// List of chain ids to match in the transaction authorizationList
     #[serde(default)]
@@ -12,7 +12,7 @@ pub struct AuthorizationSelection {
     pub address: Vec<Address>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct TransactionSelection {
     /// Address the transaction should originate from. If transaction.from matches any of these, the transaction
     /// will be returned. Keep in mind that this has an and relationship with to filter, so each transaction should

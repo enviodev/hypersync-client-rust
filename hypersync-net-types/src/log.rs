@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct LogSelection {
     /// Address of the contract, any logs that has any of these addresses will be returned.
     /// Empty means match all.
