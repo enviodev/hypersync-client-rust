@@ -45,7 +45,7 @@ struct TransactionSelection {
     to @2 :List(Data);
     toFilter @3 :Data;
     sighash @4 :List(Data);
-    status @5 :UInt8;
+    status @5 :OptUInt8;
     type @6 :List(UInt8);
     contractAddress @7 :List(Data);
     contractAddressFilter @8 :Data;
@@ -220,4 +220,8 @@ struct Query {
 
 struct OptUInt64 {
     value @0 :UInt64;
+}
+
+struct OptUInt8 {
+    value @0 :UInt8;
 }

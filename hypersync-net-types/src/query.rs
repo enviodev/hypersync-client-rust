@@ -457,7 +457,7 @@ pub mod tests {
                 "deser": deser.as_micros(),
                 "size": size,
             })
-        };
+        }
 
         println!(
             "\nBenchmark {}\ncapnp: {}\njson:  {}\n",

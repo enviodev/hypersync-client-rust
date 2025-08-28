@@ -155,7 +155,8 @@ impl TransactionSelection {
 
         // Set status
         if let Some(status) = tx_sel.status {
-            builder.reborrow().set_status(status);
+            let mut status_builder = builder.reborrow().init_status();
+            status_builder.set_value(status);
         }
 
         // Set type
@@ -278,7 +279,11 @@ impl TransactionSelection {
         }
 
         // Parse status
-        let status = Some(reader.get_status());
+        let mut status = None;
+        if reader.has_status() {
+            let status_reader = reader.get_status()?;
+            status = Some(status_reader.get_value());
+        }
 
         let mut type_ = Vec::new();
 
