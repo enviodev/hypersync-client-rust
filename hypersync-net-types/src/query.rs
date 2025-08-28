@@ -530,11 +530,14 @@ pub mod tests {
         test_query_serde(query, "base query with_non_null_values");
     }
 
-    #[test]
-    pub fn test_huge_payload() {
+    fn build_mock_logs(
+        num_contracts: usize,
+        num_topic_0_per_contract: usize,
+        num_addresses_per_contract: usize,
+    ) -> Vec<LogSelection> {
         let mut logs: Vec<LogSelection> = Vec::new();
 
-        for contract_idx in 0..5 {
+        for contract_idx in 0..num_contracts {
             let mut topics = ArrayVec::new();
             topics.push(vec![]);
             let mut log_selection = LogSelection {
@@ -543,7 +546,7 @@ pub mod tests {
                 topics,
             };
 
-            for topic_idx in 0..6 {
+            for topic_idx in 0..num_topic_0_per_contract {
                 log_selection.topics[0].push(
                     LogArgument::decode_hex(
                         format!(
@@ -556,7 +559,7 @@ pub mod tests {
                 );
             }
 
-            for addr_idx in 0..1000 {
+            for addr_idx in 0..num_addresses_per_contract {
                 let zero_padded_addr_idx = format!("{:04}", addr_idx);
                 let address = Address::decode_hex(
                     format!(
@@ -570,6 +573,12 @@ pub mod tests {
             }
             logs.push(log_selection);
         }
+        logs
+    }
+
+    #[test]
+    pub fn test_huge_payload() {
+        let logs = build_mock_logs(5, 6, 1000);
 
         let query = Query {
             from_block: 50,
@@ -578,5 +587,17 @@ pub mod tests {
             ..Default::default()
         };
         test_query_serde(query, "huge payload");
+    }
+    #[test]
+    pub fn test_moderate_payload() {
+        let logs = build_mock_logs(5, 6, 3);
+
+        let query = Query {
+            from_block: 50,
+            to_block: Some(500),
+            logs,
+            ..Default::default()
+        };
+        test_query_serde(query, "moderate payload");
     }
 }
