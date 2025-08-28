@@ -118,6 +118,7 @@ impl TraceSelection {
 #[derive(
     Debug,
     Clone,
+    Copy,
     Serialize,
     Deserialize,
     PartialEq,
@@ -179,6 +180,45 @@ impl TraceField {
     pub fn all() -> std::collections::BTreeSet<Self> {
         use strum::IntoEnumIterator;
         Self::iter().collect()
+    }
+
+    /// Convert TraceField to Cap'n Proto enum
+    pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::TraceField {
+        match self {
+            TraceField::TransactionHash => {
+                crate::hypersync_net_types_capnp::TraceField::TransactionHash
+            }
+            TraceField::BlockHash => crate::hypersync_net_types_capnp::TraceField::BlockHash,
+            TraceField::BlockNumber => crate::hypersync_net_types_capnp::TraceField::BlockNumber,
+            TraceField::TransactionPosition => {
+                crate::hypersync_net_types_capnp::TraceField::TransactionPosition
+            }
+            TraceField::Type => crate::hypersync_net_types_capnp::TraceField::Type,
+            TraceField::Error => crate::hypersync_net_types_capnp::TraceField::Error,
+            TraceField::From => crate::hypersync_net_types_capnp::TraceField::From,
+            TraceField::To => crate::hypersync_net_types_capnp::TraceField::To,
+            TraceField::Author => crate::hypersync_net_types_capnp::TraceField::Author,
+            TraceField::Gas => crate::hypersync_net_types_capnp::TraceField::Gas,
+            TraceField::GasUsed => crate::hypersync_net_types_capnp::TraceField::GasUsed,
+            TraceField::ActionAddress => {
+                crate::hypersync_net_types_capnp::TraceField::ActionAddress
+            }
+            TraceField::Address => crate::hypersync_net_types_capnp::TraceField::Address,
+            TraceField::Balance => crate::hypersync_net_types_capnp::TraceField::Balance,
+            TraceField::CallType => crate::hypersync_net_types_capnp::TraceField::CallType,
+            TraceField::Code => crate::hypersync_net_types_capnp::TraceField::Code,
+            TraceField::Init => crate::hypersync_net_types_capnp::TraceField::Init,
+            TraceField::Input => crate::hypersync_net_types_capnp::TraceField::Input,
+            TraceField::Output => crate::hypersync_net_types_capnp::TraceField::Output,
+            TraceField::RefundAddress => {
+                crate::hypersync_net_types_capnp::TraceField::RefundAddress
+            }
+            TraceField::RewardType => crate::hypersync_net_types_capnp::TraceField::RewardType,
+            TraceField::Sighash => crate::hypersync_net_types_capnp::TraceField::Sighash,
+            TraceField::Subtraces => crate::hypersync_net_types_capnp::TraceField::Subtraces,
+            TraceField::TraceAddress => crate::hypersync_net_types_capnp::TraceField::TraceAddress,
+            TraceField::Value => crate::hypersync_net_types_capnp::TraceField::Value,
+        }
     }
 }
 

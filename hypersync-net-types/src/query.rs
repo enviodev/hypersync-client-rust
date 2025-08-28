@@ -106,185 +106,6 @@ impl Query {
         Ok(buf)
     }
 
-    // Helper functions to convert Rust enums to Cap'n Proto enums
-    fn block_field_to_capnp(field: &BlockField) -> hypersync_net_types_capnp::BlockField {
-        // Use the integer representation which should match the enum ordinal
-        match field {
-            BlockField::Number => hypersync_net_types_capnp::BlockField::Number,
-            BlockField::Hash => hypersync_net_types_capnp::BlockField::Hash,
-            BlockField::ParentHash => hypersync_net_types_capnp::BlockField::ParentHash,
-            BlockField::Sha3Uncles => hypersync_net_types_capnp::BlockField::Sha3Uncles,
-            BlockField::LogsBloom => hypersync_net_types_capnp::BlockField::LogsBloom,
-            BlockField::TransactionsRoot => hypersync_net_types_capnp::BlockField::TransactionsRoot,
-            BlockField::StateRoot => hypersync_net_types_capnp::BlockField::StateRoot,
-            BlockField::ReceiptsRoot => hypersync_net_types_capnp::BlockField::ReceiptsRoot,
-            BlockField::Miner => hypersync_net_types_capnp::BlockField::Miner,
-            BlockField::ExtraData => hypersync_net_types_capnp::BlockField::ExtraData,
-            BlockField::Size => hypersync_net_types_capnp::BlockField::Size,
-            BlockField::GasLimit => hypersync_net_types_capnp::BlockField::GasLimit,
-            BlockField::GasUsed => hypersync_net_types_capnp::BlockField::GasUsed,
-            BlockField::Timestamp => hypersync_net_types_capnp::BlockField::Timestamp,
-            BlockField::MixHash => hypersync_net_types_capnp::BlockField::MixHash,
-            BlockField::Nonce => hypersync_net_types_capnp::BlockField::Nonce,
-            BlockField::Difficulty => hypersync_net_types_capnp::BlockField::Difficulty,
-            BlockField::TotalDifficulty => hypersync_net_types_capnp::BlockField::TotalDifficulty,
-            BlockField::Uncles => hypersync_net_types_capnp::BlockField::Uncles,
-            BlockField::BaseFeePerGas => hypersync_net_types_capnp::BlockField::BaseFeePerGas,
-            BlockField::BlobGasUsed => hypersync_net_types_capnp::BlockField::BlobGasUsed,
-            BlockField::ExcessBlobGas => hypersync_net_types_capnp::BlockField::ExcessBlobGas,
-            BlockField::ParentBeaconBlockRoot => {
-                hypersync_net_types_capnp::BlockField::ParentBeaconBlockRoot
-            }
-            BlockField::WithdrawalsRoot => hypersync_net_types_capnp::BlockField::WithdrawalsRoot,
-            BlockField::Withdrawals => hypersync_net_types_capnp::BlockField::Withdrawals,
-            BlockField::L1BlockNumber => hypersync_net_types_capnp::BlockField::L1BlockNumber,
-            BlockField::SendCount => hypersync_net_types_capnp::BlockField::SendCount,
-            BlockField::SendRoot => hypersync_net_types_capnp::BlockField::SendRoot,
-        }
-    }
-
-    fn transaction_field_to_capnp(
-        field: &TransactionField,
-    ) -> hypersync_net_types_capnp::TransactionField {
-        match field {
-            TransactionField::BlockHash => hypersync_net_types_capnp::TransactionField::BlockHash,
-            TransactionField::BlockNumber => {
-                hypersync_net_types_capnp::TransactionField::BlockNumber
-            }
-            TransactionField::Gas => hypersync_net_types_capnp::TransactionField::Gas,
-            TransactionField::Hash => hypersync_net_types_capnp::TransactionField::Hash,
-            TransactionField::Input => hypersync_net_types_capnp::TransactionField::Input,
-            TransactionField::Nonce => hypersync_net_types_capnp::TransactionField::Nonce,
-            TransactionField::TransactionIndex => {
-                hypersync_net_types_capnp::TransactionField::TransactionIndex
-            }
-            TransactionField::Value => hypersync_net_types_capnp::TransactionField::Value,
-            TransactionField::CumulativeGasUsed => {
-                hypersync_net_types_capnp::TransactionField::CumulativeGasUsed
-            }
-            TransactionField::EffectiveGasPrice => {
-                hypersync_net_types_capnp::TransactionField::EffectiveGasPrice
-            }
-            TransactionField::GasUsed => hypersync_net_types_capnp::TransactionField::GasUsed,
-            TransactionField::LogsBloom => hypersync_net_types_capnp::TransactionField::LogsBloom,
-            TransactionField::From => hypersync_net_types_capnp::TransactionField::From,
-            TransactionField::GasPrice => hypersync_net_types_capnp::TransactionField::GasPrice,
-            TransactionField::To => hypersync_net_types_capnp::TransactionField::To,
-            TransactionField::V => hypersync_net_types_capnp::TransactionField::V,
-            TransactionField::R => hypersync_net_types_capnp::TransactionField::R,
-            TransactionField::S => hypersync_net_types_capnp::TransactionField::S,
-            TransactionField::MaxPriorityFeePerGas => {
-                hypersync_net_types_capnp::TransactionField::MaxPriorityFeePerGas
-            }
-            TransactionField::MaxFeePerGas => {
-                hypersync_net_types_capnp::TransactionField::MaxFeePerGas
-            }
-            TransactionField::ChainId => hypersync_net_types_capnp::TransactionField::ChainId,
-            TransactionField::ContractAddress => {
-                hypersync_net_types_capnp::TransactionField::ContractAddress
-            }
-            TransactionField::Type => hypersync_net_types_capnp::TransactionField::Type,
-            TransactionField::Root => hypersync_net_types_capnp::TransactionField::Root,
-            TransactionField::Status => hypersync_net_types_capnp::TransactionField::Status,
-            TransactionField::YParity => hypersync_net_types_capnp::TransactionField::YParity,
-            TransactionField::AccessList => hypersync_net_types_capnp::TransactionField::AccessList,
-            TransactionField::AuthorizationList => {
-                hypersync_net_types_capnp::TransactionField::AuthorizationList
-            }
-            TransactionField::L1Fee => hypersync_net_types_capnp::TransactionField::L1Fee,
-            TransactionField::L1GasPrice => hypersync_net_types_capnp::TransactionField::L1GasPrice,
-            TransactionField::L1GasUsed => hypersync_net_types_capnp::TransactionField::L1GasUsed,
-            TransactionField::L1FeeScalar => {
-                hypersync_net_types_capnp::TransactionField::L1FeeScalar
-            }
-            TransactionField::GasUsedForL1 => {
-                hypersync_net_types_capnp::TransactionField::GasUsedForL1
-            }
-            TransactionField::MaxFeePerBlobGas => {
-                hypersync_net_types_capnp::TransactionField::MaxFeePerBlobGas
-            }
-            TransactionField::BlobVersionedHashes => {
-                hypersync_net_types_capnp::TransactionField::BlobVersionedHashes
-            }
-            TransactionField::BlobGasPrice => {
-                hypersync_net_types_capnp::TransactionField::BlobGasPrice
-            }
-            TransactionField::BlobGasUsed => {
-                hypersync_net_types_capnp::TransactionField::BlobGasUsed
-            }
-            TransactionField::DepositNonce => {
-                hypersync_net_types_capnp::TransactionField::DepositNonce
-            }
-            TransactionField::DepositReceiptVersion => {
-                hypersync_net_types_capnp::TransactionField::DepositReceiptVersion
-            }
-            TransactionField::L1BaseFeeScalar => {
-                hypersync_net_types_capnp::TransactionField::L1BaseFeeScalar
-            }
-            TransactionField::L1BlobBaseFee => {
-                hypersync_net_types_capnp::TransactionField::L1BlobBaseFee
-            }
-            TransactionField::L1BlobBaseFeeScalar => {
-                hypersync_net_types_capnp::TransactionField::L1BlobBaseFeeScalar
-            }
-            TransactionField::L1BlockNumber => {
-                hypersync_net_types_capnp::TransactionField::L1BlockNumber
-            }
-            TransactionField::Mint => hypersync_net_types_capnp::TransactionField::Mint,
-            TransactionField::Sighash => hypersync_net_types_capnp::TransactionField::Sighash,
-            TransactionField::SourceHash => hypersync_net_types_capnp::TransactionField::SourceHash,
-        }
-    }
-
-    fn log_field_to_capnp(field: &LogField) -> hypersync_net_types_capnp::LogField {
-        match field {
-            LogField::TransactionHash => hypersync_net_types_capnp::LogField::TransactionHash,
-            LogField::BlockHash => hypersync_net_types_capnp::LogField::BlockHash,
-            LogField::BlockNumber => hypersync_net_types_capnp::LogField::BlockNumber,
-            LogField::TransactionIndex => hypersync_net_types_capnp::LogField::TransactionIndex,
-            LogField::LogIndex => hypersync_net_types_capnp::LogField::LogIndex,
-            LogField::Address => hypersync_net_types_capnp::LogField::Address,
-            LogField::Data => hypersync_net_types_capnp::LogField::Data,
-            LogField::Removed => hypersync_net_types_capnp::LogField::Removed,
-            LogField::Topic0 => hypersync_net_types_capnp::LogField::Topic0,
-            LogField::Topic1 => hypersync_net_types_capnp::LogField::Topic1,
-            LogField::Topic2 => hypersync_net_types_capnp::LogField::Topic2,
-            LogField::Topic3 => hypersync_net_types_capnp::LogField::Topic3,
-        }
-    }
-
-    fn trace_field_to_capnp(field: &TraceField) -> hypersync_net_types_capnp::TraceField {
-        match field {
-            TraceField::TransactionHash => hypersync_net_types_capnp::TraceField::TransactionHash,
-            TraceField::BlockHash => hypersync_net_types_capnp::TraceField::BlockHash,
-            TraceField::BlockNumber => hypersync_net_types_capnp::TraceField::BlockNumber,
-            TraceField::TransactionPosition => {
-                hypersync_net_types_capnp::TraceField::TransactionPosition
-            }
-            TraceField::Type => hypersync_net_types_capnp::TraceField::Type,
-            TraceField::Error => hypersync_net_types_capnp::TraceField::Error,
-            TraceField::From => hypersync_net_types_capnp::TraceField::From,
-            TraceField::To => hypersync_net_types_capnp::TraceField::To,
-            TraceField::Author => hypersync_net_types_capnp::TraceField::Author,
-            TraceField::Gas => hypersync_net_types_capnp::TraceField::Gas,
-            TraceField::GasUsed => hypersync_net_types_capnp::TraceField::GasUsed,
-            TraceField::ActionAddress => hypersync_net_types_capnp::TraceField::ActionAddress,
-            TraceField::Address => hypersync_net_types_capnp::TraceField::Address,
-            TraceField::Balance => hypersync_net_types_capnp::TraceField::Balance,
-            TraceField::CallType => hypersync_net_types_capnp::TraceField::CallType,
-            TraceField::Code => hypersync_net_types_capnp::TraceField::Code,
-            TraceField::Init => hypersync_net_types_capnp::TraceField::Init,
-            TraceField::Input => hypersync_net_types_capnp::TraceField::Input,
-            TraceField::Output => hypersync_net_types_capnp::TraceField::Output,
-            TraceField::RefundAddress => hypersync_net_types_capnp::TraceField::RefundAddress,
-            TraceField::RewardType => hypersync_net_types_capnp::TraceField::RewardType,
-            TraceField::Sighash => hypersync_net_types_capnp::TraceField::Sighash,
-            TraceField::Subtraces => hypersync_net_types_capnp::TraceField::Subtraces,
-            TraceField::TraceAddress => hypersync_net_types_capnp::TraceField::TraceAddress,
-            TraceField::Value => hypersync_net_types_capnp::TraceField::Value,
-        }
-    }
-
     fn populate_capnp_query(
         &self,
         mut query: hypersync_net_types_capnp::query::Builder,
@@ -332,7 +153,7 @@ impl Query {
                 .reborrow()
                 .init_block(self.field_selection.block.len() as u32);
             for (i, field) in self.field_selection.block.iter().enumerate() {
-                block_list.set(i as u32, Self::block_field_to_capnp(field));
+                block_list.set(i as u32, field.to_capnp());
             }
 
             // Set transaction fields
@@ -340,7 +161,7 @@ impl Query {
                 .reborrow()
                 .init_transaction(self.field_selection.transaction.len() as u32);
             for (i, field) in self.field_selection.transaction.iter().enumerate() {
-                tx_list.set(i as u32, Self::transaction_field_to_capnp(field));
+                tx_list.set(i as u32, field.to_capnp());
             }
 
             // Set log fields
@@ -348,7 +169,7 @@ impl Query {
                 .reborrow()
                 .init_log(self.field_selection.log.len() as u32);
             for (i, field) in self.field_selection.log.iter().enumerate() {
-                log_list.set(i as u32, Self::log_field_to_capnp(field));
+                log_list.set(i as u32, field.to_capnp());
             }
 
             // Set trace fields
@@ -356,7 +177,7 @@ impl Query {
                 .reborrow()
                 .init_trace(self.field_selection.trace.len() as u32);
             for (i, field) in self.field_selection.trace.iter().enumerate() {
-                trace_list.set(i as u32, Self::trace_field_to_capnp(field));
+                trace_list.set(i as u32, field.to_capnp());
             }
         }
 

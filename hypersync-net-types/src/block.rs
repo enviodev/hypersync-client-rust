@@ -43,6 +43,7 @@ impl BlockSelection {
 #[derive(
     Debug,
     Clone,
+    Copy,
     Serialize,
     Deserialize,
     PartialEq,
@@ -103,6 +104,54 @@ impl BlockField {
     pub fn all() -> BTreeSet<Self> {
         use strum::IntoEnumIterator;
         Self::iter().collect()
+    }
+
+    /// Convert BlockField to Cap'n Proto enum
+    pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::BlockField {
+        match self {
+            BlockField::Number => crate::hypersync_net_types_capnp::BlockField::Number,
+            BlockField::Hash => crate::hypersync_net_types_capnp::BlockField::Hash,
+            BlockField::ParentHash => crate::hypersync_net_types_capnp::BlockField::ParentHash,
+            BlockField::Sha3Uncles => crate::hypersync_net_types_capnp::BlockField::Sha3Uncles,
+            BlockField::LogsBloom => crate::hypersync_net_types_capnp::BlockField::LogsBloom,
+            BlockField::TransactionsRoot => {
+                crate::hypersync_net_types_capnp::BlockField::TransactionsRoot
+            }
+            BlockField::StateRoot => crate::hypersync_net_types_capnp::BlockField::StateRoot,
+            BlockField::ReceiptsRoot => crate::hypersync_net_types_capnp::BlockField::ReceiptsRoot,
+            BlockField::Miner => crate::hypersync_net_types_capnp::BlockField::Miner,
+            BlockField::ExtraData => crate::hypersync_net_types_capnp::BlockField::ExtraData,
+            BlockField::Size => crate::hypersync_net_types_capnp::BlockField::Size,
+            BlockField::GasLimit => crate::hypersync_net_types_capnp::BlockField::GasLimit,
+            BlockField::GasUsed => crate::hypersync_net_types_capnp::BlockField::GasUsed,
+            BlockField::Timestamp => crate::hypersync_net_types_capnp::BlockField::Timestamp,
+            BlockField::MixHash => crate::hypersync_net_types_capnp::BlockField::MixHash,
+            BlockField::Nonce => crate::hypersync_net_types_capnp::BlockField::Nonce,
+            BlockField::Difficulty => crate::hypersync_net_types_capnp::BlockField::Difficulty,
+            BlockField::TotalDifficulty => {
+                crate::hypersync_net_types_capnp::BlockField::TotalDifficulty
+            }
+            BlockField::Uncles => crate::hypersync_net_types_capnp::BlockField::Uncles,
+            BlockField::BaseFeePerGas => {
+                crate::hypersync_net_types_capnp::BlockField::BaseFeePerGas
+            }
+            BlockField::BlobGasUsed => crate::hypersync_net_types_capnp::BlockField::BlobGasUsed,
+            BlockField::ExcessBlobGas => {
+                crate::hypersync_net_types_capnp::BlockField::ExcessBlobGas
+            }
+            BlockField::ParentBeaconBlockRoot => {
+                crate::hypersync_net_types_capnp::BlockField::ParentBeaconBlockRoot
+            }
+            BlockField::WithdrawalsRoot => {
+                crate::hypersync_net_types_capnp::BlockField::WithdrawalsRoot
+            }
+            BlockField::Withdrawals => crate::hypersync_net_types_capnp::BlockField::Withdrawals,
+            BlockField::L1BlockNumber => {
+                crate::hypersync_net_types_capnp::BlockField::L1BlockNumber
+            }
+            BlockField::SendCount => crate::hypersync_net_types_capnp::BlockField::SendCount,
+            BlockField::SendRoot => crate::hypersync_net_types_capnp::BlockField::SendRoot,
+        }
     }
 }
 

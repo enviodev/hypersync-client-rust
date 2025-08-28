@@ -57,6 +57,7 @@ impl LogSelection {
 #[derive(
     Debug,
     Clone,
+    Copy,
     Serialize,
     Deserialize,
     PartialEq,
@@ -101,6 +102,28 @@ impl LogField {
     pub fn all() -> std::collections::BTreeSet<Self> {
         use strum::IntoEnumIterator;
         Self::iter().collect()
+    }
+
+    /// Convert LogField to Cap'n Proto enum
+    pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::LogField {
+        match self {
+            LogField::TransactionHash => {
+                crate::hypersync_net_types_capnp::LogField::TransactionHash
+            }
+            LogField::BlockHash => crate::hypersync_net_types_capnp::LogField::BlockHash,
+            LogField::BlockNumber => crate::hypersync_net_types_capnp::LogField::BlockNumber,
+            LogField::TransactionIndex => {
+                crate::hypersync_net_types_capnp::LogField::TransactionIndex
+            }
+            LogField::LogIndex => crate::hypersync_net_types_capnp::LogField::LogIndex,
+            LogField::Address => crate::hypersync_net_types_capnp::LogField::Address,
+            LogField::Data => crate::hypersync_net_types_capnp::LogField::Data,
+            LogField::Removed => crate::hypersync_net_types_capnp::LogField::Removed,
+            LogField::Topic0 => crate::hypersync_net_types_capnp::LogField::Topic0,
+            LogField::Topic1 => crate::hypersync_net_types_capnp::LogField::Topic1,
+            LogField::Topic2 => crate::hypersync_net_types_capnp::LogField::Topic2,
+            LogField::Topic3 => crate::hypersync_net_types_capnp::LogField::Topic3,
+        }
     }
 }
 
