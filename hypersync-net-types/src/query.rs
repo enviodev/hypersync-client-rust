@@ -425,6 +425,8 @@ impl Query {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use arrayvec::ArrayVec;
+    use hypersync_format::{Address, Hex, LogArgument};
     use pretty_assertions::assert_eq;
 
     pub fn test_query_serde(query: Query, label: &str) {
@@ -447,6 +449,16 @@ pub mod tests {
         let _deser_json: Query = serde_json::from_str(&ser_json).unwrap();
         let deser_json_elapsed = deser_json_start.elapsed();
 
+        let bincode_config = bincode::config::standard();
+        let ser_bincode_start = std::time::Instant::now();
+        let ser_bincode = bincode::serde::encode_to_vec(&query, bincode_config).unwrap();
+        let ser_bincode_elapsed = ser_bincode_start.elapsed();
+
+        let deser_bincode_start = std::time::Instant::now();
+        let _: (Query, _) =
+            bincode::serde::decode_from_slice(&ser_bincode, bincode_config).unwrap();
+        let deser_bincode_elapsed = deser_bincode_start.elapsed();
+
         fn make_bench(
             ser: std::time::Duration,
             deser: std::time::Duration,
@@ -460,10 +472,15 @@ pub mod tests {
         }
 
         println!(
-            "\nBenchmark {}\ncapnp: {}\njson:  {}\n",
+            "\nBenchmark {}\ncapnp: {}\njson:  {}\nbin:   {}\n",
             label,
             make_bench(ser_elapsed, deser_elapsed, ser.len()),
-            make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len())
+            make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len()),
+            make_bench(
+                ser_bincode_elapsed,
+                deser_bincode_elapsed,
+                ser_bincode.len()
+            )
         );
     }
 
@@ -511,5 +528,55 @@ pub mod tests {
             join_mode: JoinMode::JoinAll,
         };
         test_query_serde(query, "base query with_non_null_values");
+    }
+
+    #[test]
+    pub fn test_huge_payload() {
+        let mut logs: Vec<LogSelection> = Vec::new();
+
+        for contract_idx in 0..5 {
+            let mut topics = ArrayVec::new();
+            topics.push(vec![]);
+            let mut log_selection = LogSelection {
+                address: vec![],
+                address_filter: None,
+                topics,
+            };
+
+            for topic_idx in 0..6 {
+                log_selection.topics[0].push(
+                    LogArgument::decode_hex(
+                        format!(
+                            "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7{}{}",
+                            contract_idx, topic_idx
+                        )
+                        .as_str(),
+                    )
+                    .unwrap(),
+                );
+            }
+
+            for addr_idx in 0..1000 {
+                let zero_padded_addr_idx = format!("{:04}", addr_idx);
+                let address = Address::decode_hex(
+                    format!(
+                        "0x3Cb124E1cDcEECF6E464BB185325608dbe6{}{}",
+                        contract_idx, zero_padded_addr_idx,
+                    )
+                    .as_str(),
+                )
+                .unwrap();
+                log_selection.address.push(address);
+            }
+            logs.push(log_selection);
+        }
+
+        let query = Query {
+            from_block: 50,
+            to_block: Some(500),
+            logs,
+            ..Default::default()
+        };
+        test_query_serde(query, "huge payload");
     }
 }
