@@ -29,9 +29,9 @@ pub struct ClientConfig {
 /// Determines query serialization format for HTTP requests.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SerializationFormat {
-    /// Use JSON serialization (default for backward compatibility)
+    /// Use JSON serialization
     Json,
-    /// Use Cap'n Proto binary serialization
+    /// Use Cap'n Proto binary serialization (new default)
     CapnProto,
 }
 
