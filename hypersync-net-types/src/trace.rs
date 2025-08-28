@@ -269,6 +269,8 @@ impl TraceSelection {
     schemars::JsonSchema,
     strum_macros::EnumIter,
     strum_macros::AsRefStr,
+    strum_macros::Display,
+    strum_macros::EnumString,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
