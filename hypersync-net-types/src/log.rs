@@ -54,8 +54,19 @@ impl LogSelection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    strum_macros::EnumIter,
+    strum_macros::AsRefStr,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum LogField {
     // Core log fields
     TransactionHash,
@@ -74,8 +85,20 @@ pub enum LogField {
     Topic3,
 }
 
+impl Ord for LogField {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_ref().cmp(other.as_ref())
+    }
+}
+
+impl PartialOrd for LogField {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl LogField {
-    pub fn all() -> Vec<Self> {
+    pub fn all() -> std::collections::BTreeSet<Self> {
         use strum::IntoEnumIterator;
         Self::iter().collect()
     }
@@ -88,17 +111,24 @@ mod tests {
     #[test]
     fn test_all_fields_in_schema() {
         let schema = hypersync_schema::log();
-        let mut schema_fields = schema
+        let schema_fields = schema
             .fields
             .iter()
             .map(|f| f.name.clone())
-            .collect::<Vec<_>>();
-        schema_fields.sort();
-        let mut all_fields = LogField::all();
-        all_fields.sort_by(|a, b| std::cmp::Ord::cmp(&format!("{:?}", a), &format!("{:?}", b)));
-        assert_eq!(
-            serde_json::to_string(&schema_fields).unwrap(),
-            serde_json::to_string(&all_fields).unwrap()
-        );
+            .collect::<std::collections::BTreeSet<_>>();
+        let all_fields = LogField::all()
+            .into_iter()
+            .map(|f| f.as_ref().to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(schema_fields, all_fields);
+    }
+
+    #[test]
+    fn test_serde_matches_strum() {
+        for field in LogField::all() {
+            let serialized = serde_json::to_string(&field).unwrap();
+            let strum = serde_json::to_string(&field.as_ref()).unwrap();
+            assert_eq!(serialized, strum, "strum value should be the same as serde");
+        }
     }
 }

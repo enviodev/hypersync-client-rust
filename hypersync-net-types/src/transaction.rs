@@ -176,8 +176,19 @@ impl TransactionSelection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, strum_macros::EnumIter)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    strum_macros::EnumIter,
+    strum_macros::AsRefStr,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum TransactionField {
     // Non-nullable fields (required)
     BlockHash,
@@ -230,8 +241,20 @@ pub enum TransactionField {
     SourceHash,
 }
 
+impl Ord for TransactionField {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_ref().cmp(other.as_ref())
+    }
+}
+
+impl PartialOrd for TransactionField {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl TransactionField {
-    pub fn all() -> Vec<Self> {
+    pub fn all() -> std::collections::BTreeSet<Self> {
         use strum::IntoEnumIterator;
         Self::iter().collect()
     }
@@ -244,17 +267,24 @@ mod tests {
     #[test]
     fn test_all_fields_in_schema() {
         let schema = hypersync_schema::transaction();
-        let mut schema_fields = schema
+        let schema_fields = schema
             .fields
             .iter()
             .map(|f| f.name.clone())
-            .collect::<Vec<_>>();
-        schema_fields.sort();
-        let mut all_fields = TransactionField::all();
-        all_fields.sort_by(|a, b| std::cmp::Ord::cmp(&format!("{:?}", a), &format!("{:?}", b)));
-        assert_eq!(
-            serde_json::to_string(&schema_fields).unwrap(),
-            serde_json::to_string(&all_fields).unwrap()
-        );
+            .collect::<std::collections::BTreeSet<_>>();
+        let all_fields = TransactionField::all()
+            .into_iter()
+            .map(|f| f.as_ref().to_string())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(schema_fields, all_fields);
+    }
+
+    #[test]
+    fn test_serde_matches_strum() {
+        for field in TransactionField::all() {
+            let serialized = serde_json::to_string(&field).unwrap();
+            let strum = serde_json::to_string(&field.as_ref()).unwrap();
+            assert_eq!(serialized, strum, "strum value should be the same as serde");
+        }
     }
 }
