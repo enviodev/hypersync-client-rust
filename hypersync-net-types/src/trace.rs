@@ -22,7 +22,7 @@ pub struct TraceSelection {
     pub reward_type: Vec<String>,
     #[serde(default)]
     #[serde(rename = "type")]
-    pub kind: Vec<String>,
+    pub type_: Vec<String>,
     #[serde(default)]
     pub sighash: Vec<Sighash>,
 }
@@ -95,8 +95,8 @@ impl TraceSelection {
 
         // Set kinds
         {
-            let mut kind_list = builder.reborrow().init_kind(trace_sel.kind.len() as u32);
-            for (i, kind) in trace_sel.kind.iter().enumerate() {
+            let mut kind_list = builder.reborrow().init_kind(trace_sel.type_.len() as u32);
+            for (i, kind) in trace_sel.type_.iter().enumerate() {
                 kind_list.set(i as u32, kind);
             }
         }
@@ -113,4 +113,51 @@ impl TraceSelection {
 
         Ok(())
     }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
+    strum_macros::EnumIter,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceField {
+    // Core trace fields
+    TransactionHash,
+    BlockHash,
+    BlockNumber,
+    TransactionPosition,
+    Type,
+    Error,
+
+    // Address fields
+    From,
+    To,
+    Author,
+
+    // Gas fields
+    Gas,
+    GasUsed,
+
+    // Additional trace fields from Arrow schema
+    ActionAddress,
+    Address,
+    Balance,
+    CallType,
+    Code,
+    Init,
+    Input,
+    Output,
+    RefundAddress,
+    RewardType,
+    Sighash,
+    Subtraces,
+    TraceAddress,
+    Value,
 }

@@ -53,3 +53,23 @@ impl LogSelection {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, strum_macros::EnumIter)]
+#[serde(rename_all = "snake_case")]
+pub enum LogField {
+    // Core log fields
+    TransactionHash,
+    BlockHash,
+    BlockNumber,
+    TransactionIndex,
+    LogIndex,
+    Address,
+    Data,
+    Removed,
+
+    // Topic fields
+    Topic0,
+    Topic1,
+    Topic2,
+    Topic3,
+}

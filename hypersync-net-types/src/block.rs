@@ -38,3 +38,48 @@ impl BlockSelection {
         Ok(())
     }
 }
+
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    schemars::JsonSchema,
+    strum_macros::EnumIter,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockField {
+    // Non-nullable fields (required)
+    Number,
+    Hash,
+    ParentHash,
+    Sha3Uncles,
+    LogsBloom,
+    TransactionsRoot,
+    StateRoot,
+    ReceiptsRoot,
+    Miner,
+    ExtraData,
+    Size,
+    GasLimit,
+    GasUsed,
+    Timestamp,
+    MixHash,
+
+    // Nullable fields (optional)
+    Nonce,
+    Difficulty,
+    TotalDifficulty,
+    Uncles,
+    BaseFeePerGas,
+    BlobGasUsed,
+    ExcessBlobGas,
+    ParentBeaconBlockRoot,
+    WithdrawalsRoot,
+    Withdrawals,
+    L1BlockNumber,
+    SendCount,
+    SendRoot,
+}

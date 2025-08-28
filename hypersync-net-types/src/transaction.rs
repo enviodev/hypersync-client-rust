@@ -175,3 +175,57 @@ impl TransactionSelection {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, strum_macros::EnumIter)]
+#[serde(rename_all = "snake_case")]
+pub enum TransactionField {
+    // Non-nullable fields (required)
+    BlockHash,
+    BlockNumber,
+    Gas,
+    Hash,
+    Input,
+    Nonce,
+    TransactionIndex,
+    Value,
+    CumulativeGasUsed,
+    EffectiveGasPrice,
+    GasUsed,
+    LogsBloom,
+
+    // Nullable fields (optional)
+    From,
+    GasPrice,
+    To,
+    V,
+    R,
+    S,
+    MaxPriorityFeePerGas,
+    MaxFeePerGas,
+    ChainId,
+    ContractAddress,
+    Type,
+    Root,
+    Status,
+    YParity,
+    AccessList,
+    AuthorizationList,
+    L1Fee,
+    L1GasPrice,
+    L1GasUsed,
+    L1FeeScalar,
+    GasUsedForL1,
+    MaxFeePerBlobGas,
+    BlobVersionedHashes,
+    BlobGasPrice,
+    BlobGasUsed,
+    DepositNonce,
+    DepositReceiptVersion,
+    L1BaseFeeScalar,
+    L1BlobBaseFee,
+    L1BlobBaseFeeScalar,
+    L1BlockNumber,
+    Mint,
+    Sighash,
+    SourceHash,
+}
