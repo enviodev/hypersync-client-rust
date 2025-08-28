@@ -447,16 +447,24 @@ pub mod tests {
         let _deser_json: Query = serde_json::from_str(&ser_json).unwrap();
         let deser_json_elapsed = deser_json_start.elapsed();
 
-        let bench = serde_json::json!({
-            "capnp_ser": ser_elapsed.as_micros(),
-            "capnp_deser": deser_elapsed.as_micros(),
-            "capnp_ser_size": ser.len(),
-            "json_ser": ser_json_elapsed.as_micros(),
-            "json_deser": deser_json_elapsed.as_micros(),
-            "json_ser_size": ser_json.len(),
-        });
-        println!("\nBenchmark {}", label);
-        println!("{}\n", bench);
+        fn make_bench(
+            ser: std::time::Duration,
+            deser: std::time::Duration,
+            size: usize,
+        ) -> serde_json::Value {
+            serde_json::json!({
+                "ser": ser.as_micros(),
+                "deser": deser.as_micros(),
+                "size": size,
+            })
+        };
+
+        println!(
+            "\nBenchmark {}\ncapnp: {}\njson:  {}\n",
+            label,
+            make_bench(ser_elapsed, deser_elapsed, ser.len()),
+            make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len())
+        );
     }
 
     #[test]
@@ -482,6 +490,26 @@ pub mod tests {
             max_num_traces: Some(usize::default()),
             join_mode: JoinMode::default(),
         };
-        test_query_serde(query, "with_non_null_defaults");
+        test_query_serde(query, "base query with_non_null_defaults");
+    }
+
+    #[test]
+    pub fn test_query_serde_with_non_null_values() {
+        let query = Query {
+            from_block: 50,
+            to_block: Some(500),
+            logs: Vec::default(),
+            transactions: Vec::default(),
+            traces: Vec::default(),
+            blocks: Vec::default(),
+            include_all_blocks: true,
+            field_selection: FieldSelection::default(),
+            max_num_blocks: Some(50),
+            max_num_transactions: Some(100),
+            max_num_logs: Some(150),
+            max_num_traces: Some(200),
+            join_mode: JoinMode::JoinAll,
+        };
+        test_query_serde(query, "base query with_non_null_values");
     }
 }

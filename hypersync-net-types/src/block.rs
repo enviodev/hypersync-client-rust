@@ -242,7 +242,10 @@ impl BlockField {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_format::Hex;
+
     use super::*;
+    use crate::{query::tests::test_query_serde, FieldSelection, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -266,5 +269,27 @@ mod tests {
             let strum = serde_json::to_string(&field.as_ref()).unwrap();
             assert_eq!(serialized, strum, "strum value should be the same as serde");
         }
+    }
+
+    #[test]
+    fn test_block_selection_serde_with_values() {
+        let block_selection = BlockSelection {
+            hash: vec![Hash::decode_hex(
+                "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
+            )
+            .unwrap()],
+            miner: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
+        };
+        let field_selection = FieldSelection {
+            block: BlockField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            blocks: vec![block_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "block selection with rest defaults");
     }
 }
