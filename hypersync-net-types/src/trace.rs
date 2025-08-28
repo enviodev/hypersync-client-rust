@@ -161,3 +161,32 @@ pub enum TraceField {
     TraceAddress,
     Value,
 }
+
+impl TraceField {
+    pub fn all() -> Vec<Self> {
+        use strum::IntoEnumIterator;
+        Self::iter().collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_fields_in_schema() {
+        let schema = hypersync_schema::trace();
+        let mut schema_fields = schema
+            .fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect::<Vec<_>>();
+        schema_fields.sort();
+        let mut all_fields = TraceField::all();
+        all_fields.sort_by(|a, b| std::cmp::Ord::cmp(&format!("{:?}", a), &format!("{:?}", b)));
+        assert_eq!(
+            serde_json::to_string(&schema_fields).unwrap(),
+            serde_json::to_string(&all_fields).unwrap()
+        );
+    }
+}
