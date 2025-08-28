@@ -113,6 +113,115 @@ impl TraceSelection {
 
         Ok(())
     }
+
+    /// Deserialize TraceSelection from Cap'n Proto reader
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::trace_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let mut trace_selection = TraceSelection::default();
+
+        // Parse from addresses
+        if reader.has_from() {
+            let from_list = reader.get_from()?;
+            for i in 0..from_list.len() {
+                let addr_data = from_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    trace_selection.from.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse from filter
+        if reader.has_from_filter() {
+            let filter_data = reader.get_from_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // trace_selection.from_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse to addresses
+        if reader.has_to() {
+            let to_list = reader.get_to()?;
+            for i in 0..to_list.len() {
+                let addr_data = to_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    trace_selection.to.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse to filter
+        if reader.has_to_filter() {
+            let filter_data = reader.get_to_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // trace_selection.to_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse addresses
+        if reader.has_address() {
+            let addr_list = reader.get_address()?;
+            for i in 0..addr_list.len() {
+                let addr_data = addr_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    trace_selection.address.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse address filter
+        if reader.has_address_filter() {
+            let filter_data = reader.get_address_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // trace_selection.address_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse call types
+        if reader.has_call_type() {
+            let call_type_list = reader.get_call_type()?;
+            for i in 0..call_type_list.len() {
+                let call_type = call_type_list.get(i)?;
+                trace_selection.call_type.push(call_type.to_string()?);
+            }
+        }
+
+        // Parse reward types
+        if reader.has_reward_type() {
+            let reward_type_list = reader.get_reward_type()?;
+            for i in 0..reward_type_list.len() {
+                let reward_type = reward_type_list.get(i)?;
+                trace_selection.reward_type.push(reward_type.to_string()?);
+            }
+        }
+
+        // Parse kinds (types)
+        if reader.has_kind() {
+            let kind_list = reader.get_kind()?;
+            for i in 0..kind_list.len() {
+                let kind = kind_list.get(i)?;
+                trace_selection.type_.push(kind.to_string()?);
+            }
+        }
+
+        // Parse sighash
+        if reader.has_sighash() {
+            let sighash_list = reader.get_sighash()?;
+            for i in 0..sighash_list.len() {
+                let sighash_data = sighash_list.get(i)?;
+                if sighash_data.len() == 4 {
+                    let mut sighash_bytes = [0u8; 4];
+                    sighash_bytes.copy_from_slice(sighash_data);
+                    trace_selection.sighash.push(Sighash::from(sighash_bytes));
+                }
+            }
+        }
+
+        Ok(trace_selection)
+    }
 }
 
 #[derive(
@@ -224,10 +333,14 @@ impl TraceField {
     /// Convert Cap'n Proto enum to TraceField
     pub fn from_capnp(field: crate::hypersync_net_types_capnp::TraceField) -> Self {
         match field {
-            crate::hypersync_net_types_capnp::TraceField::TransactionHash => TraceField::TransactionHash,
+            crate::hypersync_net_types_capnp::TraceField::TransactionHash => {
+                TraceField::TransactionHash
+            }
             crate::hypersync_net_types_capnp::TraceField::BlockHash => TraceField::BlockHash,
             crate::hypersync_net_types_capnp::TraceField::BlockNumber => TraceField::BlockNumber,
-            crate::hypersync_net_types_capnp::TraceField::TransactionPosition => TraceField::TransactionPosition,
+            crate::hypersync_net_types_capnp::TraceField::TransactionPosition => {
+                TraceField::TransactionPosition
+            }
             crate::hypersync_net_types_capnp::TraceField::Type => TraceField::Type,
             crate::hypersync_net_types_capnp::TraceField::Error => TraceField::Error,
             crate::hypersync_net_types_capnp::TraceField::From => TraceField::From,
@@ -235,7 +348,9 @@ impl TraceField {
             crate::hypersync_net_types_capnp::TraceField::Author => TraceField::Author,
             crate::hypersync_net_types_capnp::TraceField::Gas => TraceField::Gas,
             crate::hypersync_net_types_capnp::TraceField::GasUsed => TraceField::GasUsed,
-            crate::hypersync_net_types_capnp::TraceField::ActionAddress => TraceField::ActionAddress,
+            crate::hypersync_net_types_capnp::TraceField::ActionAddress => {
+                TraceField::ActionAddress
+            }
             crate::hypersync_net_types_capnp::TraceField::Address => TraceField::Address,
             crate::hypersync_net_types_capnp::TraceField::Balance => TraceField::Balance,
             crate::hypersync_net_types_capnp::TraceField::CallType => TraceField::CallType,
@@ -243,7 +358,9 @@ impl TraceField {
             crate::hypersync_net_types_capnp::TraceField::Init => TraceField::Init,
             crate::hypersync_net_types_capnp::TraceField::Input => TraceField::Input,
             crate::hypersync_net_types_capnp::TraceField::Output => TraceField::Output,
-            crate::hypersync_net_types_capnp::TraceField::RefundAddress => TraceField::RefundAddress,
+            crate::hypersync_net_types_capnp::TraceField::RefundAddress => {
+                TraceField::RefundAddress
+            }
             crate::hypersync_net_types_capnp::TraceField::RewardType => TraceField::RewardType,
             crate::hypersync_net_types_capnp::TraceField::Sighash => TraceField::Sighash,
             crate::hypersync_net_types_capnp::TraceField::Subtraces => TraceField::Subtraces,

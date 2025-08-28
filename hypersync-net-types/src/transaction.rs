@@ -82,6 +82,36 @@ impl AuthorizationSelection {
 
         Ok(())
     }
+
+    /// Deserialize AuthorizationSelection from Cap'n Proto reader
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::authorization_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let mut auth_selection = AuthorizationSelection::default();
+
+        // Parse chain ids
+        if reader.has_chain_id() {
+            let chain_list = reader.get_chain_id()?;
+            for i in 0..chain_list.len() {
+                auth_selection.chain_id.push(chain_list.get(i));
+            }
+        }
+
+        // Parse addresses
+        if reader.has_address() {
+            let addr_list = reader.get_address()?;
+            for i in 0..addr_list.len() {
+                let addr_data = addr_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    auth_selection.address.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        Ok(auth_selection)
+    }
 }
 
 impl TransactionSelection {
@@ -173,6 +203,124 @@ impl TransactionSelection {
         }
 
         Ok(())
+    }
+
+    /// Deserialize TransactionSelection from Cap'n Proto reader
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::transaction_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let mut tx_selection = TransactionSelection::default();
+
+        // Parse from addresses
+        if reader.has_from() {
+            let from_list = reader.get_from()?;
+            for i in 0..from_list.len() {
+                let addr_data = from_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    tx_selection.from.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse from filter
+        if reader.has_from_filter() {
+            let filter_data = reader.get_from_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // tx_selection.from_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse to addresses
+        if reader.has_to() {
+            let to_list = reader.get_to()?;
+            for i in 0..to_list.len() {
+                let addr_data = to_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    tx_selection.to.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse to filter
+        if reader.has_to_filter() {
+            let filter_data = reader.get_to_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // tx_selection.to_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse sighash
+        if reader.has_sighash() {
+            let sighash_list = reader.get_sighash()?;
+            for i in 0..sighash_list.len() {
+                let sighash_data = sighash_list.get(i)?;
+                if sighash_data.len() == 4 {
+                    let mut sighash_bytes = [0u8; 4];
+                    sighash_bytes.copy_from_slice(sighash_data);
+                    tx_selection.sighash.push(Sighash::from(sighash_bytes));
+                }
+            }
+        }
+
+        // Parse status
+        tx_selection.status = Some(reader.get_status());
+
+        // Parse kind (type)
+        if reader.has_kind() {
+            let kind_list = reader.get_kind()?;
+            for i in 0..kind_list.len() {
+                tx_selection.kind.push(kind_list.get(i));
+            }
+        }
+
+        // Parse contract addresses
+        if reader.has_contract_address() {
+            let contract_list = reader.get_contract_address()?;
+            for i in 0..contract_list.len() {
+                let addr_data = contract_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    tx_selection
+                        .contract_address
+                        .push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        // Parse contract address filter
+        if reader.has_contract_address_filter() {
+            let filter_data = reader.get_contract_address_filter()?;
+            // For now, skip filter deserialization - this would need proper Filter construction
+            // tx_selection.contract_address_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+        }
+
+        // Parse hashes
+        if reader.has_hash() {
+            let hash_list = reader.get_hash()?;
+            for i in 0..hash_list.len() {
+                let hash_data = hash_list.get(i)?;
+                if hash_data.len() == 32 {
+                    let mut hash_bytes = [0u8; 32];
+                    hash_bytes.copy_from_slice(hash_data);
+                    tx_selection.hash.push(Hash::from(hash_bytes));
+                }
+            }
+        }
+
+        // Parse authorization list
+        if reader.has_authorization_list() {
+            let auth_list = reader.get_authorization_list()?;
+            for i in 0..auth_list.len() {
+                let auth_reader = auth_list.get(i);
+                let auth_selection = AuthorizationSelection::from_capnp(auth_reader)?;
+                tx_selection.authorization_list.push(auth_selection);
+            }
+        }
+
+        Ok(tx_selection)
     }
 }
 
@@ -377,52 +525,114 @@ impl TransactionField {
     /// Convert Cap'n Proto enum to TransactionField
     pub fn from_capnp(field: crate::hypersync_net_types_capnp::TransactionField) -> Self {
         match field {
-            crate::hypersync_net_types_capnp::TransactionField::BlockHash => TransactionField::BlockHash,
-            crate::hypersync_net_types_capnp::TransactionField::BlockNumber => TransactionField::BlockNumber,
+            crate::hypersync_net_types_capnp::TransactionField::BlockHash => {
+                TransactionField::BlockHash
+            }
+            crate::hypersync_net_types_capnp::TransactionField::BlockNumber => {
+                TransactionField::BlockNumber
+            }
             crate::hypersync_net_types_capnp::TransactionField::Gas => TransactionField::Gas,
             crate::hypersync_net_types_capnp::TransactionField::Hash => TransactionField::Hash,
             crate::hypersync_net_types_capnp::TransactionField::Input => TransactionField::Input,
             crate::hypersync_net_types_capnp::TransactionField::Nonce => TransactionField::Nonce,
-            crate::hypersync_net_types_capnp::TransactionField::TransactionIndex => TransactionField::TransactionIndex,
+            crate::hypersync_net_types_capnp::TransactionField::TransactionIndex => {
+                TransactionField::TransactionIndex
+            }
             crate::hypersync_net_types_capnp::TransactionField::Value => TransactionField::Value,
-            crate::hypersync_net_types_capnp::TransactionField::CumulativeGasUsed => TransactionField::CumulativeGasUsed,
-            crate::hypersync_net_types_capnp::TransactionField::EffectiveGasPrice => TransactionField::EffectiveGasPrice,
-            crate::hypersync_net_types_capnp::TransactionField::GasUsed => TransactionField::GasUsed,
-            crate::hypersync_net_types_capnp::TransactionField::LogsBloom => TransactionField::LogsBloom,
+            crate::hypersync_net_types_capnp::TransactionField::CumulativeGasUsed => {
+                TransactionField::CumulativeGasUsed
+            }
+            crate::hypersync_net_types_capnp::TransactionField::EffectiveGasPrice => {
+                TransactionField::EffectiveGasPrice
+            }
+            crate::hypersync_net_types_capnp::TransactionField::GasUsed => {
+                TransactionField::GasUsed
+            }
+            crate::hypersync_net_types_capnp::TransactionField::LogsBloom => {
+                TransactionField::LogsBloom
+            }
             crate::hypersync_net_types_capnp::TransactionField::From => TransactionField::From,
-            crate::hypersync_net_types_capnp::TransactionField::GasPrice => TransactionField::GasPrice,
+            crate::hypersync_net_types_capnp::TransactionField::GasPrice => {
+                TransactionField::GasPrice
+            }
             crate::hypersync_net_types_capnp::TransactionField::To => TransactionField::To,
             crate::hypersync_net_types_capnp::TransactionField::V => TransactionField::V,
             crate::hypersync_net_types_capnp::TransactionField::R => TransactionField::R,
             crate::hypersync_net_types_capnp::TransactionField::S => TransactionField::S,
-            crate::hypersync_net_types_capnp::TransactionField::MaxPriorityFeePerGas => TransactionField::MaxPriorityFeePerGas,
-            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerGas => TransactionField::MaxFeePerGas,
-            crate::hypersync_net_types_capnp::TransactionField::ChainId => TransactionField::ChainId,
-            crate::hypersync_net_types_capnp::TransactionField::ContractAddress => TransactionField::ContractAddress,
+            crate::hypersync_net_types_capnp::TransactionField::MaxPriorityFeePerGas => {
+                TransactionField::MaxPriorityFeePerGas
+            }
+            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerGas => {
+                TransactionField::MaxFeePerGas
+            }
+            crate::hypersync_net_types_capnp::TransactionField::ChainId => {
+                TransactionField::ChainId
+            }
+            crate::hypersync_net_types_capnp::TransactionField::ContractAddress => {
+                TransactionField::ContractAddress
+            }
             crate::hypersync_net_types_capnp::TransactionField::Type => TransactionField::Type,
             crate::hypersync_net_types_capnp::TransactionField::Root => TransactionField::Root,
             crate::hypersync_net_types_capnp::TransactionField::Status => TransactionField::Status,
-            crate::hypersync_net_types_capnp::TransactionField::YParity => TransactionField::YParity,
-            crate::hypersync_net_types_capnp::TransactionField::AccessList => TransactionField::AccessList,
-            crate::hypersync_net_types_capnp::TransactionField::AuthorizationList => TransactionField::AuthorizationList,
+            crate::hypersync_net_types_capnp::TransactionField::YParity => {
+                TransactionField::YParity
+            }
+            crate::hypersync_net_types_capnp::TransactionField::AccessList => {
+                TransactionField::AccessList
+            }
+            crate::hypersync_net_types_capnp::TransactionField::AuthorizationList => {
+                TransactionField::AuthorizationList
+            }
             crate::hypersync_net_types_capnp::TransactionField::L1Fee => TransactionField::L1Fee,
-            crate::hypersync_net_types_capnp::TransactionField::L1GasPrice => TransactionField::L1GasPrice,
-            crate::hypersync_net_types_capnp::TransactionField::L1GasUsed => TransactionField::L1GasUsed,
-            crate::hypersync_net_types_capnp::TransactionField::L1FeeScalar => TransactionField::L1FeeScalar,
-            crate::hypersync_net_types_capnp::TransactionField::GasUsedForL1 => TransactionField::GasUsedForL1,
-            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerBlobGas => TransactionField::MaxFeePerBlobGas,
-            crate::hypersync_net_types_capnp::TransactionField::BlobVersionedHashes => TransactionField::BlobVersionedHashes,
-            crate::hypersync_net_types_capnp::TransactionField::BlobGasPrice => TransactionField::BlobGasPrice,
-            crate::hypersync_net_types_capnp::TransactionField::BlobGasUsed => TransactionField::BlobGasUsed,
-            crate::hypersync_net_types_capnp::TransactionField::DepositNonce => TransactionField::DepositNonce,
-            crate::hypersync_net_types_capnp::TransactionField::DepositReceiptVersion => TransactionField::DepositReceiptVersion,
-            crate::hypersync_net_types_capnp::TransactionField::L1BaseFeeScalar => TransactionField::L1BaseFeeScalar,
-            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFee => TransactionField::L1BlobBaseFee,
-            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFeeScalar => TransactionField::L1BlobBaseFeeScalar,
-            crate::hypersync_net_types_capnp::TransactionField::L1BlockNumber => TransactionField::L1BlockNumber,
+            crate::hypersync_net_types_capnp::TransactionField::L1GasPrice => {
+                TransactionField::L1GasPrice
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1GasUsed => {
+                TransactionField::L1GasUsed
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1FeeScalar => {
+                TransactionField::L1FeeScalar
+            }
+            crate::hypersync_net_types_capnp::TransactionField::GasUsedForL1 => {
+                TransactionField::GasUsedForL1
+            }
+            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerBlobGas => {
+                TransactionField::MaxFeePerBlobGas
+            }
+            crate::hypersync_net_types_capnp::TransactionField::BlobVersionedHashes => {
+                TransactionField::BlobVersionedHashes
+            }
+            crate::hypersync_net_types_capnp::TransactionField::BlobGasPrice => {
+                TransactionField::BlobGasPrice
+            }
+            crate::hypersync_net_types_capnp::TransactionField::BlobGasUsed => {
+                TransactionField::BlobGasUsed
+            }
+            crate::hypersync_net_types_capnp::TransactionField::DepositNonce => {
+                TransactionField::DepositNonce
+            }
+            crate::hypersync_net_types_capnp::TransactionField::DepositReceiptVersion => {
+                TransactionField::DepositReceiptVersion
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1BaseFeeScalar => {
+                TransactionField::L1BaseFeeScalar
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFee => {
+                TransactionField::L1BlobBaseFee
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFeeScalar => {
+                TransactionField::L1BlobBaseFeeScalar
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1BlockNumber => {
+                TransactionField::L1BlockNumber
+            }
             crate::hypersync_net_types_capnp::TransactionField::Mint => TransactionField::Mint,
-            crate::hypersync_net_types_capnp::TransactionField::Sighash => TransactionField::Sighash,
-            crate::hypersync_net_types_capnp::TransactionField::SourceHash => TransactionField::SourceHash,
+            crate::hypersync_net_types_capnp::TransactionField::Sighash => {
+                TransactionField::Sighash
+            }
+            crate::hypersync_net_types_capnp::TransactionField::SourceHash => {
+                TransactionField::SourceHash
+            }
         }
     }
 }

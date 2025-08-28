@@ -4,7 +4,7 @@ use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
 use capnp::message::Builder;
-use capnp::{serialize_packed, message::ReaderOptions};
+use capnp::{message::ReaderOptions, serialize_packed};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -108,12 +108,10 @@ impl Query {
 
     /// Deserialize Query from Cap'n Proto packed bytes
     pub fn from_capnp_bytes(bytes: &[u8]) -> Result<Self, capnp::Error> {
-        let message_reader = serialize_packed::read_message(
-            &mut std::io::Cursor::new(bytes),
-            ReaderOptions::new()
-        )?;
+        let message_reader =
+            serialize_packed::read_message(&mut std::io::Cursor::new(bytes), ReaderOptions::new())?;
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
-        
+
         Self::from_capnp_query(query)
     }
 
@@ -233,66 +231,91 @@ impl Query {
         Ok(())
     }
 
-    fn from_capnp_query(query: hypersync_net_types_capnp::query::Reader) -> Result<Self, capnp::Error> {
+    fn from_capnp_query(
+        query: hypersync_net_types_capnp::query::Reader,
+    ) -> Result<Self, capnp::Error> {
         let from_block = query.get_from_block();
-        let to_block = if query.has_to_block() { Some(query.get_to_block()) } else { None };
+        let to_block = Some(query.get_to_block());
         let include_all_blocks = query.get_include_all_blocks();
-        
+
         // Parse field selection
-        let field_selection = if query.has_field_selection() {
-            let fs = query.get_field_selection()?;
-            
-            let block_fields = if fs.has_block() {
-                let block_list = fs.get_block()?;
-                (0..block_list.len()).map(|i| {
-                    BlockField::from_capnp(block_list.get(i))
-                }).collect::<BTreeSet<_>>()
+        let field_selection =
+            if query.has_field_selection() {
+                let fs = query.get_field_selection()?;
+
+                let block_fields = if fs.has_block() {
+                    let block_list = fs.get_block()?;
+                    (0..block_list.len())
+                        .map(|i| {
+                            BlockField::from_capnp(
+                                block_list
+                                    .get(i)
+                                    .ok()
+                                    .unwrap_or(hypersync_net_types_capnp::BlockField::Number),
+                            )
+                        })
+                        .collect::<BTreeSet<_>>()
+                } else {
+                    BTreeSet::new()
+                };
+
+                let transaction_fields =
+                    if fs.has_transaction() {
+                        let tx_list = fs.get_transaction()?;
+                        (0..tx_list.len())
+                            .map(|i| {
+                                TransactionField::from_capnp(tx_list.get(i).ok().unwrap_or(
+                                    hypersync_net_types_capnp::TransactionField::BlockHash,
+                                ))
+                            })
+                            .collect::<BTreeSet<_>>()
+                    } else {
+                        BTreeSet::new()
+                    };
+
+                let log_fields =
+                    if fs.has_log() {
+                        let log_list = fs.get_log()?;
+                        (0..log_list.len())
+                            .map(|i| {
+                                LogField::from_capnp(log_list.get(i).ok().unwrap_or(
+                                    hypersync_net_types_capnp::LogField::TransactionHash,
+                                ))
+                            })
+                            .collect::<BTreeSet<_>>()
+                    } else {
+                        BTreeSet::new()
+                    };
+
+                let trace_fields =
+                    if fs.has_trace() {
+                        let trace_list = fs.get_trace()?;
+                        (0..trace_list.len())
+                            .map(|i| {
+                                TraceField::from_capnp(trace_list.get(i).ok().unwrap_or(
+                                    hypersync_net_types_capnp::TraceField::TransactionHash,
+                                ))
+                            })
+                            .collect::<BTreeSet<_>>()
+                    } else {
+                        BTreeSet::new()
+                    };
+
+                FieldSelection {
+                    block: block_fields,
+                    transaction: transaction_fields,
+                    log: log_fields,
+                    trace: trace_fields,
+                }
             } else {
-                BTreeSet::new()
+                FieldSelection::default()
             };
-            
-            let transaction_fields = if fs.has_transaction() {
-                let tx_list = fs.get_transaction()?;
-                (0..tx_list.len()).map(|i| {
-                    TransactionField::from_capnp(tx_list.get(i))
-                }).collect::<BTreeSet<_>>()
-            } else {
-                BTreeSet::new()
-            };
-            
-            let log_fields = if fs.has_log() {
-                let log_list = fs.get_log()?;
-                (0..log_list.len()).map(|i| {
-                    LogField::from_capnp(log_list.get(i))
-                }).collect::<BTreeSet<_>>()
-            } else {
-                BTreeSet::new()
-            };
-            
-            let trace_fields = if fs.has_trace() {
-                let trace_list = fs.get_trace()?;
-                (0..trace_list.len()).map(|i| {
-                    TraceField::from_capnp(trace_list.get(i))
-                }).collect::<BTreeSet<_>>()
-            } else {
-                BTreeSet::new()
-            };
-            
-            FieldSelection {
-                block: block_fields,
-                transaction: transaction_fields,
-                log: log_fields,
-                trace: trace_fields,
-            }
-        } else {
-            FieldSelection::default()
-        };
 
         // Parse max values
-        let max_num_blocks = if query.has_max_num_blocks() { Some(query.get_max_num_blocks() as usize) } else { None };
-        let max_num_transactions = if query.has_max_num_transactions() { Some(query.get_max_num_transactions() as usize) } else { None };
-        let max_num_logs = if query.has_max_num_logs() { Some(query.get_max_num_logs() as usize) } else { None };
-        let max_num_traces = if query.has_max_num_traces() { Some(query.get_max_num_traces() as usize) } else { None };
+        let max_num_blocks = Some(query.get_max_num_blocks() as usize);
+        let max_num_transactions = Some(query.get_max_num_transactions() as usize);
+        let max_num_logs = Some(query.get_max_num_logs() as usize);
+        let max_num_traces = Some(query.get_max_num_traces() as usize);
 
         // Parse join mode
         let join_mode = match query.get_join_mode()? {
@@ -301,16 +324,62 @@ impl Query {
             hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
         };
 
-        // For now, we'll leave logs, transactions, traces, and blocks as empty vectors
-        // since implementing the full deserialization of those would require similar
-        // deserialization methods for LogSelection, TransactionSelection, etc.
+        // Parse selections
+        let logs = if query.has_logs() {
+            let logs_list = query.get_logs()?;
+            let mut logs = Vec::new();
+            for i in 0..logs_list.len() {
+                let log_reader = logs_list.get(i);
+                logs.push(LogSelection::from_capnp(log_reader)?);
+            }
+            logs
+        } else {
+            Vec::new()
+        };
+
+        let transactions = if query.has_transactions() {
+            let tx_list = query.get_transactions()?;
+            let mut transactions = Vec::new();
+            for i in 0..tx_list.len() {
+                let tx_reader = tx_list.get(i);
+                transactions.push(TransactionSelection::from_capnp(tx_reader)?);
+            }
+            transactions
+        } else {
+            Vec::new()
+        };
+
+        let traces = if query.has_traces() {
+            let traces_list = query.get_traces()?;
+            let mut traces = Vec::new();
+            for i in 0..traces_list.len() {
+                let trace_reader = traces_list.get(i);
+                traces.push(TraceSelection::from_capnp(trace_reader)?);
+            }
+            traces
+        } else {
+            Vec::new()
+        };
+
+        let blocks = if query.has_blocks() {
+            let blocks_list = query.get_blocks()?;
+            let mut blocks = Vec::new();
+            for i in 0..blocks_list.len() {
+                let block_reader = blocks_list.get(i);
+                blocks.push(BlockSelection::from_capnp(block_reader)?);
+            }
+            blocks
+        } else {
+            Vec::new()
+        };
+
         Ok(Query {
             from_block,
             to_block,
-            logs: Vec::new(),
-            transactions: Vec::new(), 
-            traces: Vec::new(),
-            blocks: Vec::new(),
+            logs,
+            transactions,
+            traces,
+            blocks,
             include_all_blocks,
             field_selection,
             max_num_blocks,
@@ -320,5 +389,4 @@ impl Query {
             join_mode,
         })
     }
-
 }

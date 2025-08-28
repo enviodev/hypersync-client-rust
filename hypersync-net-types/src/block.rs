@@ -38,6 +38,41 @@ impl BlockSelection {
 
         Ok(())
     }
+
+    /// Deserialize BlockSelection from Cap'n Proto reader
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::block_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let mut block_selection = BlockSelection::default();
+
+        // Parse hashes
+        if reader.has_hash() {
+            let hash_list = reader.get_hash()?;
+            for i in 0..hash_list.len() {
+                let hash_data = hash_list.get(i)?;
+                if hash_data.len() == 32 {
+                    let mut hash_bytes = [0u8; 32];
+                    hash_bytes.copy_from_slice(hash_data);
+                    block_selection.hash.push(Hash::from(hash_bytes));
+                }
+            }
+        }
+
+        // Parse miners
+        if reader.has_miner() {
+            let miner_list = reader.get_miner()?;
+            for i in 0..miner_list.len() {
+                let addr_data = miner_list.get(i)?;
+                if addr_data.len() == 20 {
+                    let mut addr_bytes = [0u8; 20];
+                    addr_bytes.copy_from_slice(addr_data);
+                    block_selection.miner.push(Address::from(addr_bytes));
+                }
+            }
+        }
+
+        Ok(block_selection)
+    }
 }
 
 #[derive(
@@ -162,7 +197,9 @@ impl BlockField {
             crate::hypersync_net_types_capnp::BlockField::ParentHash => BlockField::ParentHash,
             crate::hypersync_net_types_capnp::BlockField::Sha3Uncles => BlockField::Sha3Uncles,
             crate::hypersync_net_types_capnp::BlockField::LogsBloom => BlockField::LogsBloom,
-            crate::hypersync_net_types_capnp::BlockField::TransactionsRoot => BlockField::TransactionsRoot,
+            crate::hypersync_net_types_capnp::BlockField::TransactionsRoot => {
+                BlockField::TransactionsRoot
+            }
             crate::hypersync_net_types_capnp::BlockField::StateRoot => BlockField::StateRoot,
             crate::hypersync_net_types_capnp::BlockField::ReceiptsRoot => BlockField::ReceiptsRoot,
             crate::hypersync_net_types_capnp::BlockField::Miner => BlockField::Miner,
@@ -174,15 +211,27 @@ impl BlockField {
             crate::hypersync_net_types_capnp::BlockField::MixHash => BlockField::MixHash,
             crate::hypersync_net_types_capnp::BlockField::Nonce => BlockField::Nonce,
             crate::hypersync_net_types_capnp::BlockField::Difficulty => BlockField::Difficulty,
-            crate::hypersync_net_types_capnp::BlockField::TotalDifficulty => BlockField::TotalDifficulty,
+            crate::hypersync_net_types_capnp::BlockField::TotalDifficulty => {
+                BlockField::TotalDifficulty
+            }
             crate::hypersync_net_types_capnp::BlockField::Uncles => BlockField::Uncles,
-            crate::hypersync_net_types_capnp::BlockField::BaseFeePerGas => BlockField::BaseFeePerGas,
+            crate::hypersync_net_types_capnp::BlockField::BaseFeePerGas => {
+                BlockField::BaseFeePerGas
+            }
             crate::hypersync_net_types_capnp::BlockField::BlobGasUsed => BlockField::BlobGasUsed,
-            crate::hypersync_net_types_capnp::BlockField::ExcessBlobGas => BlockField::ExcessBlobGas,
-            crate::hypersync_net_types_capnp::BlockField::ParentBeaconBlockRoot => BlockField::ParentBeaconBlockRoot,
-            crate::hypersync_net_types_capnp::BlockField::WithdrawalsRoot => BlockField::WithdrawalsRoot,
+            crate::hypersync_net_types_capnp::BlockField::ExcessBlobGas => {
+                BlockField::ExcessBlobGas
+            }
+            crate::hypersync_net_types_capnp::BlockField::ParentBeaconBlockRoot => {
+                BlockField::ParentBeaconBlockRoot
+            }
+            crate::hypersync_net_types_capnp::BlockField::WithdrawalsRoot => {
+                BlockField::WithdrawalsRoot
+            }
             crate::hypersync_net_types_capnp::BlockField::Withdrawals => BlockField::Withdrawals,
-            crate::hypersync_net_types_capnp::BlockField::L1BlockNumber => BlockField::L1BlockNumber,
+            crate::hypersync_net_types_capnp::BlockField::L1BlockNumber => {
+                BlockField::L1BlockNumber
+            }
             crate::hypersync_net_types_capnp::BlockField::SendCount => BlockField::SendCount,
             crate::hypersync_net_types_capnp::BlockField::SendRoot => BlockField::SendRoot,
         }
