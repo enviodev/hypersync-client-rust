@@ -29,15 +29,16 @@ pub struct ClientConfig {
 /// Determines query serialization format for HTTP requests.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SerializationFormat {
-    /// Use JSON serialization
+    /// Use JSON serialization (default)
     Json,
-    /// Use Cap'n Proto binary serialization (new default)
+    /// Use Cap'n Proto binary serialization
     CapnProto,
 }
 
 impl Default for SerializationFormat {
     fn default() -> Self {
-        Self::CapnProto
+        // Keep this the default until all hs instances are upgraded to use Cap'n Proto endpoint
+        Self::Json
     }
 }
 
