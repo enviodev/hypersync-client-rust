@@ -93,11 +93,11 @@ impl TraceSelection {
             }
         }
 
-        // Set kinds
+        // Set types
         {
-            let mut kind_list = builder.reborrow().init_kind(trace_sel.type_.len() as u32);
-            for (i, kind) in trace_sel.type_.iter().enumerate() {
-                kind_list.set(i as u32, kind);
+            let mut type_list = builder.reborrow().init_type(trace_sel.type_.len() as u32);
+            for (i, type_) in trace_sel.type_.iter().enumerate() {
+                type_list.set(i as u32, type_);
             }
         }
 
@@ -118,7 +118,7 @@ impl TraceSelection {
     pub fn from_capnp(
         reader: hypersync_net_types_capnp::trace_selection::Reader,
     ) -> Result<Self, capnp::Error> {
-        let mut trace_selection = TraceSelection::default();
+        let mut from = Vec::new();
 
         // Parse from addresses
         if reader.has_from() {
@@ -128,17 +128,23 @@ impl TraceSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    trace_selection.from.push(Address::from(addr_bytes));
+                    from.push(Address::from(addr_bytes));
                 }
             }
         }
 
+        let mut from_filter = None;
+
         // Parse from filter
         if reader.has_from_filter() {
             let filter_data = reader.get_from_filter()?;
-            // For now, skip filter deserialization - this would need proper Filter construction
-            // trace_selection.from_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid from filter".to_string()));
+            };
+            from_filter = Some(wrapper);
         }
+
+        let mut to = Vec::new();
 
         // Parse to addresses
         if reader.has_to() {
@@ -148,17 +154,23 @@ impl TraceSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    trace_selection.to.push(Address::from(addr_bytes));
+                    to.push(Address::from(addr_bytes));
                 }
             }
         }
 
+        let mut to_filter = None;
+
         // Parse to filter
         if reader.has_to_filter() {
             let filter_data = reader.get_to_filter()?;
-            // For now, skip filter deserialization - this would need proper Filter construction
-            // trace_selection.to_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid to filter".to_string()));
+            };
+            to_filter = Some(wrapper);
         }
+
+        let mut address = Vec::new();
 
         // Parse addresses
         if reader.has_address() {
@@ -168,44 +180,55 @@ impl TraceSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    trace_selection.address.push(Address::from(addr_bytes));
+                    address.push(Address::from(addr_bytes));
                 }
             }
         }
 
+        let mut address_filter = None;
+
         // Parse address filter
         if reader.has_address_filter() {
             let filter_data = reader.get_address_filter()?;
-            // For now, skip filter deserialization - this would need proper Filter construction
-            // trace_selection.address_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid address filter".to_string()));
+            };
+            address_filter = Some(wrapper);
         }
+
+        let mut call_type = Vec::new();
 
         // Parse call types
         if reader.has_call_type() {
             let call_type_list = reader.get_call_type()?;
             for i in 0..call_type_list.len() {
-                let call_type = call_type_list.get(i)?;
-                trace_selection.call_type.push(call_type.to_string()?);
+                let call_type_val = call_type_list.get(i)?;
+                call_type.push(call_type_val.to_string()?);
             }
         }
 
+        let mut reward_type = Vec::new();
         // Parse reward types
         if reader.has_reward_type() {
             let reward_type_list = reader.get_reward_type()?;
             for i in 0..reward_type_list.len() {
-                let reward_type = reward_type_list.get(i)?;
-                trace_selection.reward_type.push(reward_type.to_string()?);
+                let reward_type_val = reward_type_list.get(i)?;
+                reward_type.push(reward_type_val.to_string()?);
             }
         }
 
-        // Parse kinds (types)
-        if reader.has_kind() {
-            let kind_list = reader.get_kind()?;
-            for i in 0..kind_list.len() {
-                let kind = kind_list.get(i)?;
-                trace_selection.type_.push(kind.to_string()?);
+        let mut type_ = Vec::new();
+
+        // Parse types
+        if reader.has_type() {
+            let type_list = reader.get_type()?;
+            for i in 0..type_list.len() {
+                let type_val = type_list.get(i)?;
+                type_.push(type_val.to_string()?);
             }
         }
+
+        let mut sighash = Vec::new();
 
         // Parse sighash
         if reader.has_sighash() {
@@ -215,12 +238,23 @@ impl TraceSelection {
                 if sighash_data.len() == 4 {
                     let mut sighash_bytes = [0u8; 4];
                     sighash_bytes.copy_from_slice(sighash_data);
-                    trace_selection.sighash.push(Sighash::from(sighash_bytes));
+                    sighash.push(Sighash::from(sighash_bytes));
                 }
             }
         }
 
-        Ok(trace_selection)
+        Ok(TraceSelection {
+            from,
+            from_filter,
+            to,
+            to_filter,
+            address,
+            address_filter,
+            call_type,
+            reward_type,
+            type_,
+            sighash,
+        })
     }
 }
 

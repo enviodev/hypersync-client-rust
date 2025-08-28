@@ -43,7 +43,7 @@ impl BlockSelection {
     pub fn from_capnp(
         reader: hypersync_net_types_capnp::block_selection::Reader,
     ) -> Result<Self, capnp::Error> {
-        let mut block_selection = BlockSelection::default();
+        let mut hash = Vec::new();
 
         // Parse hashes
         if reader.has_hash() {
@@ -53,10 +53,12 @@ impl BlockSelection {
                 if hash_data.len() == 32 {
                     let mut hash_bytes = [0u8; 32];
                     hash_bytes.copy_from_slice(hash_data);
-                    block_selection.hash.push(Hash::from(hash_bytes));
+                    hash.push(Hash::from(hash_bytes));
                 }
             }
         }
+
+        let mut miner = Vec::new();
 
         // Parse miners
         if reader.has_miner() {
@@ -66,12 +68,12 @@ impl BlockSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    block_selection.miner.push(Address::from(addr_bytes));
+                    miner.push(Address::from(addr_bytes));
                 }
             }
         }
 
-        Ok(block_selection)
+        Ok(BlockSelection { hash, miner })
     }
 }
 

@@ -46,7 +46,7 @@ struct TransactionSelection {
     toFilter @3 :Data;
     sighash @4 :List(Data);
     status @5 :UInt8;
-    kind @6 :List(UInt8);
+    type @6 :List(UInt8);
     contractAddress @7 :List(Data);
     contractAddressFilter @8 :Data;
     hash @9 :List(Data);
@@ -62,7 +62,7 @@ struct TraceSelection {
     addressFilter @5 :Data;
     callType @6 :List(Text);
     rewardType @7 :List(Text);
-    kind @8 :List(Text);
+    type @8 :List(Text);
     sighash @9 :List(Data);
 }
 

@@ -36,7 +36,7 @@ pub struct TransactionSelection {
     /// If transaction.type matches any of these values, the transaction will be returned
     #[serde(rename = "type")]
     #[serde(default)]
-    pub kind: Vec<u8>,
+    pub type_: Vec<u8>,
     /// If transaction.contract_address matches any of these values, the transaction will be returned.
     #[serde(default)]
     pub contract_address: Vec<Address>,
@@ -158,11 +158,11 @@ impl TransactionSelection {
             builder.reborrow().set_status(status);
         }
 
-        // Set kind
+        // Set type
         {
-            let mut kind_list = builder.reborrow().init_kind(tx_sel.kind.len() as u32);
-            for (i, kind) in tx_sel.kind.iter().enumerate() {
-                kind_list.set(i as u32, *kind);
+            let mut type_list = builder.reborrow().init_type(tx_sel.type_.len() as u32);
+            for (i, type_) in tx_sel.type_.iter().enumerate() {
+                type_list.set(i as u32, *type_);
             }
         }
 
@@ -209,7 +209,7 @@ impl TransactionSelection {
     pub fn from_capnp(
         reader: hypersync_net_types_capnp::transaction_selection::Reader,
     ) -> Result<Self, capnp::Error> {
-        let mut tx_selection = TransactionSelection::default();
+        let mut from = Vec::new();
 
         // Parse from addresses
         if reader.has_from() {
@@ -219,17 +219,24 @@ impl TransactionSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    tx_selection.from.push(Address::from(addr_bytes));
+                    from.push(Address::from(addr_bytes));
                 }
             }
         }
+
+        let mut from_filter = None;
 
         // Parse from filter
         if reader.has_from_filter() {
             let filter_data = reader.get_from_filter()?;
             // For now, skip filter deserialization - this would need proper Filter construction
-            // tx_selection.from_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid from filter".to_string()));
+            };
+            from_filter = Some(wrapper);
         }
+
+        let mut to = Vec::new();
 
         // Parse to addresses
         if reader.has_to() {
@@ -239,17 +246,23 @@ impl TransactionSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    tx_selection.to.push(Address::from(addr_bytes));
+                    to.push(Address::from(addr_bytes));
                 }
             }
         }
 
+        let mut to_filter = None;
+
         // Parse to filter
         if reader.has_to_filter() {
             let filter_data = reader.get_to_filter()?;
-            // For now, skip filter deserialization - this would need proper Filter construction
-            // tx_selection.to_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid to filter".to_string()));
+            };
+            to_filter = Some(wrapper);
         }
+
+        let mut sighash = Vec::new();
 
         // Parse sighash
         if reader.has_sighash() {
@@ -259,22 +272,25 @@ impl TransactionSelection {
                 if sighash_data.len() == 4 {
                     let mut sighash_bytes = [0u8; 4];
                     sighash_bytes.copy_from_slice(sighash_data);
-                    tx_selection.sighash.push(Sighash::from(sighash_bytes));
+                    sighash.push(Sighash::from(sighash_bytes));
                 }
             }
         }
 
         // Parse status
-        tx_selection.status = Some(reader.get_status());
+        let status = Some(reader.get_status());
 
-        // Parse kind (type)
-        if reader.has_kind() {
-            let kind_list = reader.get_kind()?;
-            for i in 0..kind_list.len() {
-                tx_selection.kind.push(kind_list.get(i));
+        let mut type_ = Vec::new();
+
+        // Parse type
+        if reader.has_type() {
+            let type_list = reader.get_type()?;
+            for i in 0..type_list.len() {
+                type_.push(type_list.get(i));
             }
         }
 
+        let mut contract_address = Vec::new();
         // Parse contract addresses
         if reader.has_contract_address() {
             let contract_list = reader.get_contract_address()?;
@@ -283,19 +299,25 @@ impl TransactionSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    tx_selection
-                        .contract_address
-                        .push(Address::from(addr_bytes));
+                    contract_address.push(Address::from(addr_bytes));
                 }
             }
         }
 
+        let mut contract_address_filter = None;
+
         // Parse contract address filter
         if reader.has_contract_address_filter() {
             let filter_data = reader.get_contract_address_filter()?;
-            // For now, skip filter deserialization - this would need proper Filter construction
-            // tx_selection.contract_address_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed(
+                    "Invalid contract address filter".to_string(),
+                ));
+            };
+            contract_address_filter = Some(wrapper);
         }
+
+        let mut hash = Vec::new();
 
         // Parse hashes
         if reader.has_hash() {
@@ -305,10 +327,12 @@ impl TransactionSelection {
                 if hash_data.len() == 32 {
                     let mut hash_bytes = [0u8; 32];
                     hash_bytes.copy_from_slice(hash_data);
-                    tx_selection.hash.push(Hash::from(hash_bytes));
+                    hash.push(Hash::from(hash_bytes));
                 }
             }
         }
+
+        let mut authorization_list = Vec::new();
 
         // Parse authorization list
         if reader.has_authorization_list() {
@@ -316,11 +340,23 @@ impl TransactionSelection {
             for i in 0..auth_list.len() {
                 let auth_reader = auth_list.get(i);
                 let auth_selection = AuthorizationSelection::from_capnp(auth_reader)?;
-                tx_selection.authorization_list.push(auth_selection);
+                authorization_list.push(auth_selection);
             }
         }
 
-        Ok(tx_selection)
+        Ok(TransactionSelection {
+            from,
+            from_filter,
+            to,
+            to_filter,
+            sighash,
+            status,
+            type_,
+            contract_address,
+            contract_address_filter,
+            hash,
+            authorization_list,
+        })
     }
 }
 

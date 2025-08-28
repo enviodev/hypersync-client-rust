@@ -46,6 +46,12 @@ impl FilterWrapper {
 
         Ok(FilterWrapper(filter))
     }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Filter::from_bytes(bytes)
+            .ok_or(Error::BloomFilterFromBytes)
+            .map(FilterWrapper)
+    }
 }
 
 impl PartialEq for FilterWrapper {

@@ -57,7 +57,7 @@ impl LogSelection {
     pub fn from_capnp(
         reader: hypersync_net_types_capnp::log_selection::Reader,
     ) -> Result<Self, capnp::Error> {
-        let mut log_selection = LogSelection::default();
+        let mut address = Vec::new();
 
         // Parse addresses
         if reader.has_address() {
@@ -67,17 +67,26 @@ impl LogSelection {
                 if addr_data.len() == 20 {
                     let mut addr_bytes = [0u8; 20];
                     addr_bytes.copy_from_slice(addr_data);
-                    log_selection.address.push(Address::from(addr_bytes));
+                    address.push(Address::from(addr_bytes));
                 }
             }
         }
+
+        let mut address_filter = None;
 
         // Parse address filter
         if reader.has_address_filter() {
             let filter_data = reader.get_address_filter()?;
             // For now, skip filter deserialization - this would need proper Filter construction
             // log_selection.address_filter = Some(FilterWrapper::from_keys(std::iter::empty(), None).unwrap());
+
+            let Ok(wrapper) = FilterWrapper::from_bytes(filter_data) else {
+                return Err(capnp::Error::failed("Invalid address filter".to_string()));
+            };
+            address_filter = Some(wrapper);
         }
+
+        let mut topics = ArrayVec::new();
 
         // Parse topics
         if reader.has_topics() {
@@ -94,12 +103,16 @@ impl LogSelection {
                     }
                 }
                 if i < 4 && !topic_vec.is_empty() {
-                    log_selection.topics.push(topic_vec);
+                    topics.push(topic_vec);
                 }
             }
         }
 
-        Ok(log_selection)
+        Ok(LogSelection {
+            address,
+            address_filter,
+            topics,
+        })
     }
 }
 
