@@ -213,7 +213,10 @@ impl LogField {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_format::Hex;
+
     use super::*;
+    use crate::{query::tests::test_query_serde, FieldSelection, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -237,5 +240,54 @@ mod tests {
             let strum = serde_json::to_string(&field.as_ref()).unwrap();
             assert_eq!(serialized, strum, "strum value should be the same as serde");
         }
+    }
+
+    #[test]
+    fn test_log_selection_serde_with_defaults() {
+        let log_selection = LogSelection::default();
+        let field_selection = FieldSelection {
+            log: LogField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            logs: vec![log_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "log selection with defaults");
+    }
+
+    #[test]
+    fn test_log_selection_serde_with_full_values() {
+        let log_selection = LogSelection {
+            address: vec![
+                Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap(),
+            ],
+            address_filter: Some(FilterWrapper::new(16, 1)),
+            topics: {
+                let mut topics = ArrayVec::new();
+                topics.push(vec![LogArgument::decode_hex(
+                    "0x1234567890123456789012345678901234567890123456789012345678901234",
+                )
+                .unwrap()]);
+                topics.push(vec![LogArgument::decode_hex(
+                    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                )
+                .unwrap()]);
+                topics
+            },
+        };
+        let field_selection = FieldSelection {
+            log: LogField::all(),
+            ..Default::default()
+        };
+        let query = Query {
+            logs: vec![log_selection],
+            field_selection,
+            ..Default::default()
+        };
+
+        test_query_serde(query, "log selection with full values");
     }
 }
