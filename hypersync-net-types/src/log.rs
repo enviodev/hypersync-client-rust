@@ -125,6 +125,24 @@ impl LogField {
             LogField::Topic3 => crate::hypersync_net_types_capnp::LogField::Topic3,
         }
     }
+
+    /// Convert Cap'n Proto enum to LogField
+    pub fn from_capnp(field: crate::hypersync_net_types_capnp::LogField) -> Self {
+        match field {
+            crate::hypersync_net_types_capnp::LogField::TransactionHash => LogField::TransactionHash,
+            crate::hypersync_net_types_capnp::LogField::BlockHash => LogField::BlockHash,
+            crate::hypersync_net_types_capnp::LogField::BlockNumber => LogField::BlockNumber,
+            crate::hypersync_net_types_capnp::LogField::TransactionIndex => LogField::TransactionIndex,
+            crate::hypersync_net_types_capnp::LogField::LogIndex => LogField::LogIndex,
+            crate::hypersync_net_types_capnp::LogField::Address => LogField::Address,
+            crate::hypersync_net_types_capnp::LogField::Data => LogField::Data,
+            crate::hypersync_net_types_capnp::LogField::Removed => LogField::Removed,
+            crate::hypersync_net_types_capnp::LogField::Topic0 => LogField::Topic0,
+            crate::hypersync_net_types_capnp::LogField::Topic1 => LogField::Topic1,
+            crate::hypersync_net_types_capnp::LogField::Topic2 => LogField::Topic2,
+            crate::hypersync_net_types_capnp::LogField::Topic3 => LogField::Topic3,
+        }
+    }
 }
 
 #[cfg(test)]

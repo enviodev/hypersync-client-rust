@@ -153,6 +153,40 @@ impl BlockField {
             BlockField::SendRoot => crate::hypersync_net_types_capnp::BlockField::SendRoot,
         }
     }
+
+    /// Convert Cap'n Proto enum to BlockField
+    pub fn from_capnp(field: crate::hypersync_net_types_capnp::BlockField) -> Self {
+        match field {
+            crate::hypersync_net_types_capnp::BlockField::Number => BlockField::Number,
+            crate::hypersync_net_types_capnp::BlockField::Hash => BlockField::Hash,
+            crate::hypersync_net_types_capnp::BlockField::ParentHash => BlockField::ParentHash,
+            crate::hypersync_net_types_capnp::BlockField::Sha3Uncles => BlockField::Sha3Uncles,
+            crate::hypersync_net_types_capnp::BlockField::LogsBloom => BlockField::LogsBloom,
+            crate::hypersync_net_types_capnp::BlockField::TransactionsRoot => BlockField::TransactionsRoot,
+            crate::hypersync_net_types_capnp::BlockField::StateRoot => BlockField::StateRoot,
+            crate::hypersync_net_types_capnp::BlockField::ReceiptsRoot => BlockField::ReceiptsRoot,
+            crate::hypersync_net_types_capnp::BlockField::Miner => BlockField::Miner,
+            crate::hypersync_net_types_capnp::BlockField::ExtraData => BlockField::ExtraData,
+            crate::hypersync_net_types_capnp::BlockField::Size => BlockField::Size,
+            crate::hypersync_net_types_capnp::BlockField::GasLimit => BlockField::GasLimit,
+            crate::hypersync_net_types_capnp::BlockField::GasUsed => BlockField::GasUsed,
+            crate::hypersync_net_types_capnp::BlockField::Timestamp => BlockField::Timestamp,
+            crate::hypersync_net_types_capnp::BlockField::MixHash => BlockField::MixHash,
+            crate::hypersync_net_types_capnp::BlockField::Nonce => BlockField::Nonce,
+            crate::hypersync_net_types_capnp::BlockField::Difficulty => BlockField::Difficulty,
+            crate::hypersync_net_types_capnp::BlockField::TotalDifficulty => BlockField::TotalDifficulty,
+            crate::hypersync_net_types_capnp::BlockField::Uncles => BlockField::Uncles,
+            crate::hypersync_net_types_capnp::BlockField::BaseFeePerGas => BlockField::BaseFeePerGas,
+            crate::hypersync_net_types_capnp::BlockField::BlobGasUsed => BlockField::BlobGasUsed,
+            crate::hypersync_net_types_capnp::BlockField::ExcessBlobGas => BlockField::ExcessBlobGas,
+            crate::hypersync_net_types_capnp::BlockField::ParentBeaconBlockRoot => BlockField::ParentBeaconBlockRoot,
+            crate::hypersync_net_types_capnp::BlockField::WithdrawalsRoot => BlockField::WithdrawalsRoot,
+            crate::hypersync_net_types_capnp::BlockField::Withdrawals => BlockField::Withdrawals,
+            crate::hypersync_net_types_capnp::BlockField::L1BlockNumber => BlockField::L1BlockNumber,
+            crate::hypersync_net_types_capnp::BlockField::SendCount => BlockField::SendCount,
+            crate::hypersync_net_types_capnp::BlockField::SendRoot => BlockField::SendRoot,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -373,6 +373,58 @@ impl TransactionField {
             }
         }
     }
+
+    /// Convert Cap'n Proto enum to TransactionField
+    pub fn from_capnp(field: crate::hypersync_net_types_capnp::TransactionField) -> Self {
+        match field {
+            crate::hypersync_net_types_capnp::TransactionField::BlockHash => TransactionField::BlockHash,
+            crate::hypersync_net_types_capnp::TransactionField::BlockNumber => TransactionField::BlockNumber,
+            crate::hypersync_net_types_capnp::TransactionField::Gas => TransactionField::Gas,
+            crate::hypersync_net_types_capnp::TransactionField::Hash => TransactionField::Hash,
+            crate::hypersync_net_types_capnp::TransactionField::Input => TransactionField::Input,
+            crate::hypersync_net_types_capnp::TransactionField::Nonce => TransactionField::Nonce,
+            crate::hypersync_net_types_capnp::TransactionField::TransactionIndex => TransactionField::TransactionIndex,
+            crate::hypersync_net_types_capnp::TransactionField::Value => TransactionField::Value,
+            crate::hypersync_net_types_capnp::TransactionField::CumulativeGasUsed => TransactionField::CumulativeGasUsed,
+            crate::hypersync_net_types_capnp::TransactionField::EffectiveGasPrice => TransactionField::EffectiveGasPrice,
+            crate::hypersync_net_types_capnp::TransactionField::GasUsed => TransactionField::GasUsed,
+            crate::hypersync_net_types_capnp::TransactionField::LogsBloom => TransactionField::LogsBloom,
+            crate::hypersync_net_types_capnp::TransactionField::From => TransactionField::From,
+            crate::hypersync_net_types_capnp::TransactionField::GasPrice => TransactionField::GasPrice,
+            crate::hypersync_net_types_capnp::TransactionField::To => TransactionField::To,
+            crate::hypersync_net_types_capnp::TransactionField::V => TransactionField::V,
+            crate::hypersync_net_types_capnp::TransactionField::R => TransactionField::R,
+            crate::hypersync_net_types_capnp::TransactionField::S => TransactionField::S,
+            crate::hypersync_net_types_capnp::TransactionField::MaxPriorityFeePerGas => TransactionField::MaxPriorityFeePerGas,
+            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerGas => TransactionField::MaxFeePerGas,
+            crate::hypersync_net_types_capnp::TransactionField::ChainId => TransactionField::ChainId,
+            crate::hypersync_net_types_capnp::TransactionField::ContractAddress => TransactionField::ContractAddress,
+            crate::hypersync_net_types_capnp::TransactionField::Type => TransactionField::Type,
+            crate::hypersync_net_types_capnp::TransactionField::Root => TransactionField::Root,
+            crate::hypersync_net_types_capnp::TransactionField::Status => TransactionField::Status,
+            crate::hypersync_net_types_capnp::TransactionField::YParity => TransactionField::YParity,
+            crate::hypersync_net_types_capnp::TransactionField::AccessList => TransactionField::AccessList,
+            crate::hypersync_net_types_capnp::TransactionField::AuthorizationList => TransactionField::AuthorizationList,
+            crate::hypersync_net_types_capnp::TransactionField::L1Fee => TransactionField::L1Fee,
+            crate::hypersync_net_types_capnp::TransactionField::L1GasPrice => TransactionField::L1GasPrice,
+            crate::hypersync_net_types_capnp::TransactionField::L1GasUsed => TransactionField::L1GasUsed,
+            crate::hypersync_net_types_capnp::TransactionField::L1FeeScalar => TransactionField::L1FeeScalar,
+            crate::hypersync_net_types_capnp::TransactionField::GasUsedForL1 => TransactionField::GasUsedForL1,
+            crate::hypersync_net_types_capnp::TransactionField::MaxFeePerBlobGas => TransactionField::MaxFeePerBlobGas,
+            crate::hypersync_net_types_capnp::TransactionField::BlobVersionedHashes => TransactionField::BlobVersionedHashes,
+            crate::hypersync_net_types_capnp::TransactionField::BlobGasPrice => TransactionField::BlobGasPrice,
+            crate::hypersync_net_types_capnp::TransactionField::BlobGasUsed => TransactionField::BlobGasUsed,
+            crate::hypersync_net_types_capnp::TransactionField::DepositNonce => TransactionField::DepositNonce,
+            crate::hypersync_net_types_capnp::TransactionField::DepositReceiptVersion => TransactionField::DepositReceiptVersion,
+            crate::hypersync_net_types_capnp::TransactionField::L1BaseFeeScalar => TransactionField::L1BaseFeeScalar,
+            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFee => TransactionField::L1BlobBaseFee,
+            crate::hypersync_net_types_capnp::TransactionField::L1BlobBaseFeeScalar => TransactionField::L1BlobBaseFeeScalar,
+            crate::hypersync_net_types_capnp::TransactionField::L1BlockNumber => TransactionField::L1BlockNumber,
+            crate::hypersync_net_types_capnp::TransactionField::Mint => TransactionField::Mint,
+            crate::hypersync_net_types_capnp::TransactionField::Sighash => TransactionField::Sighash,
+            crate::hypersync_net_types_capnp::TransactionField::SourceHash => TransactionField::SourceHash,
+        }
+    }
 }
 
 #[cfg(test)]
