@@ -63,4 +63,18 @@ json:  {"ser": 156, "deser": 298, "size": 245}
 - Cap'n Proto is used as the new default for optimal performance
 - Existing client code continues to work without changes
 
+## Testing
+
+To run the query module tests with output visible (no capture):
+
+```bash
+cargo test --package hypersync-net-types query -- --nocapture
+```
+
+To run the API tests:
+
+```bash
+cargo test --package hypersync-client api_test -- --nocapture
+```
+
 This branch represents a significant step forward in making HyperSync queries more efficient, type-safe, and performant for high-throughput blockchain data processing.
