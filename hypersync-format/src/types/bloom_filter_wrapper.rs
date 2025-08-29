@@ -15,6 +15,14 @@ use crate::Data;
 #[derive(Clone)]
 pub struct FilterWrapper(pub Filter);
 
+impl PartialEq for FilterWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_bytes() == other.0.as_bytes()
+    }
+}
+
+impl Eq for FilterWrapper {}
+
 impl FilterWrapper {
     pub fn new(bits_per_key: usize, num_keys: usize) -> Self {
         Self(Filter::new(bits_per_key, num_keys))
@@ -46,11 +54,11 @@ impl FilterWrapper {
 
         Ok(FilterWrapper(filter))
     }
-}
 
-impl PartialEq for FilterWrapper {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.as_bytes() == other.0.as_bytes()
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        Filter::from_bytes(bytes)
+            .ok_or(Error::BloomFilterFromBytes)
+            .map(FilterWrapper)
     }
 }
 
