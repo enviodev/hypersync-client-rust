@@ -611,4 +611,17 @@ pub mod tests {
         };
         test_query_serde(query, "moderate payload");
     }
+
+    #[test]
+    pub fn test_huge_payload_less_contracts() {
+        let logs = build_mock_logs(1, 3, 10000);
+
+        let query = Query {
+            from_block: 50,
+            to_block: Some(500),
+            logs,
+            ..Default::default()
+        };
+        test_query_serde(query, "huge payload less contracts");
+    }
 }
