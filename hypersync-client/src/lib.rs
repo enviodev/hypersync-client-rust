@@ -608,9 +608,14 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
 fn add_event_join_fields_to_selection(query: &mut Query) {
     // Field lists for implementing event based API, these fields are used for joining
     // so they should always be added to the field selection.
-    const BLOCK_JOIN_FIELDS: &[hypersync_net_types::block::BlockField] = &[hypersync_net_types::block::BlockField::Number];
-    const TX_JOIN_FIELDS: &[hypersync_net_types::transaction::TransactionField] = &[hypersync_net_types::transaction::TransactionField::Hash];
-    const LOG_JOIN_FIELDS: &[hypersync_net_types::log::LogField] = &[hypersync_net_types::log::LogField::TransactionHash, hypersync_net_types::log::LogField::BlockNumber];
+    const BLOCK_JOIN_FIELDS: &[hypersync_net_types::block::BlockField] =
+        &[hypersync_net_types::block::BlockField::Number];
+    const TX_JOIN_FIELDS: &[hypersync_net_types::transaction::TransactionField] =
+        &[hypersync_net_types::transaction::TransactionField::Hash];
+    const LOG_JOIN_FIELDS: &[hypersync_net_types::log::LogField] = &[
+        hypersync_net_types::log::LogField::TransactionHash,
+        hypersync_net_types::log::LogField::BlockNumber,
+    ];
 
     if !query.field_selection.block.is_empty() {
         for field in BLOCK_JOIN_FIELDS.iter() {

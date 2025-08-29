@@ -2,11 +2,13 @@ use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
 use hypersync_client::{
-    preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping, StreamConfig,
+    preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping,
+    SerializationFormat, StreamConfig,
 };
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
 use hypersync_net_types::{
-    block::BlockField, transaction::TransactionField, FieldSelection, Query, TransactionSelection,
+    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection, LogSelection,
+    Query, TransactionSelection,
 };
 use polars_arrow::array::UInt64Array;
 
@@ -528,4 +530,40 @@ async fn test_decode_string_param_into_arrow() {
     let data = client.collect_arrow(query, conf).await.unwrap();
 
     dbg!(data.data.decoded_logs);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_api_capnp_client() {
+    let client = Arc::new(
+        Client::new(ClientConfig {
+            url: Some("http://localhost:1131".parse().unwrap()),
+            serialization_format: SerializationFormat::CapnProto,
+
+            ..Default::default()
+        })
+        .unwrap(),
+    );
+
+    let field_selection = FieldSelection {
+        block: BlockField::all(),
+        log: LogField::all(),
+        transaction: TransactionField::all(),
+        trace: Default::default(),
+    };
+    let query = Query {
+        from_block: 0,
+        logs: vec![LogSelection::default()],
+        transactions: Vec::new(),
+        include_all_blocks: true,
+        field_selection,
+        ..Default::default()
+    };
+    println!("starting stream, query {:?}", &query);
+
+    let mut res = client.stream(query, StreamConfig::default()).await.unwrap();
+
+    while let Some(res) = res.recv().await {
+        let res = res.unwrap();
+        dbg!(res);
+    }
 }

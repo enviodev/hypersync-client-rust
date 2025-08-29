@@ -3,10 +3,10 @@ use std::collections::BTreeSet;
 
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, LogArgument};
-use hypersync_net_types::{FieldSelection, LogSelection, Query, TransactionSelection};
 use hypersync_net_types::block::BlockField;
-use hypersync_net_types::transaction::TransactionField;
 use hypersync_net_types::log::LogField;
+use hypersync_net_types::transaction::TransactionField;
+use hypersync_net_types::{FieldSelection, LogSelection, Query, TransactionSelection};
 
 /// Returns a query for all Blocks and Transactions within the block range (from_block, to_block]
 /// If to_block is None then query runs to the head of the chain.

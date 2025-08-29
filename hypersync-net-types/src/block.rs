@@ -244,6 +244,8 @@ impl BlockField {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use hypersync_format::Hex;
 
     use super::*;
@@ -293,5 +295,12 @@ mod tests {
         };
 
         test_query_serde(query, "block selection with rest defaults");
+    }
+
+    #[test]
+    fn test_as_str() {
+        let block_field = BlockField::Number;
+        let from_str = BlockField::from_str("number").unwrap();
+        assert_eq!(block_field, from_str);
     }
 }
