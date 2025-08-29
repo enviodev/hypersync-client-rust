@@ -119,32 +119,36 @@ impl Query {
         &self,
         mut query: hypersync_net_types_capnp::query::Builder,
     ) -> Result<(), capnp::Error> {
-        query.reborrow().set_from_block(self.from_block);
+        let mut block_range_builder = query.reborrow().init_block_range();
+        block_range_builder.set_from_block(self.from_block);
 
         if let Some(to_block) = self.to_block {
-            let mut to_block_builder = query.reborrow().init_to_block();
+            let mut to_block_builder = block_range_builder.reborrow().init_to_block();
             to_block_builder.set_value(to_block)
         }
 
-        query
+        // Hehe
+        let mut body_builder = query.reborrow().init_body();
+
+        body_builder
             .reborrow()
             .set_include_all_blocks(self.include_all_blocks);
 
         // Set max nums using OptUInt64
         if let Some(max_num_blocks) = self.max_num_blocks {
-            let mut max_blocks_builder = query.reborrow().init_max_num_blocks();
+            let mut max_blocks_builder = body_builder.reborrow().init_max_num_blocks();
             max_blocks_builder.set_value(max_num_blocks as u64);
         }
         if let Some(max_num_transactions) = self.max_num_transactions {
-            let mut max_tx_builder = query.reborrow().init_max_num_transactions();
+            let mut max_tx_builder = body_builder.reborrow().init_max_num_transactions();
             max_tx_builder.set_value(max_num_transactions as u64);
         }
         if let Some(max_num_logs) = self.max_num_logs {
-            let mut max_logs_builder = query.reborrow().init_max_num_logs();
+            let mut max_logs_builder = body_builder.reborrow().init_max_num_logs();
             max_logs_builder.set_value(max_num_logs as u64);
         }
         if let Some(max_num_traces) = self.max_num_traces {
-            let mut max_traces_builder = query.reborrow().init_max_num_traces();
+            let mut max_traces_builder = body_builder.reborrow().init_max_num_traces();
             max_traces_builder.set_value(max_num_traces as u64);
         }
 
@@ -154,11 +158,11 @@ impl Query {
             JoinMode::JoinAll => hypersync_net_types_capnp::JoinMode::JoinAll,
             JoinMode::JoinNothing => hypersync_net_types_capnp::JoinMode::JoinNothing,
         };
-        query.reborrow().set_join_mode(join_mode);
+        body_builder.reborrow().set_join_mode(join_mode);
 
         // Set field selection
         {
-            let mut field_selection = query.reborrow().init_field_selection();
+            let mut field_selection = body_builder.reborrow().init_field_selection();
 
             // Set block fields
             let mut block_list = field_selection
@@ -195,7 +199,7 @@ impl Query {
 
         // Set logs
         {
-            let mut logs_list = query.reborrow().init_logs(self.logs.len() as u32);
+            let mut logs_list = body_builder.reborrow().init_logs(self.logs.len() as u32);
             for (i, log_selection) in self.logs.iter().enumerate() {
                 let log_sel = logs_list.reborrow().get(i as u32);
                 LogSelection::populate_capnp_builder(log_selection, log_sel)?;
@@ -204,7 +208,7 @@ impl Query {
 
         // Set transactions
         {
-            let mut tx_list = query
+            let mut tx_list = body_builder
                 .reborrow()
                 .init_transactions(self.transactions.len() as u32);
             for (i, tx_selection) in self.transactions.iter().enumerate() {
@@ -215,7 +219,9 @@ impl Query {
 
         // Set traces
         {
-            let mut trace_list = query.reborrow().init_traces(self.traces.len() as u32);
+            let mut trace_list = body_builder
+                .reborrow()
+                .init_traces(self.traces.len() as u32);
             for (i, trace_selection) in self.traces.iter().enumerate() {
                 let trace_sel = trace_list.reborrow().get(i as u32);
                 TraceSelection::populate_capnp_builder(trace_selection, trace_sel)?;
@@ -224,7 +230,9 @@ impl Query {
 
         // Set blocks
         {
-            let mut block_list = query.reborrow().init_blocks(self.blocks.len() as u32);
+            let mut block_list = body_builder
+                .reborrow()
+                .init_blocks(self.blocks.len() as u32);
             for (i, block_selection) in self.blocks.iter().enumerate() {
                 let block_sel = block_list.reborrow().get(i as u32);
                 BlockSelection::populate_capnp_builder(block_selection, block_sel)?;
@@ -237,18 +245,21 @@ impl Query {
     fn from_capnp_query(
         query: hypersync_net_types_capnp::query::Reader,
     ) -> Result<Self, capnp::Error> {
-        let from_block = query.get_from_block();
-        let to_block = if query.has_to_block() {
-            Some(query.get_to_block()?.get_value())
+        let block_range = query.get_block_range()?;
+
+        let from_block = block_range.get_from_block();
+        let to_block = if block_range.has_to_block() {
+            Some(block_range.get_to_block()?.get_value())
         } else {
             None
         };
-        let include_all_blocks = query.get_include_all_blocks();
+        let body = query.get_body()?;
+        let include_all_blocks = body.get_include_all_blocks();
 
         // Parse field selection
         let field_selection =
-            if query.has_field_selection() {
-                let fs = query.get_field_selection()?;
+            if body.has_field_selection() {
+                let fs = body.get_field_selection()?;
 
                 let block_fields = if fs.has_block() {
                     let block_list = fs.get_block()?;
@@ -319,29 +330,29 @@ impl Query {
             };
 
         // Parse max values using OptUInt64
-        let max_num_blocks = if query.has_max_num_blocks() {
-            let max_blocks_reader = query.get_max_num_blocks()?;
+        let max_num_blocks = if body.has_max_num_blocks() {
+            let max_blocks_reader = body.get_max_num_blocks()?;
             let value = max_blocks_reader.get_value();
             Some(value as usize)
         } else {
             None
         };
-        let max_num_transactions = if query.has_max_num_transactions() {
-            let max_tx_reader = query.get_max_num_transactions()?;
+        let max_num_transactions = if body.has_max_num_transactions() {
+            let max_tx_reader = body.get_max_num_transactions()?;
             let value = max_tx_reader.get_value();
             Some(value as usize)
         } else {
             None
         };
-        let max_num_logs = if query.has_max_num_logs() {
-            let max_logs_reader = query.get_max_num_logs()?;
+        let max_num_logs = if body.has_max_num_logs() {
+            let max_logs_reader = body.get_max_num_logs()?;
             let value = max_logs_reader.get_value();
             Some(value as usize)
         } else {
             None
         };
-        let max_num_traces = if query.has_max_num_traces() {
-            let max_traces_reader = query.get_max_num_traces()?;
+        let max_num_traces = if body.has_max_num_traces() {
+            let max_traces_reader = body.get_max_num_traces()?;
             let value = max_traces_reader.get_value();
             Some(value as usize)
         } else {
@@ -349,15 +360,15 @@ impl Query {
         };
 
         // Parse join mode
-        let join_mode = match query.get_join_mode()? {
+        let join_mode = match body.get_join_mode()? {
             hypersync_net_types_capnp::JoinMode::Default => JoinMode::Default,
             hypersync_net_types_capnp::JoinMode::JoinAll => JoinMode::JoinAll,
             hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
         };
 
         // Parse selections
-        let logs = if query.has_logs() {
-            let logs_list = query.get_logs()?;
+        let logs = if body.has_logs() {
+            let logs_list = body.get_logs()?;
             let mut logs = Vec::new();
             for i in 0..logs_list.len() {
                 let log_reader = logs_list.get(i);
@@ -368,8 +379,8 @@ impl Query {
             Vec::new()
         };
 
-        let transactions = if query.has_transactions() {
-            let tx_list = query.get_transactions()?;
+        let transactions = if body.has_transactions() {
+            let tx_list = body.get_transactions()?;
             let mut transactions = Vec::new();
             for i in 0..tx_list.len() {
                 let tx_reader = tx_list.get(i);
@@ -380,8 +391,8 @@ impl Query {
             Vec::new()
         };
 
-        let traces = if query.has_traces() {
-            let traces_list = query.get_traces()?;
+        let traces = if body.has_traces() {
+            let traces_list = body.get_traces()?;
             let mut traces = Vec::new();
             for i in 0..traces_list.len() {
                 let trace_reader = traces_list.get(i);
@@ -392,8 +403,8 @@ impl Query {
             Vec::new()
         };
 
-        let blocks = if query.has_blocks() {
-            let blocks_list = query.get_blocks()?;
+        let blocks = if body.has_blocks() {
+            let blocks_list = body.get_blocks()?;
             let mut blocks = Vec::new();
             for i in 0..blocks_list.len() {
                 let block_reader = blocks_list.get(i);

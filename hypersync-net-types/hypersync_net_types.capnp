@@ -202,20 +202,28 @@ enum TraceField {
     value @24;
 }
 
-struct Query {
+struct QueryBody {
+    logs @1 :List(LogSelection);
+    transactions @2 :List(TransactionSelection);
+    traces @3 :List(TraceSelection);
+    blocks @4 :List(BlockSelection);
+    includeAllBlocks @5 :Bool;
+    fieldSelection @6 :FieldSelection;
+    maxNumBlocks @7 :OptUInt64;
+    maxNumTransactions @8 :OptUInt64;
+    maxNumLogs @9 :OptUInt64;
+    maxNumTraces @10 :OptUInt64;
+    joinMode @0 :JoinMode;
+}
+
+struct BlockRange {
     fromBlock @0 :UInt64;
     toBlock @1 :OptUInt64;
-    logs @2 :List(LogSelection);
-    transactions @3 :List(TransactionSelection);
-    traces @4 :List(TraceSelection);
-    blocks @5 :List(BlockSelection);
-    includeAllBlocks @6 :Bool;
-    fieldSelection @7 :FieldSelection;
-    maxNumBlocks @8 :OptUInt64;
-    maxNumTransactions @9 :OptUInt64;
-    maxNumLogs @10 :OptUInt64;
-    maxNumTraces @11 :OptUInt64;
-    joinMode @12 :JoinMode;
+}
+
+struct Query {
+    blockRange @0 :BlockRange;
+    body @1 :QueryBody;
 }
 
 struct OptUInt64 {
