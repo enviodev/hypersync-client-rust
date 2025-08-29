@@ -76,6 +76,20 @@ bin:   {"deser":5176,"ser":3618,"size":217059}
 - Cap'n Proto is used as the new default for optimal performance
 - Existing client code continues to work without changes
 
+### Future Improvements
+
+The Cap'n Proto implementation opens up several exciting optimization opportunities:
+
+1. **Zero-Copy Server Processing**: Cap'n Proto's schema allows the HyperSync server to inspect and route queries without full deserialization. The server can read specific fields (like `field_selection`, `max_num_*` limits) directly from the binary payload without parsing the entire query structure.
+
+2. **Query Caching by Hash**: The structured serialization enables intelligent caching on the HyperSync server:
+   - Generate content hashes of the query body (excluding block range)
+   - Cache compiled query execution plans based on these hashes
+   - Reuse cached plans for queries with identical selection criteria but different block ranges
+   - Significantly reduce query compilation overhead for repeated patterns
+
+These optimizations will enable even faster query processing and better resource utilization on the server side.
+
 ## Testing
 
 To run the query module tests with output visible (no capture):
