@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
                             {
                                 if !results.is_empty() {
                                     let (balance, _) = results[0].as_uint().unwrap();
-                                    println!("ADDRESS {} : {} DAI", address, balance);
+                                    println!("ADDRESS {address} : {balance} DAI");
                                 }
                             }
                         }
@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!("Error: {:?}", e);
+                eprintln!("Error: {e:?}");
             }
         }
     }

@@ -51,23 +51,19 @@ impl From<&FieldSelection> for InternalEventJoinStrategy {
         Self {
             block: if block_fields_num == 0 {
                 InternalJoinStrategy::NotSelected
+            } else if block_fields_num == 1 && field_selection.block.contains(BLOCK_JOIN_FIELD) {
+                InternalJoinStrategy::OnlyLogJoinField
             } else {
-                if block_fields_num == 1 && field_selection.block.contains(BLOCK_JOIN_FIELD) {
-                    InternalJoinStrategy::OnlyLogJoinField
-                } else {
-                    InternalJoinStrategy::FullJoin
-                }
+                InternalJoinStrategy::FullJoin
             },
             transaction: if transaction_fields_num == 0 {
                 InternalJoinStrategy::NotSelected
+            } else if transaction_fields_num == 1
+                && field_selection.transaction.contains(TX_JOIN_FIELD)
+            {
+                InternalJoinStrategy::OnlyLogJoinField
             } else {
-                if transaction_fields_num == 1
-                    && field_selection.transaction.contains(TX_JOIN_FIELD)
-                {
-                    InternalJoinStrategy::OnlyLogJoinField
-                } else {
-                    InternalJoinStrategy::FullJoin
-                }
+                InternalJoinStrategy::FullJoin
             },
         }
     }

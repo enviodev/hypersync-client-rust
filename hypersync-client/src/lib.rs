@@ -309,10 +309,9 @@ impl Client {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!(
-                        "failed to get chain_id from server, retrying... The error was: {:?}",
-                        e
+                        "failed to get chain_id from server, retrying... The error was: {e:?}"
                     );
-                    err = err.context(format!("{:?}", e));
+                    err = err.context(format!("{e:?}"));
                 }
             }
 
@@ -341,10 +340,9 @@ impl Client {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!(
-                        "failed to get height from server, retrying... The error was: {:?}",
-                        e
+                        "failed to get height from server, retrying... The error was: {e:?}"
                     );
-                    err = err.context(format!("{:?}", e));
+                    err = err.context(format!("{e:?}"));
                 }
             }
 
@@ -437,10 +435,9 @@ impl Client {
                 Ok(res) => return Ok(res),
                 Err(e) => {
                     log::error!(
-                        "failed to get arrow data from server, retrying... The error was: {:?}",
-                        e
+                        "failed to get arrow data from server, retrying... The error was: {e:?}"
                     );
-                    err = err.context(format!("{:?}", e));
+                    err = err.context(format!("{e:?}"));
                 }
             }
 

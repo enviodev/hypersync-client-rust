@@ -134,8 +134,7 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
                     Err(e) => {
                         log::trace!(
                             "failed to decode body of a log, will write null instead. Error was: \
-                             {:?}",
-                            e
+                             {e:?}"
                         );
                         None
                     }

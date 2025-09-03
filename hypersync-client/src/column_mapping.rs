@@ -204,7 +204,7 @@ fn binary_to_int_str_array(arr: &BinaryArray<i32>) -> Result<Utf8Array<i32>> {
 
 fn binary_to_int_str(binary: &[u8]) -> Result<String> {
     let big_num = I256::try_from_be_slice(binary).context("failed to parse number into I256")?;
-    Ok(format!("{}", big_num))
+    Ok(format!("{big_num}"))
 }
 
 fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
