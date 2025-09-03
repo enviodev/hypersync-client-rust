@@ -41,6 +41,8 @@ pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 
+use crate::simple_types::InternalEventJoinStrategy;
+
 type ArrowChunk = Chunk<Box<dyn Array>>;
 
 /// Internal client to handle http requests and retries.
@@ -151,7 +153,8 @@ impl Client {
     ) -> Result<EventResponse> {
         check_simple_stream_params(&config)?;
 
-        add_event_join_fields_to_selection(&mut query);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -165,7 +168,7 @@ impl Client {
         while let Some(res) = recv.recv().await {
             let res = res.context("get response")?;
             let res: QueryResponse = QueryResponse::from(&res);
-            let events: Vec<Event> = res.data.into();
+            let events = Event::join_from_response_data(res.data, &event_join_strategy);
 
             data.push(events);
 
@@ -374,9 +377,13 @@ impl Client {
     /// Add block, transaction and log fields selection to the query, executes it with retries
     /// and returns the response.
     pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
-        add_event_join_fields_to_selection(&mut query);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
         let arrow_response = self.get_arrow(&query).await.context("get data")?;
-        Ok(EventResponse::from(&arrow_response))
+        Ok(EventResponse::from_arrow_response(
+            &arrow_response,
+            &event_join_strategy,
+        ))
     }
 
     /// Executes query once and returns the result in (Arrow, size) format.
@@ -493,7 +500,9 @@ impl Client {
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
         check_simple_stream_params(&config)?;
 
-        add_event_join_fields_to_selection(&mut query);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+
+        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
 
         let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
             mpsc::channel(config.concurrency.unwrap_or(10));
@@ -507,7 +516,9 @@ impl Client {
             while let Some(resp) = inner_rx.recv().await {
                 let is_err = resp.is_err();
                 if tx
-                    .send(resp.map(|r| EventResponse::from(&r)))
+                    .send(
+                        resp.map(|r| EventResponse::from_arrow_response(&r, &event_join_strategy)),
+                    )
                     .await
                     .is_err()
                     || is_err
@@ -550,30 +561,4 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn add_event_join_fields_to_selection(query: &mut Query) {
-    // Field lists for implementing event based API, these fields are used for joining
-    // so they should always be added to the field selection.
-    const BLOCK_JOIN_FIELDS: &[&str] = &["number"];
-    const TX_JOIN_FIELDS: &[&str] = &["hash"];
-    const LOG_JOIN_FIELDS: &[&str] = &["transaction_hash", "block_number"];
-
-    if !query.field_selection.block.is_empty() {
-        for field in BLOCK_JOIN_FIELDS.iter() {
-            query.field_selection.block.insert(field.to_string());
-        }
-    }
-
-    if !query.field_selection.transaction.is_empty() {
-        for field in TX_JOIN_FIELDS.iter() {
-            query.field_selection.transaction.insert(field.to_string());
-        }
-    }
-
-    if !query.field_selection.log.is_empty() {
-        for field in LOG_JOIN_FIELDS.iter() {
-            query.field_selection.log.insert(field.to_string());
-        }
-    }
 }

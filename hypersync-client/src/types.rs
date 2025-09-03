@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    simple_types::{Block, Event, Log, Trace, Transaction},
+    simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction},
     ArrowChunk, FromArrow,
 };
 use anyhow::{anyhow, Context, Result};
@@ -38,14 +38,18 @@ pub struct ResponseData {
     pub traces: Vec<Vec<Trace>>,
 }
 
-impl From<&'_ ArrowResponse> for EventResponse {
-    fn from(arrow_response: &'_ ArrowResponse) -> Self {
+impl EventResponse {
+    /// Create EventResponse from ArrowResponse with the specified event join strategy
+    pub fn from_arrow_response(
+        arrow_response: &ArrowResponse,
+        event_join_strategy: &InternalEventJoinStrategy,
+    ) -> Self {
         let r: QueryResponse = arrow_response.into();
         Self {
             archive_height: r.archive_height,
             next_block: r.next_block,
             total_execution_time: r.total_execution_time,
-            data: vec![r.data.into()],
+            data: vec![Event::join_from_response_data(r.data, event_join_strategy)],
             rollback_guard: r.rollback_guard,
         }
     }
