@@ -40,7 +40,7 @@ pub struct ResponseData {
 
 impl EventResponse {
     /// Create EventResponse from ArrowResponse with the specified event join strategy
-    pub fn from_arrow_response(
+    pub(crate) fn from_arrow_response(
         arrow_response: &ArrowResponse,
         event_join_strategy: &InternalEventJoinStrategy,
     ) -> Self {
@@ -49,7 +49,7 @@ impl EventResponse {
             archive_height: r.archive_height,
             next_block: r.next_block,
             total_execution_time: r.total_execution_time,
-            data: vec![Event::join_from_response_data(r.data, event_join_strategy)],
+            data: vec![event_join_strategy.join_from_response_data(r.data)],
             rollback_guard: r.rollback_guard,
         }
     }

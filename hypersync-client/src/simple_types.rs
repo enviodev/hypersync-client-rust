@@ -38,7 +38,7 @@ enum InternalJoinStrategy {
 }
 
 /// Internal event join strategy for determining how to join blocks and transactions with logs
-pub struct InternalEventJoinStrategy {
+pub(crate) struct InternalEventJoinStrategy {
     block: InternalJoinStrategy,
     transaction: InternalJoinStrategy,
 }
@@ -69,13 +69,10 @@ impl From<&FieldSelection> for InternalEventJoinStrategy {
     }
 }
 
-impl Event {
+impl InternalEventJoinStrategy {
     /// Add join fields to field selection based on the event join strategy
-    pub fn add_join_fields_to_selection(
-        event_join_strategy: &InternalEventJoinStrategy,
-        field_selection: &mut FieldSelection,
-    ) {
-        match event_join_strategy.block {
+    pub(crate) fn add_join_fields_to_selection(&self, field_selection: &mut FieldSelection) {
+        match self.block {
             InternalJoinStrategy::NotSelected => (),
             InternalJoinStrategy::OnlyLogJoinField => {
                 field_selection
@@ -91,7 +88,7 @@ impl Event {
             }
         }
 
-        match event_join_strategy.transaction {
+        match self.transaction {
             InternalJoinStrategy::NotSelected => (),
             InternalJoinStrategy::OnlyLogJoinField => {
                 field_selection
@@ -111,10 +108,7 @@ impl Event {
     }
 
     /// Join response data into events based on the event join strategy
-    pub fn join_from_response_data(
-        data: ResponseData,
-        event_join_strategy: &InternalEventJoinStrategy,
-    ) -> Vec<Self> {
+    pub(crate) fn join_from_response_data(&self, data: ResponseData) -> Vec<Event> {
         let blocks = data
             .blocks
             .into_iter()
@@ -138,80 +132,21 @@ impl Event {
             .into_iter()
             .flat_map(|logs| {
                 logs.into_iter().map(|log| {
-                    let block = match event_join_strategy.block {
+                    let block = match self.block {
                         InternalJoinStrategy::NotSelected => None,
                         InternalJoinStrategy::OnlyLogJoinField => Some(Arc::new(Block {
                             number: Some(log.block_number.unwrap().into()),
-                            hash: None,
-                            parent_hash: None,
-                            nonce: None,
-                            sha3_uncles: None,
-                            logs_bloom: None,
-                            transactions_root: None,
-                            state_root: None,
-                            receipts_root: None,
-                            miner: None,
-                            difficulty: None,
-                            total_difficulty: None,
-                            extra_data: None,
-                            size: None,
-                            gas_limit: None,
-                            gas_used: None,
-                            timestamp: None,
-                            uncles: None,
-                            base_fee_per_gas: None,
-                            blob_gas_used: None,
-                            excess_blob_gas: None,
-                            parent_beacon_block_root: None,
-                            withdrawals_root: None,
-                            withdrawals: None,
-                            l1_block_number: None,
-                            send_count: None,
-                            send_root: None,
-                            mix_hash: None,
+                            ..Block::default()
                         })),
                         InternalJoinStrategy::FullJoin => {
                             blocks.get(&log.block_number.unwrap().into()).cloned()
                         }
                     };
-                    let transaction = match event_join_strategy.transaction {
+                    let transaction = match self.transaction {
                         InternalJoinStrategy::NotSelected => None,
                         InternalJoinStrategy::OnlyLogJoinField => Some(Arc::new(Transaction {
                             hash: log.transaction_hash.clone(),
-                            block_number: None,
-                            block_hash: None,
-                            from: None,
-                            gas: None,
-                            gas_price: None,
-                            input: None,
-                            nonce: None,
-                            to: None,
-                            transaction_index: None,
-                            value: None,
-                            v: None,
-                            r: None,
-                            s: None,
-                            y_parity: None,
-                            max_priority_fee_per_gas: None,
-                            max_fee_per_gas: None,
-                            chain_id: None,
-                            access_list: None,
-                            authorization_list: None,
-                            max_fee_per_blob_gas: None,
-                            blob_versioned_hashes: None,
-                            cumulative_gas_used: None,
-                            effective_gas_price: None,
-                            gas_used: None,
-                            contract_address: None,
-                            logs_bloom: None,
-                            kind: None,
-                            root: None,
-                            status: None,
-                            l1_fee: None,
-                            l1_gas_price: None,
-                            l1_gas_used: None,
-                            l1_fee_scalar: None,
-                            gas_used_for_l1: None,
+                            ..Transaction::default()
                         })),
                         InternalJoinStrategy::FullJoin => transactions
                             .get(log.transaction_hash.as_ref().unwrap())

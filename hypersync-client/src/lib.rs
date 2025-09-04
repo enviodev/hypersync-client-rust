@@ -29,7 +29,6 @@ pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
-use simple_types::Event;
 use tokio::sync::mpsc;
 use types::{EventResponse, ResponseData};
 use url::Url;
@@ -154,7 +153,7 @@ impl Client {
         check_simple_stream_params(&config)?;
 
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
-        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -168,7 +167,7 @@ impl Client {
         while let Some(res) = recv.recv().await {
             let res = res.context("get response")?;
             let res: QueryResponse = QueryResponse::from(&res);
-            let events = Event::join_from_response_data(res.data, &event_join_strategy);
+            let events = event_join_strategy.join_from_response_data(res.data);
 
             data.push(events);
 
@@ -376,7 +375,7 @@ impl Client {
     /// and returns the response.
     pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
-        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
         let arrow_response = self.get_arrow(&query).await.context("get data")?;
         Ok(EventResponse::from_arrow_response(
             &arrow_response,
@@ -499,7 +498,7 @@ impl Client {
 
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
 
-        Event::add_join_fields_to_selection(&event_join_strategy, &mut query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
 
         let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
             mpsc::channel(config.concurrency.unwrap_or(10));
