@@ -1,6 +1,5 @@
 use super::{util::canonicalize_bytes, Hex};
 use crate::{Error, Result};
-use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt;
@@ -89,53 +88,36 @@ impl<const N: usize> From<[u8; N]> for Quantity {
     }
 }
 
-struct QuantityVisitor;
-
-impl Visitor<'_> for QuantityVisitor {
-    type Value = Quantity;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("hex string or numeric value for a quantity")
-    }
-
-    fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        let buf: Vec<u8> = decode_hex(value).map_err(|e| E::custom(e.to_string()))?;
-
-        Ok(Quantity::from(buf))
-    }
-
-    fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        // Convert the integer to big-endian bytes and canonicalize
-        let buf = canonicalize_bytes(value.to_be_bytes().to_vec());
-        Ok(Quantity::from(buf))
-    }
-
-    fn visit_i64<E>(self, value: i64) -> StdResult<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        if value < 0 {
-            return Err(E::custom("negative quantity not allowed"));
-        }
-        let unsigned = value as u64;
-        let buf = canonicalize_bytes(unsigned.to_be_bytes().to_vec());
-        Ok(Quantity::from(buf))
-    }
-}
-
 impl<'de> Deserialize<'de> for Quantity {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // Accept either hex strings (0x...) or numeric JSON values
-        deserializer.deserialize_any(QuantityVisitor)
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrInt {
+            Str(String),
+            Int(i64),
+        }
+        match StringOrInt::deserialize(deserializer)? {
+            StringOrInt::Str(value) => match decode_hex(&value) {
+                Ok(buf) => Ok(Quantity::from(buf)),
+                Err(e) => Err(serde::de::Error::custom(format!(
+                    "invalid hex string: {}",
+                    e
+                ))),
+            },
+            StringOrInt::Int(value) => {
+                if value < 0 {
+                    return Err(serde::de::Error::custom(
+                        "negative int quantity not allowed",
+                    ));
+                }
+                // Convert the integer to big-endian bytes and canonicalize
+                let buf = canonicalize_bytes(value.to_be_bytes().to_vec());
+                Ok(Quantity::from(buf))
+            }
+        }
     }
 }
 
