@@ -15,7 +15,7 @@ async fn main() {
 
     let height = client.get_height().await.unwrap();
 
-    println!("server height is {}", height);
+    println!("server height is {height}");
 
     // The query to run
     let mut query: Query = serde_json::from_value(serde_json::json!( {

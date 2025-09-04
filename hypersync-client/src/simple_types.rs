@@ -6,6 +6,7 @@ use hypersync_format::{
     AccessList, Address, Authorization, BlockNumber, BloomFilter, Data, Hash, LogArgument,
     LogIndex, Nonce, Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
+use hypersync_net_types::FieldSelection;
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3Builder;
@@ -23,8 +24,91 @@ pub struct Event {
     pub log: Log,
 }
 
-impl From<ResponseData> for Vec<Event> {
-    fn from(data: ResponseData) -> Self {
+// Field lists for implementing event based API, these fields are used for joining
+// so they should always be added to the field selection.
+const BLOCK_JOIN_FIELD: &str = "number";
+const TX_JOIN_FIELD: &str = "hash";
+const LOG_JOIN_FIELD_WITH_TX: &str = "transaction_hash";
+const LOG_JOIN_FIELD_WITH_BLOCK: &str = "block_number";
+
+enum InternalJoinStrategy {
+    NotSelected,
+    OnlyLogJoinField,
+    FullJoin,
+}
+
+/// Internal event join strategy for determining how to join blocks and transactions with logs
+pub(crate) struct InternalEventJoinStrategy {
+    block: InternalJoinStrategy,
+    transaction: InternalJoinStrategy,
+}
+
+impl From<&FieldSelection> for InternalEventJoinStrategy {
+    fn from(field_selection: &FieldSelection) -> Self {
+        let block_fields_num = field_selection.block.len();
+        let transaction_fields_num = field_selection.transaction.len();
+
+        Self {
+            block: if block_fields_num == 0 {
+                InternalJoinStrategy::NotSelected
+            } else if block_fields_num == 1 && field_selection.block.contains(BLOCK_JOIN_FIELD) {
+                InternalJoinStrategy::OnlyLogJoinField
+            } else {
+                InternalJoinStrategy::FullJoin
+            },
+            transaction: if transaction_fields_num == 0 {
+                InternalJoinStrategy::NotSelected
+            } else if transaction_fields_num == 1
+                && field_selection.transaction.contains(TX_JOIN_FIELD)
+            {
+                InternalJoinStrategy::OnlyLogJoinField
+            } else {
+                InternalJoinStrategy::FullJoin
+            },
+        }
+    }
+}
+
+impl InternalEventJoinStrategy {
+    /// Add join fields to field selection based on the event join strategy
+    pub(crate) fn add_join_fields_to_selection(&self, field_selection: &mut FieldSelection) {
+        match self.block {
+            InternalJoinStrategy::NotSelected => (),
+            InternalJoinStrategy::OnlyLogJoinField => {
+                field_selection
+                    .log
+                    .insert(LOG_JOIN_FIELD_WITH_BLOCK.to_string());
+                field_selection.block.remove(BLOCK_JOIN_FIELD);
+            }
+            InternalJoinStrategy::FullJoin => {
+                field_selection
+                    .log
+                    .insert(LOG_JOIN_FIELD_WITH_BLOCK.to_string());
+                field_selection.block.insert(BLOCK_JOIN_FIELD.to_string());
+            }
+        }
+
+        match self.transaction {
+            InternalJoinStrategy::NotSelected => (),
+            InternalJoinStrategy::OnlyLogJoinField => {
+                field_selection
+                    .log
+                    .insert(LOG_JOIN_FIELD_WITH_TX.to_string());
+                field_selection.transaction.remove(TX_JOIN_FIELD);
+            }
+            InternalJoinStrategy::FullJoin => {
+                field_selection
+                    .log
+                    .insert(LOG_JOIN_FIELD_WITH_TX.to_string());
+                field_selection
+                    .transaction
+                    .insert(TX_JOIN_FIELD.to_string());
+            }
+        }
+    }
+
+    /// Join response data into events based on the event join strategy
+    pub(crate) fn join_from_response_data(&self, data: ResponseData) -> Vec<Event> {
         let blocks = data
             .blocks
             .into_iter()
@@ -48,10 +132,26 @@ impl From<ResponseData> for Vec<Event> {
             .into_iter()
             .flat_map(|logs| {
                 logs.into_iter().map(|log| {
-                    let block = blocks.get(&log.block_number.unwrap().into()).cloned();
-                    let transaction = transactions
-                        .get(log.transaction_hash.as_ref().unwrap())
-                        .cloned();
+                    let block = match self.block {
+                        InternalJoinStrategy::NotSelected => None,
+                        InternalJoinStrategy::OnlyLogJoinField => Some(Arc::new(Block {
+                            number: Some(log.block_number.unwrap().into()),
+                            ..Block::default()
+                        })),
+                        InternalJoinStrategy::FullJoin => {
+                            blocks.get(&log.block_number.unwrap().into()).cloned()
+                        }
+                    };
+                    let transaction = match self.transaction {
+                        InternalJoinStrategy::NotSelected => None,
+                        InternalJoinStrategy::OnlyLogJoinField => Some(Arc::new(Transaction {
+                            hash: log.transaction_hash.clone(),
+                            ..Transaction::default()
+                        })),
+                        InternalJoinStrategy::FullJoin => transactions
+                            .get(log.transaction_hash.as_ref().unwrap())
+                            .cloned(),
+                    };
 
                     Event {
                         transaction,
