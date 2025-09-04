@@ -49,7 +49,7 @@ impl EventResponse {
             archive_height: r.archive_height,
             next_block: r.next_block,
             total_execution_time: r.total_execution_time,
-            data: vec![event_join_strategy.join_from_response_data(r.data)],
+            data: event_join_strategy.join_from_response_data(r.data),
             rollback_guard: r.rollback_guard,
         }
     }
@@ -118,7 +118,7 @@ pub struct QueryResponse<T = ResponseData> {
 /// Alias for Arrow Query response
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
 /// Alias for Event oriented, vectorized QueryResponse
-pub type EventResponse = QueryResponse<Vec<Vec<Event>>>;
+pub type EventResponse = QueryResponse<Vec<Event>>;
 
 /// Arrow chunk with schema
 #[derive(Debug, Clone)]

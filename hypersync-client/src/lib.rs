@@ -169,7 +169,7 @@ impl Client {
             let res: QueryResponse = QueryResponse::from(&res);
             let events = event_join_strategy.join_from_response_data(res.data);
 
-            data.push(events);
+            data.extend(events);
 
             archive_height = res.archive_height;
             next_block = res.next_block;
