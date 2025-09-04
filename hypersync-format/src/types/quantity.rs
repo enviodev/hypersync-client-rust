@@ -1,6 +1,5 @@
 use super::{util::canonicalize_bytes, Hex};
 use crate::{Error, Result};
-use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
 use std::fmt;
@@ -89,31 +88,36 @@ impl<const N: usize> From<[u8; N]> for Quantity {
     }
 }
 
-struct QuantityVisitor;
-
-impl Visitor<'_> for QuantityVisitor {
-    type Value = Quantity;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("hex string for a quantity")
-    }
-
-    fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        let buf: Vec<u8> = decode_hex(value).map_err(|e| E::custom(e.to_string()))?;
-
-        Ok(Quantity::from(buf))
-    }
-}
-
 impl<'de> Deserialize<'de> for Quantity {
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_str(QuantityVisitor)
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrInt {
+            Str(String),
+            Int(i64),
+        }
+        match StringOrInt::deserialize(deserializer)? {
+            StringOrInt::Str(value) => match decode_hex(&value) {
+                Ok(buf) => Ok(Quantity::from(buf)),
+                Err(e) => Err(serde::de::Error::custom(format!(
+                    "invalid hex string: {}",
+                    e
+                ))),
+            },
+            StringOrInt::Int(value) => {
+                if value < 0 {
+                    return Err(serde::de::Error::custom(
+                        "negative int quantity not allowed",
+                    ));
+                }
+                // Convert the integer to big-endian bytes and canonicalize
+                let buf = canonicalize_bytes(value.to_be_bytes().to_vec());
+                Ok(Quantity::from(buf))
+            }
+        }
     }
 }
 
@@ -266,5 +270,20 @@ mod tests {
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x00")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0000")]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_u64() {
+        // Numeric JSON values should be accepted (e.g., Sonic timestamps)
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::U64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::U64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::U64(1)]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_i64() {
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::I64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::I64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::I64(1)]);
     }
 }
