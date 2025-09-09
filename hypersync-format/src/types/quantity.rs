@@ -95,7 +95,7 @@ impl Visitor<'_> for QuantityVisitor {
     type Value = Quantity;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("hex string for a quantity")
+        formatter.write_str("hex string or an integer for a quantity")
     }
 
     fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
