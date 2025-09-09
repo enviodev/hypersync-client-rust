@@ -111,16 +111,23 @@ impl Visitor<'_> for QuantityVisitor {
     where
         E: de::Error,
     {
-        let hex = encode_hex(&value.to_be_bytes());
-        self.visit_str(&hex)
+        if value < 0 {
+            return Err(serde::de::Error::custom(
+                "negative int quantity not allowed",
+            ));
+        }
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
     }
 
     fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
     where
         E: de::Error,
     {
-        let hex = encode_hex(&value.to_be_bytes());
-        self.visit_str(&hex)
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
     }
 }
 
