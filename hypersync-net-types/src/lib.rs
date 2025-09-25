@@ -131,15 +131,31 @@ pub struct Query {
     /// that match any of these selections.
     #[serde(default)]
     pub logs: Vec<LogSelection>,
+    /// List of log selections that should be negated from the query. These are applied after the
+    /// "logs" selection for filtering out logs that should not be included in the response.
+    #[serde(default)]
+    pub exclude_logs: Option<Vec<LogSelection>>,
     /// List of transaction selections, the query will return transactions that match any of these selections
     #[serde(default)]
     pub transactions: Vec<TransactionSelection>,
+    /// List of transaction selections that should be negated from the query. These are applied after the
+    /// "transactions" selection for filtering out transactions that should not be included in the response.
+    #[serde(default)]
+    pub exclude_transactions: Option<Vec<TransactionSelection>>,
     /// List of trace selections, the query will return traces that match any of these selections
     #[serde(default)]
     pub traces: Vec<TraceSelection>,
+    /// List of trace selections that should be negated from the query. These are applied after the
+    /// "traces" selection for filtering out traces that should not be included in the response.
+    #[serde(default)]
+    pub exclude_traces: Option<Vec<TraceSelection>>,
     /// List of block selections, the query will return blocks that match any of these selections
     #[serde(default)]
     pub blocks: Vec<BlockSelection>,
+    /// List of block selections that should be negated from the query. These are applied after the
+    /// "blocks" selection for filtering out blocks that should not be included in the response.
+    #[serde(default)]
+    pub exclude_blocks: Option<Vec<BlockSelection>>,
     /// Weather to include all blocks regardless of if they are related to a returned transaction or log. Normally
     ///  the server will return only the blocks that are related to the transaction or logs in the response. But if this
     ///  is set to true, the server will return data for all blocks in the requested range [from_block, to_block).
@@ -177,8 +193,13 @@ pub struct Query {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
 pub enum JoinMode {
+    /// Join in this order logs -> transactions -> traces -> blocks
     Default,
+    /// Join everything to everything. For example if logSelection matches log0, we get the
+    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
+    /// to blocks, traces.
     JoinAll,
+    /// JoinNothing: join nothing.
     JoinNothing,
 }
 
