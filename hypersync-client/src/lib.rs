@@ -3,9 +3,12 @@
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
+use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
+use reqwest::header;
 use reqwest::Method;
+use serde::Deserialize;
 
 mod column_mapping;
 mod config;
@@ -689,6 +692,139 @@ impl Client {
     /// Getter for url field.
     pub fn url(&self) -> &Url {
         &self.url
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct HeightSsePayloadJson {
+    height: Option<u64>,
+}
+
+impl Client {
+    /// Streams latest archive height updates from the server using the `/height/stream` SSE endpoint.
+    ///
+    /// Returns a channel receiver that yields `u64` heights. The sender task runs in the background
+    /// and closes the channel if the connection drops or an error occurs. Messages that cannot be
+    /// parsed are ignored.
+    pub async fn stream_height(self: Arc<Self>) -> Result<mpsc::Receiver<Result<u64>>> {
+        let mut url = self.url.clone();
+        let mut segments = url.path_segments_mut().ok().context("get path segments")?;
+        segments.push("height");
+        segments.push("sse");
+        std::mem::drop(segments);
+
+        let mut req = self.http_client.request(Method::GET, url);
+
+        if let Some(bearer_token) = &self.bearer_token {
+            req = req.bearer_auth(bearer_token);
+        }
+
+        req = req
+            .header(header::ACCEPT, "text/event-stream")
+            // SSE is a long-lived request; use a long timeout to avoid body timeouts.
+            // TODO: Make this configurable - and much shorter!
+            .timeout(Duration::from_secs(24 * 60 * 60));
+
+        let res = req.send().await.context("execute http req")?;
+
+        let status = res.status();
+        if !status.is_success() {
+            return Err(anyhow!("http response status code {}", status));
+        }
+
+        let (tx, rx) = mpsc::channel(16);
+        let mut byte_stream = res.bytes_stream();
+
+        tokio::spawn(async move {
+            let mut buf = String::new();
+
+            while let Some(item) = byte_stream.next().await {
+                let bytes = match item {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let _ = tx.send(Err(anyhow!("sse stream error: {:?}", e))).await;
+                        return;
+                    }
+                };
+
+                use std::fmt::Write as _;
+                let chunk_str = match std::str::from_utf8(&bytes) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let mut tmp = String::with_capacity(bytes.len() * 2);
+                        for &b in bytes.as_ref() {
+                            // lossily map non-utf8 to replacement
+                            let _ = write!(&mut tmp, "{}", char::from(b));
+                        }
+                        buf.push_str(&tmp);
+                        continue;
+                    }
+                };
+                buf.push_str(chunk_str);
+
+                // Normalize Windows CRLF to LF to simplify parsing
+                if buf.contains("\r\n") {
+                    buf = buf.replace("\r\n", "\n");
+                }
+
+                // Process complete events separated by blank line
+                loop {
+                    if let Some(idx) = buf.find("\n\n") {
+                        let event_block = buf[..idx].to_string();
+                        buf.drain(..idx + 2);
+
+                        // Parse a single SSE event block
+                        let mut event_name: Option<&str> = None;
+                        let mut data_lines: Vec<&str> = Vec::new();
+
+                        for line in event_block.lines() {
+                            if line.is_empty() {
+                                continue;
+                            }
+                            if line.starts_with(':') {
+                                // comment/keep-alive
+                                continue;
+                            }
+                            if let Some(rest) = line.strip_prefix("event:") {
+                                event_name = Some(rest.trim());
+                                continue;
+                            }
+                            if let Some(rest) = line.strip_prefix("data:") {
+                                data_lines.push(rest.trim());
+                                continue;
+                            }
+                            // ignore other fields like id
+                        }
+
+                        let name = event_name.unwrap_or("");
+                        if name == "height" {
+                            let data = data_lines.join("\n");
+                            // Preferred: parse plain integer body
+                            if let Ok(h) = data.trim().parse::<u64>() {
+                                if tx.send(Ok(h)).await.is_err() {
+                                    return;
+                                }
+                            } else {
+                                // Backward compatibility: parse {"height": N}
+                                if let Ok(payload) =
+                                    serde_json::from_str::<HeightSsePayloadJson>(&data)
+                                {
+                                    if let Some(h) = payload.height {
+                                        if tx.send(Ok(h)).await.is_err() {
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(rx)
     }
 }
 

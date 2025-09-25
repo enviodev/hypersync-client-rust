@@ -2,14 +2,15 @@
 resolver = "2"
 
 members = [
-    "hypersync-client",
-    "hypersync-format",
-    "hypersync-net-types",
-    "hypersync-schema",
-    "examples/all_erc20",
-    "examples/wallet",
-    "examples/watch",
-    "examples/reverse_wallet",
-    "examples/call_watch",
-    "examples/call_decode_output",
+  "hypersync-client",
+  "hypersync-format",
+  "hypersync-net-types",
+  "hypersync-schema",
+  "examples/all_erc20",
+  "examples/wallet",
+  "examples/watch",
+  "examples/reverse_wallet",
+  "examples/call_watch",
+  "examples/call_decode_output",
+  "examples/height_stream",
 ]
