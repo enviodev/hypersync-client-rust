@@ -5,7 +5,7 @@ use hypersync_client::{
     preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping, StreamConfig,
 };
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
-use hypersync_net_types::{FieldSelection, Query, TransactionSelection};
+use hypersync_net_types::{FieldSelection, Query, TransactionFilter, TransactionSelection};
 use polars_arrow::array::UInt64Array;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -458,10 +458,10 @@ async fn test_small_bloom_filter_query() {
         from_block: 19_000_000,
         to_block: Some(19_300_000),
         logs: Vec::new(),
-        transactions: vec![TransactionSelection {
+        transactions: vec![TransactionSelection::from(TransactionFilter {
             from_filter: Some(from_address_filter),
             ..Default::default()
-        }],
+        })],
         field_selection: FieldSelection {
             block: Default::default(),
             log: Default::default(),
