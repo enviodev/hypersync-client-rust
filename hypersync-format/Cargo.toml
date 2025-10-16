@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-format"
-version = "0.5.6"
+version = "0.5.7"
 edition = "2021"
 description = "evm format library"
 license = "MPL-2.0"
