@@ -1,5 +1,5 @@
 use arrayvec::ArrayVec;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 mod bloom_filter_wrapper;
 mod data;
@@ -143,7 +143,8 @@ pub struct TransactionReceipt {
     pub from: Address,
     pub to: Option<Address>,
     pub cumulative_gas_used: Quantity,
-    #[serde(default)]
+    // Default null and undefined values
+    #[serde(default, deserialize_with = "nullable_default")]
     pub effective_gas_price: Quantity,
     pub gas_used: Quantity,
     pub contract_address: Option<Address>,
@@ -172,6 +173,15 @@ pub struct TransactionReceipt {
 
     // Arbitrum fields
     pub l1_block_number: Option<Quantity>,
+}
+
+/// Deserialize with default for both null and undefined values
+fn nullable_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 /// Evm log object
@@ -287,3 +297,55 @@ pub type BloomFilter = Data;
 pub type BlockNumber = uint::UInt;
 pub type TransactionIndex = uint::UInt;
 pub type LogIndex = uint::UInt;
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+
+    use super::*;
+
+    #[test]
+    fn handle_zeta_null_effective_gas_price() {
+        // real world breaking example on zeta
+        let json = json!({
+          "transactionHash": "0xf19809f330bb78aa882976053ab40a7606797efcb6111f2e7112600e958a6e4c",
+          "transactionIndex": "0x22b8",
+          "blockHash": "0xaae719b56f61cb66cdc61ece1852cda22c936baff9a1dc6b0903be11073476b7",
+          "blockNumber": "0xa377b2",
+          "from": "0x735b14bb79463307aacbed86daf3322b1e6226ab",
+          "to": "0x91d18e54daf4f677cb28167158d6dd21f6ab3921",
+          "cumulativeGasUsed": "0x211ec2",
+          "effectiveGasPrice": null,
+          "contractAddress": null,
+          "gasUsed": "0x186a0",
+          "logs": [
+            {
+              "address": "0x91d18e54daf4f677cb28167158d6dd21f6ab3921",
+              "blockHash": "0xaae719b56f61cb66cdc61ece1852cda22c936baff9a1dc6b0903be11073476b7",
+              "blockNumber": "0xa377b2",
+              "data": "0x000000000000000000000000000000000000000000000000000000000000006900000000000000000000000000000000000000000000000000000000000001f4",
+              "logIndex": "0x0",
+              "removed": false,
+              "topics": [
+                "0x49f492222906ac486c3c1401fa545626df1f0c0e5a77a05597ea2ed66af9850d"
+              ],
+              "transactionHash": "0xf19809f330bb78aa882976053ab40a7606797efcb6111f2e7112600e958a6e4c",
+              "transactionIndex": "0x0"
+            }
+          ],
+          "logsBloom": "0x00000000000000000000000000000008000000000000000000000000000000000000000008000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000002000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "status": "0x1",
+          "type": "0x58"
+        });
+
+        let _: TransactionReceipt =
+            serde_json::from_value(json.clone()).expect("should handle null effective gas price");
+
+        // Also check that it still handles undefined as before
+        let mut obj = json.as_object().unwrap().to_owned();
+        let _ = obj.remove("effectiveGasPrice");
+        let json = Value::Object(obj);
+        let _: TransactionReceipt =
+            serde_json::from_value(json).expect("should handle undefined effective gas price");
+    }
+}
