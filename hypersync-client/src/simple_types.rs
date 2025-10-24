@@ -6,7 +6,9 @@ use hypersync_format::{
     AccessList, Address, Authorization, BlockNumber, BloomFilter, Data, Hash, LogArgument,
     LogIndex, Nonce, Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
-use hypersync_net_types::FieldSelection;
+use hypersync_net_types::{
+    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection,
+};
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3Builder;
@@ -26,10 +28,10 @@ pub struct Event {
 
 // Field lists for implementing event based API, these fields are used for joining
 // so they should always be added to the field selection.
-const BLOCK_JOIN_FIELD: &str = "number";
-const TX_JOIN_FIELD: &str = "hash";
-const LOG_JOIN_FIELD_WITH_TX: &str = "transaction_hash";
-const LOG_JOIN_FIELD_WITH_BLOCK: &str = "block_number";
+const BLOCK_JOIN_FIELD: BlockField = BlockField::Number;
+const TX_JOIN_FIELD: TransactionField = TransactionField::Hash;
+const LOG_JOIN_FIELD_WITH_TX: LogField = LogField::TransactionHash;
+const LOG_JOIN_FIELD_WITH_BLOCK: LogField = LogField::BlockNumber;
 
 enum InternalJoinStrategy {
     NotSelected,
@@ -51,7 +53,7 @@ impl From<&FieldSelection> for InternalEventJoinStrategy {
         Self {
             block: if block_fields_num == 0 {
                 InternalJoinStrategy::NotSelected
-            } else if block_fields_num == 1 && field_selection.block.contains(BLOCK_JOIN_FIELD) {
+            } else if block_fields_num == 1 && field_selection.block.contains(&BLOCK_JOIN_FIELD) {
                 InternalJoinStrategy::OnlyLogJoinField
             } else {
                 InternalJoinStrategy::FullJoin
@@ -59,7 +61,7 @@ impl From<&FieldSelection> for InternalEventJoinStrategy {
             transaction: if transaction_fields_num == 0 {
                 InternalJoinStrategy::NotSelected
             } else if transaction_fields_num == 1
-                && field_selection.transaction.contains(TX_JOIN_FIELD)
+                && field_selection.transaction.contains(&TX_JOIN_FIELD)
             {
                 InternalJoinStrategy::OnlyLogJoinField
             } else {
@@ -75,34 +77,24 @@ impl InternalEventJoinStrategy {
         match self.block {
             InternalJoinStrategy::NotSelected => (),
             InternalJoinStrategy::OnlyLogJoinField => {
-                field_selection
-                    .log
-                    .insert(LOG_JOIN_FIELD_WITH_BLOCK.to_string());
-                field_selection.block.remove(BLOCK_JOIN_FIELD);
+                field_selection.log.insert(LOG_JOIN_FIELD_WITH_BLOCK);
+                field_selection.block.remove(&BLOCK_JOIN_FIELD);
             }
             InternalJoinStrategy::FullJoin => {
-                field_selection
-                    .log
-                    .insert(LOG_JOIN_FIELD_WITH_BLOCK.to_string());
-                field_selection.block.insert(BLOCK_JOIN_FIELD.to_string());
+                field_selection.log.insert(LOG_JOIN_FIELD_WITH_BLOCK);
+                field_selection.block.insert(BLOCK_JOIN_FIELD);
             }
         }
 
         match self.transaction {
             InternalJoinStrategy::NotSelected => (),
             InternalJoinStrategy::OnlyLogJoinField => {
-                field_selection
-                    .log
-                    .insert(LOG_JOIN_FIELD_WITH_TX.to_string());
-                field_selection.transaction.remove(TX_JOIN_FIELD);
+                field_selection.log.insert(LOG_JOIN_FIELD_WITH_TX);
+                field_selection.transaction.remove(&TX_JOIN_FIELD);
             }
             InternalJoinStrategy::FullJoin => {
-                field_selection
-                    .log
-                    .insert(LOG_JOIN_FIELD_WITH_TX.to_string());
-                field_selection
-                    .transaction
-                    .insert(TX_JOIN_FIELD.to_string());
+                field_selection.log.insert(LOG_JOIN_FIELD_WITH_TX);
+                field_selection.transaction.insert(TX_JOIN_FIELD);
             }
         }
     }

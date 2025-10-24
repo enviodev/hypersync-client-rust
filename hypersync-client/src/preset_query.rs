@@ -3,6 +3,9 @@ use std::collections::BTreeSet;
 
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, LogArgument};
+use hypersync_net_types::block::BlockField;
+use hypersync_net_types::log::LogField;
+use hypersync_net_types::transaction::TransactionField;
 use hypersync_net_types::{
     FieldSelection, LogFilter, LogSelection, Query, TransactionFilter, TransactionSelection,
 };
@@ -12,17 +15,8 @@ use hypersync_net_types::{
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
 pub fn blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query {
-    let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
-
-    let all_tx_fields: BTreeSet<String> = hypersync_schema::transaction()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_block_fields = BlockField::all();
+    let all_tx_fields = TransactionField::all();
 
     Query {
         from_block,
@@ -45,15 +39,11 @@ pub fn blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query 
 /// that only includes the fields you'll use in `field_selection`.
 pub fn blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> Query {
     let mut tx_field_selection = BTreeSet::new();
-    tx_field_selection.insert("block_hash".to_owned());
-    tx_field_selection.insert("block_number".to_owned());
-    tx_field_selection.insert("hash".to_owned());
+    tx_field_selection.insert(TransactionField::BlockHash);
+    tx_field_selection.insert(TransactionField::BlockNumber);
+    tx_field_selection.insert(TransactionField::Hash);
 
-    let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_block_fields = BlockField::all();
 
     Query {
         from_block,
@@ -74,11 +64,7 @@ pub fn blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> 
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
 pub fn logs(from_block: u64, to_block: Option<u64>, contract_address: Address) -> Query {
-    let all_log_fields: BTreeSet<String> = hypersync_schema::log()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_log_fields = LogField::all();
 
     Query {
         from_block,
@@ -109,11 +95,7 @@ pub fn logs_of_event(
     let mut topics = ArrayVec::<Vec<LogArgument>, 4>::new();
     topics.insert(0, vec![topic0]);
 
-    let all_log_fields: BTreeSet<String> = hypersync_schema::log()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_log_fields = LogField::all();
 
     Query {
         from_block,
@@ -136,11 +118,7 @@ pub fn logs_of_event(
 /// Note: this is only for quickstart purposes.  For the best performance, create a custom query
 /// that only includes the fields you'll use in `field_selection`.
 pub fn transactions(from_block: u64, to_block: Option<u64>) -> Query {
-    let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_txn_fields = TransactionField::all();
 
     Query {
         from_block,
@@ -163,11 +141,7 @@ pub fn transactions_from_address(
     to_block: Option<u64>,
     address: Address,
 ) -> Query {
-    let all_txn_fields: BTreeSet<String> = hypersync_schema::transaction()
-        .fields
-        .iter()
-        .map(|x| x.name.clone())
-        .collect();
+    let all_txn_fields = TransactionField::all();
 
     Query {
         from_block,
