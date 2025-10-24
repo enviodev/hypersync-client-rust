@@ -5,7 +5,7 @@ use serde_json::Value;
 #[test]
 fn test_old_log_selection_deserialization() {
     let old_format = r#"{
-        "address": ["0x6B175474E89094C44Da98b954EedeAC495271d0F"],
+        "address": ["0x6b175474e89094c44da98b954eedeac495271d0f"],
         "topics": [
             ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
         ]
@@ -30,8 +30,8 @@ fn test_old_log_selection_deserialization() {
 #[test]
 fn test_old_transaction_selection_deserialization() {
     let old_format = r#"{
-        "from": ["0xD1a923D70510814EaE7695A76326201cA06d080F"],
-        "to": ["0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6"]
+        "from": ["0xd1a923d70510814eae7695a76326201ca06d080f"],
+        "to": ["0xc0a101c4e9bb4463bd2f5d6833c2276c36914fb6"]
     }"#;
 
     let tx_selection: TransactionSelection =
@@ -106,8 +106,8 @@ fn test_old_query_deserialization() {
             }
         ],
         "transactions": [
-            {"from": ["0xD1a923D70510814EaE7695A76326201cA06d080F"]},
-            {"to": ["0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6"]}
+            {"from": ["0xd1a923d70510814eae7695a76326201ca06d080f"]},
+            {"to": ["0xc0a101c4e9bb4463bd2f5d6833c2276c36914fb6"]}
         ],
         "field_selection": {
             "log": [
@@ -157,22 +157,22 @@ fn test_complex_old_query_deserialization() {
                 "topics": [
                     ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
                     [],
-                    ["0x000000000000000000000000D1a923D70510814EaE7695A76326201cA06d080F"],
+                    ["0x000000000000000000000000d1a923d70510814eae7695a76326201ca06d080f"],
                     []
                 ]
             },
             {
                 "topics": [
                     ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                    ["0x000000000000000000000000D1a923D70510814EaE7695A76326201cA06d080F"],
+                    ["0x000000000000000000000000d1a923d70510814eae7695a76326201ca06d080f"],
                     [],
                     []
                 ]
             }
         ],
         "transactions": [
-            {"from": ["0xD1a923D70510814EaE7695A76326201cA06d080F", "0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6"]},
-            {"to": ["0xa0FBaEdC4C110f5A0c5E96c3eeAC9B5635b74CE7", "0x32448eb389aBe39b20d5782f04a8d71a2b2e7189"]}
+            {"from": ["0xd1a923d70510814eae7695a76326201ca06d080f", "0xc0a101c4e9bb4463bd2f5d6833c2276c36914fb6"]},
+            {"to": ["0xa0fbaedc4c110f5a0c5e96c3eeac9b5635b74ce7", "0x32448eb389abe39b20d5782f04a8d71a2b2e7189"]}
         ]
     }"#;
 
