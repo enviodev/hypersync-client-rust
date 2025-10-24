@@ -19,7 +19,7 @@ pub struct Selection<T> {
     pub include: T,
     /// Filters where matching values should be excluded from the response
     /// None means exclude nothing, Some(Default::default()) means exclude everything
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<T>,
 }
 
@@ -64,7 +64,7 @@ pub struct LogFilter {
 
 pub type TransactionSelection = Selection<TransactionFilter>;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TransactionFilter {
     /// Address the transaction should originate from. If transaction.from matches any of these, the transaction
     /// will be returned. Keep in mind that this has an and relationship with to filter, so each transaction should
@@ -119,7 +119,7 @@ pub struct AuthorizationSelection {
 
 pub type TraceSelection = Selection<TraceFilter>;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TraceFilter {
     #[serde(default)]
     pub from: Vec<Address>,
@@ -144,7 +144,7 @@ pub struct TraceFilter {
     pub sighash: Vec<Sighash>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Query {
     /// The block to start the query from
     pub from_block: u64,
@@ -222,7 +222,7 @@ impl Default for JoinMode {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct FieldSelection {
     #[serde(default)]
     pub block: BTreeSet<String>,

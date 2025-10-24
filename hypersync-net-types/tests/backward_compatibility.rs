@@ -1,4 +1,5 @@
 use hypersync_net_types::*;
+use serde_json::Value;
 
 #[test]
 fn test_old_log_selection_deserialization() {
@@ -9,11 +10,20 @@ fn test_old_log_selection_deserialization() {
         ]
     }"#;
 
-    let log_selection: LogSelection = serde_json::from_str(old_format).unwrap();
+    let log_selection: LogSelection =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(log_selection.include.address.len(), 1);
     assert_eq!(log_selection.include.topics.len(), 1);
     assert!(log_selection.exclude.is_none());
+
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&log_selection).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
 }
 
 #[test]
@@ -23,11 +33,20 @@ fn test_old_transaction_selection_deserialization() {
         "to": ["0xc0A101c4E9Bb4463BD2F5d6833c2276C36914Fb6"]
     }"#;
 
-    let tx_selection: TransactionSelection = serde_json::from_str(old_format).unwrap();
+    let tx_selection: TransactionSelection =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(tx_selection.include.from.len(), 1);
     assert_eq!(tx_selection.include.to.len(), 1);
     assert!(tx_selection.exclude.is_none());
+
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&tx_selection).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
 }
 
 #[test]
@@ -36,10 +55,19 @@ fn test_old_block_selection_deserialization() {
         "miner": ["0x1234567890123456789012345678901234567890"]
     }"#;
 
-    let block_selection: BlockSelection = serde_json::from_str(old_format).unwrap();
+    let block_selection: BlockSelection =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(block_selection.include.miner.len(), 1);
     assert!(block_selection.exclude.is_none());
+
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&block_selection).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
 }
 
 #[test]
@@ -49,11 +77,20 @@ fn test_old_trace_selection_deserialization() {
         "call_type": ["call"]
     }"#;
 
-    let trace_selection: TraceSelection = serde_json::from_str(old_format).unwrap();
+    let trace_selection: TraceSelection =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(trace_selection.include.from.len(), 1);
     assert_eq!(trace_selection.include.call_type.len(), 1);
     assert!(trace_selection.exclude.is_none());
+
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&trace_selection).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
 }
 
 #[test]
@@ -82,7 +119,8 @@ fn test_old_query_deserialization() {
         }
     }"#;
 
-    let query: Query = serde_json::from_str(old_format).unwrap();
+    let query: Query =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(query.from_block, 10123123);
     assert_eq!(query.logs.len(), 1);
@@ -99,6 +137,14 @@ fn test_old_query_deserialization() {
     let tx_selection_2 = &query.transactions[1];
     assert_eq!(tx_selection_2.include.to.len(), 1);
     assert!(tx_selection_2.exclude.is_none());
+
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&query).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
 }
 
 #[test]
@@ -129,7 +175,8 @@ fn test_complex_old_query_deserialization() {
         ]
     }"#;
 
-    let query: Query = serde_json::from_str(old_format).unwrap();
+    let query: Query =
+        serde_json::from_str(old_format).expect("Should be able to deserialize old format");
 
     assert_eq!(query.from_block, 0);
     assert_eq!(query.logs.len(), 2);
@@ -148,5 +195,12 @@ fn test_complex_old_query_deserialization() {
 
     let tx_selection_2 = &query.transactions[1];
     assert_eq!(tx_selection_2.include.to.len(), 2);
-}
 
+    // Test that serialized form can be deserialized back correctly
+    let serialized_val = serde_json::to_value(&query).unwrap();
+    let original_val: Value = serde_json::from_str(old_format).unwrap();
+    assert_eq!(
+        serialized_val, original_val,
+        "Serializing new format without exclude should be the same as old format"
+    );
+}
