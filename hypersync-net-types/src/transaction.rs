@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, Selection};
+use crate::{hypersync_net_types_capnp, types::Sighash, BuilderReader, Selection};
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
 
@@ -12,20 +12,6 @@ pub struct AuthorizationSelection {
     pub address: Vec<Address>,
 }
 pub type TransactionSelection = Selection<TransactionFilter>;
-
-impl TransactionSelection {
-    pub fn populate_capnp_builder(
-        &self,
-        mut builder: hypersync_net_types_capnp::transaction_selection::Builder,
-    ) -> Result<(), capnp::Error> {
-        todo!()
-    }
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::transaction_selection::Reader,
-    ) -> Result<Self, capnp::Error> {
-        todo!()
-    }
-}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TransactionFilter {
@@ -71,27 +57,25 @@ pub struct TransactionFilter {
     pub authorization_list: Vec<AuthorizationSelection>,
 }
 
-impl AuthorizationSelection {
-    pub(crate) fn populate_capnp_builder(
-        auth_sel: &AuthorizationSelection,
-        mut builder: hypersync_net_types_capnp::authorization_selection::Builder,
+impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
+    for AuthorizationSelection
+{
+    fn populate_builder(
+        &self,
+        builder: &mut hypersync_net_types_capnp::authorization_selection::Builder,
     ) -> Result<(), capnp::Error> {
         // Set chain ids
         {
-            let mut chain_list = builder
-                .reborrow()
-                .init_chain_id(auth_sel.chain_id.len() as u32);
-            for (i, chain_id) in auth_sel.chain_id.iter().enumerate() {
+            let mut chain_list = builder.reborrow().init_chain_id(self.chain_id.len() as u32);
+            for (i, chain_id) in self.chain_id.iter().enumerate() {
                 chain_list.set(i as u32, *chain_id);
             }
         }
 
         // Set addresses
         {
-            let mut addr_list = builder
-                .reborrow()
-                .init_address(auth_sel.address.len() as u32);
-            for (i, addr) in auth_sel.address.iter().enumerate() {
+            let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
+            for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
             }
         }
@@ -100,7 +84,7 @@ impl AuthorizationSelection {
     }
 
     /// Deserialize AuthorizationSelection from Cap'n Proto reader
-    pub fn from_capnp(
+    fn from_reader(
         reader: hypersync_net_types_capnp::authorization_selection::Reader,
     ) -> Result<Self, capnp::Error> {
         let mut auth_selection = AuthorizationSelection::default();
@@ -130,10 +114,10 @@ impl AuthorizationSelection {
     }
 }
 
-impl TransactionFilter {
-    pub(crate) fn populate_capnp_builder(
+impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for TransactionFilter {
+    fn populate_builder(
         &self,
-        mut builder: hypersync_net_types_capnp::transaction_selection::Builder,
+        builder: &mut hypersync_net_types_capnp::transaction_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set from addresses
         {
@@ -214,8 +198,8 @@ impl TransactionFilter {
                 .reborrow()
                 .init_authorization_list(self.authorization_list.len() as u32);
             for (i, auth_sel) in self.authorization_list.iter().enumerate() {
-                let auth_builder = auth_list.reborrow().get(i as u32);
-                AuthorizationSelection::populate_capnp_builder(auth_sel, auth_builder)?;
+                let mut auth_builder = auth_list.reborrow().get(i as u32);
+                AuthorizationSelection::populate_builder(auth_sel, &mut auth_builder)?;
             }
         }
 
@@ -223,8 +207,8 @@ impl TransactionFilter {
     }
 
     /// Deserialize TransactionSelection from Cap'n Proto reader
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::transaction_selection::Reader,
+    fn from_reader(
+        reader: hypersync_net_types_capnp::transaction_filter::Reader,
     ) -> Result<Self, capnp::Error> {
         let mut from = Vec::new();
 
@@ -360,7 +344,7 @@ impl TransactionFilter {
             let auth_list = reader.get_authorization_list()?;
             for i in 0..auth_list.len() {
                 let auth_reader = auth_list.get(i);
-                let auth_selection = AuthorizationSelection::from_capnp(auth_reader)?;
+                let auth_selection = AuthorizationSelection::from_reader(auth_reader)?;
                 authorization_list.push(auth_selection);
             }
         }
@@ -728,14 +712,14 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_selection_serde_with_defaults() {
-        let transaction_selection = TransactionSelection::default();
+    fn test_transaction_filter_serde_with_defaults() {
+        let transaction_filter = TransactionSelection::default();
         let field_selection = FieldSelection {
             transaction: TransactionField::all(),
             ..Default::default()
         };
         let query = Query {
-            transactions: vec![transaction_selection],
+            transactions: vec![transaction_filter],
             field_selection,
             ..Default::default()
         };
@@ -743,8 +727,8 @@ mod tests {
         test_query_serde(query, "transaction selection with defaults");
     }
     #[test]
-    fn test_transaction_selection_serde_with_explicit_defaults() {
-        let transaction_selection = TransactionFilter {
+    fn test_transaction_filter_serde_with_explicit_defaults() {
+        let transaction_filter = TransactionFilter {
             from: Vec::default(),
             from_filter: Some(FilterWrapper::new(16, 0)),
             to: Vec::default(),
@@ -762,7 +746,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            transactions: vec![transaction_selection.into()],
+            transactions: vec![transaction_filter.into()],
             field_selection,
             ..Default::default()
         };
@@ -771,8 +755,8 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_selection_serde_with_full_values() {
-        let transaction_selection = TransactionFilter {
+    fn test_transaction_filter_serde_with_full_values() {
+        let transaction_filter = TransactionFilter {
             from: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
             from_filter: Some(FilterWrapper::new(16, 1)),
             to: vec![Address::decode_hex("0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6").unwrap()],
@@ -796,7 +780,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            transactions: vec![transaction_selection.into()],
+            transactions: vec![transaction_filter.into()],
             field_selection,
             ..Default::default()
         };
@@ -812,7 +796,7 @@ mod tests {
                 Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap(),
             ],
         };
-        let transaction_selection = TransactionFilter {
+        let transaction_filter = TransactionFilter {
             from: Vec::default(),
             from_filter: Some(FilterWrapper::new(16, 0)),
             to: Vec::default(),
@@ -830,7 +814,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            transactions: vec![transaction_selection.into()],
+            transactions: vec![transaction_filter.into()],
             field_selection,
             ..Default::default()
         };

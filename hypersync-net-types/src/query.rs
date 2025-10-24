@@ -1,8 +1,8 @@
 use crate::block::{BlockField, BlockSelection};
-use crate::hypersync_net_types_capnp;
 use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
+use crate::{hypersync_net_types_capnp, BuilderReader};
 use capnp::message::Builder;
 use capnp::{message::ReaderOptions, serialize_packed};
 use serde::{Deserialize, Serialize};
@@ -213,8 +213,8 @@ impl Query {
         {
             let mut logs_list = body_builder.reborrow().init_logs(self.logs.len() as u32);
             for (i, log_selection) in self.logs.iter().enumerate() {
-                let log_sel = logs_list.reborrow().get(i as u32);
-                LogSelection::populate_capnp_builder(log_selection, log_sel)?;
+                let mut log_sel = logs_list.reborrow().get(i as u32);
+                log_selection.populate_builder(&mut log_sel)?;
             }
         }
 
@@ -224,8 +224,8 @@ impl Query {
                 .reborrow()
                 .init_transactions(self.transactions.len() as u32);
             for (i, tx_selection) in self.transactions.iter().enumerate() {
-                let tx_sel = tx_list.reborrow().get(i as u32);
-                TransactionSelection::populate_capnp_builder(tx_selection, tx_sel)?;
+                let mut tx_sel = tx_list.reborrow().get(i as u32);
+                tx_selection.populate_builder(&mut tx_sel)?;
             }
         }
 
@@ -235,8 +235,8 @@ impl Query {
                 .reborrow()
                 .init_traces(self.traces.len() as u32);
             for (i, trace_selection) in self.traces.iter().enumerate() {
-                let trace_sel = trace_list.reborrow().get(i as u32);
-                TraceSelection::populate_capnp_builder(trace_selection, trace_sel)?;
+                let mut trace_sel = trace_list.reborrow().get(i as u32);
+                trace_selection.populate_builder(&mut trace_sel)?;
             }
         }
 
@@ -246,8 +246,8 @@ impl Query {
                 .reborrow()
                 .init_blocks(self.blocks.len() as u32);
             for (i, block_selection) in self.blocks.iter().enumerate() {
-                let block_sel = block_list.reborrow().get(i as u32);
-                BlockSelection::populate_capnp_builder(block_selection, block_sel)?;
+                let mut block_sel = block_list.reborrow().get(i as u32);
+                block_selection.populate_builder(&mut block_sel)?;
             }
         }
 
@@ -384,7 +384,7 @@ impl Query {
             let mut logs = Vec::new();
             for i in 0..logs_list.len() {
                 let log_reader = logs_list.get(i);
-                logs.push(LogSelection::from_capnp(log_reader)?);
+                logs.push(LogSelection::from_reader(log_reader)?);
             }
             logs
         } else {
@@ -396,7 +396,7 @@ impl Query {
             let mut transactions = Vec::new();
             for i in 0..tx_list.len() {
                 let tx_reader = tx_list.get(i);
-                transactions.push(TransactionSelection::from_capnp(tx_reader)?);
+                transactions.push(TransactionSelection::from_reader(tx_reader)?);
             }
             transactions
         } else {
@@ -408,7 +408,7 @@ impl Query {
             let mut traces = Vec::new();
             for i in 0..traces_list.len() {
                 let trace_reader = traces_list.get(i);
-                traces.push(TraceSelection::from_capnp(trace_reader)?);
+                traces.push(TraceSelection::from_reader(trace_reader)?);
             }
             traces
         } else {
@@ -420,7 +420,7 @@ impl Query {
             let mut blocks = Vec::new();
             for i in 0..blocks_list.len() {
                 let block_reader = blocks_list.get(i);
-                blocks.push(BlockSelection::from_capnp(block_reader)?);
+                blocks.push(BlockSelection::from_reader(block_reader)?);
             }
             blocks
         } else {
@@ -474,15 +474,17 @@ pub mod tests {
         let _deser_json: Query = serde_json::from_str(&ser_json).unwrap();
         let deser_json_elapsed = deser_json_start.elapsed();
 
-        let bincode_config = bincode::config::standard();
-        let ser_bincode_start = std::time::Instant::now();
-        let ser_bincode = bincode::serde::encode_to_vec(&query, bincode_config).unwrap();
-        let ser_bincode_elapsed = ser_bincode_start.elapsed();
+        // Unfortunately using serde(flatten) breaks bincode so we can't use it
+        // it was only used for benchmarking
+        // let bincode_config = bincode::config::standard();
+        // let ser_bincode_start = std::time::Instant::now();
+        // let ser_bincode = bincode::serde::encode_to_vec(&query, bincode_config).unwrap();
+        // let ser_bincode_elapsed = ser_bincode_start.elapsed();
 
-        let deser_bincode_start = std::time::Instant::now();
-        let _: (Query, _) =
-            bincode::serde::decode_from_slice(&ser_bincode, bincode_config).unwrap();
-        let deser_bincode_elapsed = deser_bincode_start.elapsed();
+        // let deser_bincode_start = std::time::Instant::now();
+        // let _: (Query, _) =
+        //     bincode::serde::decode_from_slice(&ser_bincode, bincode_config).unwrap();
+        // let deser_bincode_elapsed = deser_bincode_start.elapsed();
 
         fn make_bench(
             ser: std::time::Duration,
@@ -497,15 +499,15 @@ pub mod tests {
         }
 
         println!(
-            "\nBenchmark {}\ncapnp: {}\njson:  {}\nbin:   {}\n",
+            "\nBenchmark {}\ncapnp: {}\njson:  {}\n",
             label,
             make_bench(ser_elapsed, deser_elapsed, ser.len()),
             make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len()),
-            make_bench(
-                ser_bincode_elapsed,
-                deser_bincode_elapsed,
-                ser_bincode.len()
-            )
+            // make_bench(
+            //     ser_bincode_elapsed,
+            //     deser_bincode_elapsed,
+            //     ser_bincode.len()
+            // )
         );
     }
 

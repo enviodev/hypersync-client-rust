@@ -23,12 +23,19 @@ struct QueryResponse {
     rollbackGuard @4 :RollbackGuard;
 }
 
-struct BlockSelection {
+struct Selection(T) {
+    include @0 :T;
+    exclude @1 :T;
+}
+
+
+struct BlockFilter {
     hash @0 :List(Data);
     miner @1 :List(Data);
 }
 
-struct LogSelection {
+
+struct LogFilter {
     address @0 :List(Data);
     addressFilter @1 :Data;
     topics @2 :List(List(Data));
@@ -39,7 +46,7 @@ struct AuthorizationSelection {
     address @1 :List(Data);
 }
 
-struct TransactionSelection {
+struct TransactionFilter {
     from @0 :List(Data);
     fromFilter @1 :Data;
     to @2 :List(Data);
@@ -53,7 +60,7 @@ struct TransactionSelection {
     authorizationList @10 :List(AuthorizationSelection);
 }
 
-struct TraceSelection {
+struct TraceFilter {
     from @0 :List(Data);
     fromFilter @1 :Data;
     to @2 :List(Data);
@@ -203,10 +210,10 @@ enum TraceField {
 }
 
 struct QueryBody {
-    logs @1 :List(LogSelection);
-    transactions @2 :List(TransactionSelection);
-    traces @3 :List(TraceSelection);
-    blocks @4 :List(BlockSelection);
+    logs @1 :List(Selection(LogFilter));
+    transactions @2 :List(Selection(TransactionFilter));
+    traces @3 :List(Selection(TraceFilter));
+    blocks @4 :List(Selection(BlockFilter));
     includeAllBlocks @5 :Bool;
     fieldSelection @6 :FieldSelection;
     maxNumBlocks @7 :OptUInt64;

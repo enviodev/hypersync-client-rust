@@ -1,23 +1,9 @@
-use crate::{hypersync_net_types_capnp, Selection};
+use crate::{hypersync_net_types_capnp, BuilderReader, Selection};
 use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub type BlockSelection = Selection<BlockFilter>;
-
-impl BlockSelection {
-    pub fn populate_capnp_builder(
-        &self,
-        mut builder: hypersync_net_types_capnp::block_selection::Builder,
-    ) -> Result<(), capnp::Error> {
-        todo!()
-    }
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::block_selection::Reader,
-    ) -> Result<Self, capnp::Error> {
-        todo!()
-    }
-}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct BlockFilter {
@@ -31,10 +17,10 @@ pub struct BlockFilter {
     pub miner: Vec<Address>,
 }
 
-impl BlockFilter {
-    pub(crate) fn populate_capnp_builder(
+impl BuilderReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
+    fn populate_builder(
         &self,
-        mut builder: hypersync_net_types_capnp::block_selection::Builder,
+        builder: &mut hypersync_net_types_capnp::block_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set hashes
         {
@@ -56,8 +42,8 @@ impl BlockFilter {
     }
 
     /// Deserialize BlockSelection from Cap'n Proto reader
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::block_selection::Reader,
+    fn from_reader(
+        reader: hypersync_net_types_capnp::block_filter::Reader,
     ) -> Result<Self, capnp::Error> {
         let mut hash = Vec::new();
 
@@ -292,8 +278,8 @@ mod tests {
     }
 
     #[test]
-    fn test_block_selection_serde_with_values() {
-        let block_selection = BlockFilter {
+    fn test_block_filter_serde_with_values() {
+        let block_filter = BlockFilter {
             hash: vec![Hash::decode_hex(
                 "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
             )
@@ -305,7 +291,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            blocks: vec![block_selection.into()],
+            blocks: vec![block_filter.into()],
             field_selection,
             ..Default::default()
         };

@@ -1,22 +1,8 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, Selection};
+use crate::{hypersync_net_types_capnp, types::Sighash, BuilderReader, Selection};
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
 pub type TraceSelection = Selection<TraceFilter>;
-
-impl TraceSelection {
-    pub fn populate_capnp_builder(
-        &self,
-        mut builder: hypersync_net_types_capnp::trace_selection::Builder,
-    ) -> Result<(), capnp::Error> {
-        todo!()
-    }
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::trace_selection::Reader,
-    ) -> Result<Self, capnp::Error> {
-        todo!()
-    }
-}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TraceFilter {
@@ -43,10 +29,10 @@ pub struct TraceFilter {
     pub sighash: Vec<Sighash>,
 }
 
-impl TraceFilter {
-    pub(crate) fn populate_capnp_builder(
+impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter {
+    fn populate_builder(
         &self,
-        mut builder: hypersync_net_types_capnp::trace_selection::Builder,
+        builder: &mut hypersync_net_types_capnp::trace_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set from addresses
         {
@@ -127,8 +113,8 @@ impl TraceFilter {
     }
 
     /// Deserialize TraceSelection from Cap'n Proto reader
-    pub fn from_capnp(
-        reader: hypersync_net_types_capnp::trace_selection::Reader,
+    fn from_reader(
+        reader: hypersync_net_types_capnp::trace_filter::Reader,
     ) -> Result<Self, capnp::Error> {
         let mut from = Vec::new();
 
@@ -450,14 +436,14 @@ mod tests {
     }
 
     #[test]
-    fn test_trace_selection_serde_with_defaults() {
-        let trace_selection = TraceSelection::default();
+    fn test_trace_filter_serde_with_defaults() {
+        let trace_filter = TraceSelection::default();
         let field_selection = FieldSelection {
             trace: TraceField::all(),
             ..Default::default()
         };
         let query = Query {
-            traces: vec![trace_selection],
+            traces: vec![trace_filter],
             field_selection,
             ..Default::default()
         };
@@ -466,8 +452,8 @@ mod tests {
     }
 
     #[test]
-    fn test_trace_selection_serde_with_full_values() {
-        let trace_selection = TraceFilter {
+    fn test_trace_filter_serde_with_full_values() {
+        let trace_filter = TraceFilter {
             from: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
             from_filter: Some(FilterWrapper::new(16, 1)),
             to: vec![Address::decode_hex("0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6").unwrap()],
@@ -486,7 +472,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            traces: vec![trace_selection.into()],
+            traces: vec![trace_filter.into()],
             field_selection,
             ..Default::default()
         };

@@ -49,3 +49,46 @@ impl<T> From<T> for Selection<T> {
         }
     }
 }
+
+pub(crate) trait BuilderReader<O: capnp::traits::Owned, E = capnp::Error> {
+    fn populate_builder<'a>(&self, builder: &mut O::Builder<'a>) -> Result<(), E>;
+
+    fn from_reader<'a>(reader: O::Reader<'a>) -> Result<Self, E>
+    where
+        Self: Sized;
+}
+
+impl<O, T> BuilderReader<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
+where
+    O: capnp::traits::Owned,
+    T: BuilderReader<O, capnp::Error>,
+{
+    fn populate_builder<'a>(
+        &self,
+        builder: &mut hypersync_net_types_capnp::selection::Builder<'a, O>,
+    ) -> Result<(), capnp::Error> {
+        {
+            let mut include_builder = builder.reborrow().init_include();
+            self.include.populate_builder(&mut include_builder)?;
+        } // include borrow ends
+
+        if let Some(exclude) = &self.exclude {
+            let mut exclude_builder = builder.reborrow().init_exclude();
+            exclude.populate_builder(&mut exclude_builder)?;
+        } // exclude borrow ends
+
+        Ok(())
+    }
+
+    fn from_reader<'a>(
+        reader: hypersync_net_types_capnp::selection::Reader<'a, O>,
+    ) -> Result<Self, capnp::Error> {
+        let include = T::from_reader(reader.get_include()?)?;
+        let exclude = if reader.has_exclude() {
+            Some(T::from_reader(reader.get_exclude()?)?)
+        } else {
+            None
+        };
+        Ok(Self { include, exclude })
+    }
+}
