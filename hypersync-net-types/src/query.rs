@@ -474,18 +474,6 @@ pub mod tests {
         let _deser_json: Query = serde_json::from_str(&ser_json).unwrap();
         let deser_json_elapsed = deser_json_start.elapsed();
 
-        // Unfortunately using serde(flatten) breaks bincode so we can't use it
-        // it was only used for benchmarking
-        // let bincode_config = bincode::config::standard();
-        // let ser_bincode_start = std::time::Instant::now();
-        // let ser_bincode = bincode::serde::encode_to_vec(&query, bincode_config).unwrap();
-        // let ser_bincode_elapsed = ser_bincode_start.elapsed();
-
-        // let deser_bincode_start = std::time::Instant::now();
-        // let _: (Query, _) =
-        //     bincode::serde::decode_from_slice(&ser_bincode, bincode_config).unwrap();
-        // let deser_bincode_elapsed = deser_bincode_start.elapsed();
-
         fn make_bench(
             ser: std::time::Duration,
             deser: std::time::Duration,
@@ -503,11 +491,6 @@ pub mod tests {
             label,
             make_bench(ser_elapsed, deser_elapsed, ser.len()),
             make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len()),
-            // make_bench(
-            //     ser_bincode_elapsed,
-            //     deser_bincode_elapsed,
-            //     ser_bincode.len()
-            // )
         );
     }
 
