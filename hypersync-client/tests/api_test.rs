@@ -8,7 +8,7 @@ use hypersync_client::{
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
 use hypersync_net_types::{
     block::BlockField, log::LogField, transaction::TransactionField, FieldSelection, LogSelection,
-    Query, TransactionSelection,
+    Query, TransactionFilter, TransactionSelection,
 };
 use polars_arrow::array::UInt64Array;
 
@@ -462,10 +462,10 @@ async fn test_small_bloom_filter_query() {
         from_block: 19_000_000,
         to_block: Some(19_300_000),
         logs: Vec::new(),
-        transactions: vec![TransactionSelection {
+        transactions: vec![TransactionSelection::from(TransactionFilter {
             from_filter: Some(from_address_filter),
             ..Default::default()
-        }],
+        })],
         field_selection: FieldSelection {
             block: Default::default(),
             log: Default::default(),

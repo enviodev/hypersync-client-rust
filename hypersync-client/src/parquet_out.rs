@@ -173,7 +173,7 @@ fn spawn_writer(path: PathBuf) -> Result<(mpsc::Sender<ArrowBatch>, JoinHandle<R
         match run_writer(rx, path).await {
             Ok(v) => Ok(v),
             Err(e) => {
-                log::error!("failed to run parquet writer: {:?}", e);
+                log::error!("failed to run parquet writer: {e:?}");
                 Err(e)
             }
         }

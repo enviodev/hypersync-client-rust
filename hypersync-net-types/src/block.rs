@@ -1,37 +1,53 @@
-use crate::hypersync_net_types_capnp;
+use crate::{hypersync_net_types_capnp, Selection};
 use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct BlockSelection {
+pub type BlockSelection = Selection<BlockFilter>;
+
+impl BlockSelection {
+    pub fn populate_capnp_builder(
+        &self,
+        mut builder: hypersync_net_types_capnp::block_selection::Builder,
+    ) -> Result<(), capnp::Error> {
+        todo!()
+    }
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::block_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        todo!()
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct BlockFilter {
     /// Hash of a block, any blocks that have one of these hashes will be returned.
     /// Empty means match all.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hash: Vec<Hash>,
     /// Miner address of a block, any blocks that have one of these miners will be returned.
     /// Empty means match all.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub miner: Vec<Address>,
 }
 
-impl BlockSelection {
+impl BlockFilter {
     pub(crate) fn populate_capnp_builder(
-        block_sel: &BlockSelection,
+        &self,
         mut builder: hypersync_net_types_capnp::block_selection::Builder,
     ) -> Result<(), capnp::Error> {
         // Set hashes
         {
-            let mut hash_list = builder.reborrow().init_hash(block_sel.hash.len() as u32);
-            for (i, hash) in block_sel.hash.iter().enumerate() {
+            let mut hash_list = builder.reborrow().init_hash(self.hash.len() as u32);
+            for (i, hash) in self.hash.iter().enumerate() {
                 hash_list.set(i as u32, hash.as_slice());
             }
         }
 
         // Set miners
         {
-            let mut miner_list = builder.reborrow().init_miner(block_sel.miner.len() as u32);
-            for (i, miner) in block_sel.miner.iter().enumerate() {
+            let mut miner_list = builder.reborrow().init_miner(self.miner.len() as u32);
+            for (i, miner) in self.miner.iter().enumerate() {
                 miner_list.set(i as u32, miner.as_slice());
             }
         }
@@ -73,7 +89,7 @@ impl BlockSelection {
             }
         }
 
-        Ok(BlockSelection { hash, miner })
+        Ok(Self { hash, miner })
     }
 }
 
@@ -277,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_block_selection_serde_with_values() {
-        let block_selection = BlockSelection {
+        let block_selection = BlockFilter {
             hash: vec![Hash::decode_hex(
                 "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
             )
@@ -289,7 +305,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            blocks: vec![block_selection],
+            blocks: vec![block_selection.into()],
             field_selection,
             ..Default::default()
         };

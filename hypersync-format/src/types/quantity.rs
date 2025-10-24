@@ -95,7 +95,7 @@ impl Visitor<'_> for QuantityVisitor {
     type Value = Quantity;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("hex string for a quantity")
+        formatter.write_str("hex string or an integer for a quantity")
     }
 
     fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
@@ -105,6 +105,29 @@ impl Visitor<'_> for QuantityVisitor {
         let buf: Vec<u8> = decode_hex(value).map_err(|e| E::custom(e.to_string()))?;
 
         Ok(Quantity::from(buf))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> StdResult<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if value < 0 {
+            return Err(serde::de::Error::custom(
+                "negative int quantity not allowed",
+            ));
+        }
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
     }
 }
 
@@ -266,5 +289,29 @@ mod tests {
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x00")]);
         assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0000")]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_u64() {
+        // Numeric JSON values should be accepted (e.g., Sonic timestamps)
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::U64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::U64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::U64(1)]);
+    }
+
+    #[test]
+    fn test_deserialize_numeric_i64() {
+        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::I64(0x66a7c725)]);
+        assert_de_tokens(&Quantity::from(vec![0]), &[Token::I64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::I64(1)]);
+    }
+
+    #[test]
+    fn test_bincode_compat() {
+        let val = Quantity::from(hex!("01"));
+
+        let data = bincode::serialize(&val).unwrap();
+
+        assert_eq!(val, bincode::deserialize(&data).unwrap());
     }
 }

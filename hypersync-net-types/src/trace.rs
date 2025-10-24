@@ -1,75 +1,89 @@
-use crate::{hypersync_net_types_capnp, types::Sighash};
+use crate::{hypersync_net_types_capnp, types::Sighash, Selection};
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct TraceSelection {
-    #[serde(default)]
+pub type TraceSelection = Selection<TraceFilter>;
+
+impl TraceSelection {
+    pub fn populate_capnp_builder(
+        &self,
+        mut builder: hypersync_net_types_capnp::trace_selection::Builder,
+    ) -> Result<(), capnp::Error> {
+        todo!()
+    }
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::trace_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        todo!()
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TraceFilter {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub from: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_filter: Option<FilterWrapper>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub to: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_filter: Option<FilterWrapper>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub address: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub address_filter: Option<FilterWrapper>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub call_type: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reward_type: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[serde(rename = "type")]
     pub type_: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sighash: Vec<Sighash>,
 }
 
-impl TraceSelection {
+impl TraceFilter {
     pub(crate) fn populate_capnp_builder(
-        trace_sel: &TraceSelection,
+        &self,
         mut builder: hypersync_net_types_capnp::trace_selection::Builder,
     ) -> Result<(), capnp::Error> {
         // Set from addresses
         {
-            let mut from_list = builder.reborrow().init_from(trace_sel.from.len() as u32);
-            for (i, addr) in trace_sel.from.iter().enumerate() {
+            let mut from_list = builder.reborrow().init_from(self.from.len() as u32);
+            for (i, addr) in self.from.iter().enumerate() {
                 from_list.set(i as u32, addr.as_slice());
             }
         }
 
         // Set from filter
-        if let Some(filter) = &trace_sel.from_filter {
+        if let Some(filter) = &self.from_filter {
             builder.reborrow().set_from_filter(filter.0.as_bytes());
         }
 
         // Set to addresses
         {
-            let mut to_list = builder.reborrow().init_to(trace_sel.to.len() as u32);
-            for (i, addr) in trace_sel.to.iter().enumerate() {
+            let mut to_list = builder.reborrow().init_to(self.to.len() as u32);
+            for (i, addr) in self.to.iter().enumerate() {
                 to_list.set(i as u32, addr.as_slice());
             }
         }
 
         // Set to filter
-        if let Some(filter) = &trace_sel.to_filter {
+        if let Some(filter) = &self.to_filter {
             builder.reborrow().set_to_filter(filter.0.as_bytes());
         }
 
         // Set addresses
         {
-            let mut addr_list = builder
-                .reborrow()
-                .init_address(trace_sel.address.len() as u32);
-            for (i, addr) in trace_sel.address.iter().enumerate() {
+            let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
+            for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
             }
         }
 
         // Set address filter
-        if let Some(filter) = &trace_sel.address_filter {
+        if let Some(filter) = &self.address_filter {
             builder.reborrow().set_address_filter(filter.0.as_bytes());
         }
 
@@ -77,8 +91,8 @@ impl TraceSelection {
         {
             let mut call_type_list = builder
                 .reborrow()
-                .init_call_type(trace_sel.call_type.len() as u32);
-            for (i, call_type) in trace_sel.call_type.iter().enumerate() {
+                .init_call_type(self.call_type.len() as u32);
+            for (i, call_type) in self.call_type.iter().enumerate() {
                 call_type_list.set(i as u32, call_type);
             }
         }
@@ -87,26 +101,24 @@ impl TraceSelection {
         {
             let mut reward_type_list = builder
                 .reborrow()
-                .init_reward_type(trace_sel.reward_type.len() as u32);
-            for (i, reward_type) in trace_sel.reward_type.iter().enumerate() {
+                .init_reward_type(self.reward_type.len() as u32);
+            for (i, reward_type) in self.reward_type.iter().enumerate() {
                 reward_type_list.set(i as u32, reward_type);
             }
         }
 
         // Set types
         {
-            let mut type_list = builder.reborrow().init_type(trace_sel.type_.len() as u32);
-            for (i, type_) in trace_sel.type_.iter().enumerate() {
+            let mut type_list = builder.reborrow().init_type(self.type_.len() as u32);
+            for (i, type_) in self.type_.iter().enumerate() {
                 type_list.set(i as u32, type_);
             }
         }
 
         // Set sighash
         {
-            let mut sighash_list = builder
-                .reborrow()
-                .init_sighash(trace_sel.sighash.len() as u32);
-            for (i, sighash) in trace_sel.sighash.iter().enumerate() {
+            let mut sighash_list = builder.reborrow().init_sighash(self.sighash.len() as u32);
+            for (i, sighash) in self.sighash.iter().enumerate() {
                 sighash_list.set(i as u32, sighash.as_slice());
             }
         }
@@ -243,7 +255,7 @@ impl TraceSelection {
             }
         }
 
-        Ok(TraceSelection {
+        Ok(Self {
             from,
             from_filter,
             to,
@@ -455,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_trace_selection_serde_with_full_values() {
-        let trace_selection = TraceSelection {
+        let trace_selection = TraceFilter {
             from: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
             from_filter: Some(FilterWrapper::new(16, 1)),
             to: vec![Address::decode_hex("0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8b6").unwrap()],
@@ -474,7 +486,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            traces: vec![trace_selection],
+            traces: vec![trace_selection.into()],
             field_selection,
             ..Default::default()
         };

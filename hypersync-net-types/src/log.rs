@@ -1,46 +1,61 @@
-use crate::hypersync_net_types_capnp;
+use crate::{hypersync_net_types_capnp, Selection};
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct LogSelection {
+pub type LogSelection = Selection<LogFilter>;
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct LogFilter {
     /// Address of the contract, any logs that has any of these addresses will be returned.
     /// Empty means match all.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub address: Vec<Address>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub address_filter: Option<FilterWrapper>,
     /// Topics to match, each member of the top level array is another array, if the nth topic matches any
     ///  topic specified in nth element of topics, the log will be returned. Empty means match all.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "ArrayVec::is_empty")]
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
 }
 
 impl LogSelection {
+    pub fn populate_capnp_builder(
+        &self,
+        mut builder: hypersync_net_types_capnp::log_selection::Builder,
+    ) -> Result<(), capnp::Error> {
+        todo!()
+    }
+
+    pub fn from_capnp(
+        reader: hypersync_net_types_capnp::log_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        todo!()
+    }
+}
+
+impl LogFilter {
     pub(crate) fn populate_capnp_builder(
-        log_sel: &LogSelection,
+        &self,
         mut builder: hypersync_net_types_capnp::log_selection::Builder,
     ) -> Result<(), capnp::Error> {
         // Set addresses
         {
-            let mut addr_list = builder
-                .reborrow()
-                .init_address(log_sel.address.len() as u32);
-            for (i, addr) in log_sel.address.iter().enumerate() {
+            let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
+            for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
             }
         }
 
         // Set address filter
-        if let Some(filter) = &log_sel.address_filter {
+        if let Some(filter) = &self.address_filter {
             builder.reborrow().set_address_filter(filter.0.as_bytes());
         }
 
         // Set topics
         {
-            let mut topics_list = builder.reborrow().init_topics(log_sel.topics.len() as u32);
-            for (i, topic_vec) in log_sel.topics.iter().enumerate() {
+            let mut topics_list = builder.reborrow().init_topics(self.topics.len() as u32);
+            for (i, topic_vec) in self.topics.iter().enumerate() {
                 let mut topic_list = topics_list
                     .reborrow()
                     .init(i as u32, topic_vec.len() as u32);
@@ -108,7 +123,7 @@ impl LogSelection {
             }
         }
 
-        Ok(LogSelection {
+        Ok(Self {
             address,
             address_filter,
             topics,
@@ -262,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_log_selection_serde_with_full_values() {
-        let log_selection = LogSelection {
+        let log_selection = LogFilter {
             address: vec![
                 Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap(),
             ],
@@ -285,7 +300,7 @@ mod tests {
             ..Default::default()
         };
         let query = Query {
-            logs: vec![log_selection],
+            logs: vec![log_selection.into()],
             field_selection,
             ..Default::default()
         };

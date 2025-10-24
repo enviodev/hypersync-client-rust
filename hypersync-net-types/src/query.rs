@@ -8,32 +8,7 @@ use capnp::{message::ReaderOptions, serialize_packed};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
-pub enum JoinMode {
-    Default,
-    JoinAll,
-    JoinNothing,
-}
-
-impl Default for JoinMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct FieldSelection {
-    #[serde(default)]
-    pub block: BTreeSet<BlockField>,
-    #[serde(default)]
-    pub transaction: BTreeSet<TransactionField>,
-    #[serde(default)]
-    pub log: BTreeSet<LogField>,
-    #[serde(default)]
-    pub trace: BTreeSet<TraceField>,
-}
-
-#[derive(Default, Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Query {
     /// The block to start the query from
     pub from_block: u64,
@@ -44,44 +19,45 @@ pub struct Query {
     ///  configured on the server. The user should continue their query by putting the
     ///  next_block field in the response into from_block field of their next query. This implements
     ///  pagination.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_block: Option<u64>,
     /// List of log selections, these have an OR relationship between them, so the query will return logs
     /// that match any of these selections.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logs: Vec<LogSelection>,
     /// List of transaction selections, the query will return transactions that match any of these selections
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transactions: Vec<TransactionSelection>,
     /// List of trace selections, the query will return traces that match any of these selections
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub traces: Vec<TraceSelection>,
     /// List of block selections, the query will return blocks that match any of these selections
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<BlockSelection>,
     /// Weather to include all blocks regardless of if they are related to a returned transaction or log. Normally
     ///  the server will return only the blocks that are related to the transaction or logs in the response. But if this
     ///  is set to true, the server will return data for all blocks in the requested range [from_block, to_block).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub include_all_blocks: bool,
     /// Field selection. The user can select which fields they are interested in, requesting less fields will improve
     ///  query execution time and reduce the payload size so the user should always use a minimal number of fields.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub field_selection: FieldSelection,
     /// Maximum number of blocks that should be returned, the server might return more blocks than this number but
     ///  it won't overshoot by too much.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_num_blocks: Option<usize>,
     /// Maximum number of transactions that should be returned, the server might return more transactions than this number but
     ///  it won't overshoot by too much.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_num_transactions: Option<usize>,
     /// Maximum number of logs that should be returned, the server might return more logs than this number but
     ///  it won't overshoot by too much.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_num_logs: Option<usize>,
     /// Maximum number of traces that should be returned, the server might return more traces than this number but
     ///  it won't overshoot by too much.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_num_traces: Option<usize>,
     /// Selects join mode for the query,
     /// Default: join in this order logs -> transactions -> traces -> blocks
@@ -89,8 +65,44 @@ pub struct Query {
     /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
     /// to blocks, traces.
     /// JoinNothing: join nothing.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub join_mode: JoinMode,
+}
+
+/// Used to skip serializing a defaulted serde field if
+/// the value matches the default value.
+fn is_default<T: Default + PartialEq>(t: &T) -> bool {
+    t == &T::default()
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+pub enum JoinMode {
+    /// Join in this order logs -> transactions -> traces -> blocks
+    Default,
+    /// Join everything to everything. For example if logSelection matches log0, we get the
+    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
+    /// to blocks, traces.
+    JoinAll,
+    /// JoinNothing: join nothing.
+    JoinNothing,
+}
+
+impl Default for JoinMode {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FieldSelection {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub block: BTreeSet<BlockField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub transaction: BTreeSet<TransactionField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub log: BTreeSet<LogField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub trace: BTreeSet<TraceField>,
 }
 
 impl Query {
@@ -435,6 +447,8 @@ impl Query {
 
 #[cfg(test)]
 pub mod tests {
+    use crate::log::LogFilter;
+
     use super::*;
     use arrayvec::ArrayVec;
     use hypersync_format::{Address, Hex, LogArgument};
@@ -551,7 +565,7 @@ pub mod tests {
         for contract_idx in 0..num_contracts {
             let mut topics = ArrayVec::new();
             topics.push(vec![]);
-            let mut log_selection = LogSelection {
+            let mut log_selection = LogFilter {
                 address: vec![],
                 address_filter: None,
                 topics,
@@ -582,7 +596,7 @@ pub mod tests {
                 .unwrap();
                 log_selection.address.push(address);
             }
-            logs.push(log_selection);
+            logs.push(log_selection.into());
         }
         logs
     }

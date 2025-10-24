@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-format"
-version = "0.5.4"
+version = "0.5.7"
 edition = "2021"
 description = "evm format library"
 license = "MPL-2.0"
@@ -23,6 +23,7 @@ serde_test = "1"
 hex-literal = "0.4"
 serde_json = "1"
 serde_path_to_error = "0.1.17"
+bincode = "1"
 
 [features]
 ethers = ["dep:ethers", "dep:ethabi"]
