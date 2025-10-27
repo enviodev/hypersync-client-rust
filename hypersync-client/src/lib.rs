@@ -550,127 +550,262 @@ struct HeightSsePayloadJson {
     height: Option<u64>,
 }
 
+const INITIAL_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+const MAX_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+const MAX_CONNECTION_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
 impl Client {
-    /// Streams latest archive height updates from the server using the `/height/stream` SSE endpoint.
+    /// Streams latest archive height updates from the server using the `/height/sse` SSE endpoint.
     ///
-    /// Returns a channel receiver that yields `u64` heights. The sender task runs in the background
-    /// and closes the channel if the connection drops or an error occurs. Messages that cannot be
-    /// parsed are ignored.
+    /// # Overview
+    /// This function establishes a long-lived Server-Sent Events (SSE) connection to continuously
+    /// receive height updates from the hypersync server. The connection is resilient and will
+    /// automatically reconnect if it drops due to network issues, server restarts, or shutdowns.
+    ///
+    /// # Returns
+    /// Returns a channel receiver that yields `Result<u64>` heights. A background task manages
+    /// the connection lifecycle and sends height updates through this channel.
+    ///
+    /// # Connection Management
+    /// - **Automatic Reconnection**: If the connection drops, the client automatically attempts
+    ///   to reconnect with exponential backoff (1s → 2s → 4s → ... → max 30s)
+    /// - **Graceful Shutdown**: When the server closes the stream (e.g., during restart), the
+    ///   client detects it and reconnects immediately
+    /// - **Error Handling**: Connection errors are logged and don't terminate the stream
+    ///
+    /// # SSE Protocol Details
+    /// The function parses SSE messages according to the W3C EventSource spec:
+    /// - Messages are separated by blank lines (`\n\n`)
+    /// - Each message can have `event:` and `data:` fields
+    /// - Keep-alive comments (`:ping`) are ignored
+    /// - Only `event:height` messages are processed
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # use hypersync_client::{Client, ClientConfig};
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Arc::new(Client::new(ClientConfig {
+    ///     url: Some("https://eth.hypersync.xyz".parse()?),
+    ///     ..Default::default()
+    /// })?);
+    ///
+    /// let mut rx = client.stream_height().await?;
+    ///
+    /// while let Some(result) = rx.recv().await {
+    ///     match result {
+    ///         Ok(height) => println!("Height: {}", height),
+    ///         Err(e) => eprintln!("Error: {}", e),
+    ///     }
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn stream_height(self: Arc<Self>) -> Result<mpsc::Receiver<Result<u64>>> {
-        let mut url = self.url.clone();
-        let mut segments = url.path_segments_mut().ok().context("get path segments")?;
-        segments.push("height");
-        segments.push("sse");
-        std::mem::drop(segments);
-
-        let mut req = self.http_client.request(Method::GET, url);
-
-        if let Some(bearer_token) = &self.bearer_token {
-            req = req.bearer_auth(bearer_token);
-        }
-
-        req = req
-            .header(header::ACCEPT, "text/event-stream")
-            // SSE is a long-lived request; use a long timeout to avoid body timeouts.
-            // TODO: Make this configurable - and much shorter!
-            .timeout(Duration::from_secs(24 * 60 * 60));
-
-        let res = req.send().await.context("execute http req")?;
-
-        let status = res.status();
-        if !status.is_success() {
-            return Err(anyhow!("http response status code {}", status));
-        }
-
+        // Create a channel for sending height updates from the background task to the caller.
+        // Buffer size of 16 allows for some burst handling without blocking the sender.
         let (tx, rx) = mpsc::channel(16);
-        let mut byte_stream = res.bytes_stream();
+        let client = self.clone();
 
+        // Spawn a background task that manages the SSE connection lifecycle.
+        // This task runs indefinitely, handling reconnections automatically.
         tokio::spawn(async move {
-            let mut buf = String::new();
+            // Reconnection delay starts at 1 second and doubles on each failure (exponential backoff).
+            // This prevents hammering the server when it's down or restarting.
+            let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
 
-            while let Some(item) = byte_stream.next().await {
-                let bytes = match item {
-                    Ok(b) => b,
-                    Err(e) => {
-                        let _ = tx.send(Err(anyhow!("sse stream error: {:?}", e))).await;
-                        return;
-                    }
-                };
+            // Main reconnection loop - runs forever, attempting to maintain a connection.
+            loop {
+                // === STEP 1: Build the SSE endpoint URL ===
+                // Construct the full URL path: <base_url>/height/sse
+                let mut url = client.url.clone();
+                let mut segments = url.path_segments_mut().ok().unwrap();
+                segments.push("height");
+                segments.push("sse");
+                std::mem::drop(segments); // Release the mutable borrow on url
 
-                use std::fmt::Write as _;
-                let chunk_str = match std::str::from_utf8(&bytes) {
-                    Ok(s) => s,
-                    Err(_) => {
-                        let mut tmp = String::with_capacity(bytes.len() * 2);
-                        for &b in bytes.as_ref() {
-                            // lossily map non-utf8 to replacement
-                            let _ = write!(&mut tmp, "{}", char::from(b));
-                        }
-                        buf.push_str(&tmp);
-                        continue;
-                    }
-                };
-                buf.push_str(chunk_str);
+                // === STEP 2: Prepare the HTTP GET request ===
+                let mut req = client.http_client.request(Method::GET, url);
 
-                // Normalize Windows CRLF to LF to simplify parsing
-                if buf.contains("\r\n") {
-                    buf = buf.replace("\r\n", "\n");
+                // Add bearer token authentication if configured
+                if let Some(bearer_token) = &client.bearer_token {
+                    req = req.bearer_auth(bearer_token);
                 }
 
-                // Process complete events separated by blank line
-                loop {
-                    if let Some(idx) = buf.find("\n\n") {
-                        let event_block = buf[..idx].to_string();
-                        buf.drain(..idx + 2);
+                // Configure request headers and timeout.
+                // SSE connections are long-lived, so we use a 24-hour timeout to prevent
+                // the HTTP client from terminating the connection prematurely.
+                req = req
+                    .header(header::ACCEPT, "text/event-stream")
+                    .timeout(MAX_CONNECTION_AGE);
 
-                        // Parse a single SSE event block
-                        let mut event_name: Option<&str> = None;
-                        let mut data_lines: Vec<&str> = Vec::new();
+                // === STEP 3: Attempt to establish the SSE connection ===
+                match req.send().await {
+                    Ok(res) => {
+                        let status = res.status();
 
-                        for line in event_block.lines() {
-                            if line.is_empty() {
-                                continue;
-                            }
-                            if line.starts_with(':') {
-                                // comment/keep-alive
-                                continue;
-                            }
-                            if let Some(rest) = line.strip_prefix("event:") {
-                                event_name = Some(rest.trim());
-                                continue;
-                            }
-                            if let Some(rest) = line.strip_prefix("data:") {
-                                data_lines.push(rest.trim());
-                                continue;
-                            }
-                            // ignore other fields like id
+                        // Check for HTTP errors (non-2xx status codes)
+                        if !status.is_success() {
+                            log::warn!("❌ HTTP error: status code {}", status);
+
+                            // Wait before retrying with exponential backoff
+                            tokio::time::sleep(reconnect_delay).await;
+                            reconnect_delay =
+                                std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
+                            continue; // Retry the connection
                         }
 
-                        let name = event_name.unwrap_or("");
-                        if name == "height" {
-                            let data = data_lines.join("\n");
-                            // Preferred: parse plain integer body
-                            if let Ok(h) = data.trim().parse::<u64>() {
-                                if tx.send(Ok(h)).await.is_err() {
-                                    return;
-                                }
-                            } else {
-                                // Backward compatibility: parse {"height": N}
-                                if let Ok(payload) =
-                                    serde_json::from_str::<HeightSsePayloadJson>(&data)
-                                {
-                                    if let Some(h) = payload.height {
-                                        if tx.send(Ok(h)).await.is_err() {
-                                            return;
+                        // Successfully connected!
+                        log::info!("✅ Connected to height SSE stream");
+
+                        // Reset reconnection delay after successful connection
+                        reconnect_delay = INITIAL_RECONNECT_DELAY;
+
+                        // === STEP 4: Process the SSE byte stream ===
+                        // Get the response body as a stream of bytes
+                        let mut byte_stream = res.bytes_stream();
+
+                        // Buffer for accumulating incomplete SSE messages.
+                        // SSE messages are text-based and separated by blank lines (\n\n).
+                        let mut buf = String::new();
+
+                        // Flag to track if the connection is still active
+                        let mut connection_active = true;
+
+                        // Main message processing loop - runs until the connection drops
+                        while connection_active {
+                            match byte_stream.next().await {
+                                // === Successfully received bytes from the stream ===
+                                Some(Ok(bytes)) => {
+                                    log::trace!(
+                                        "📦 Received {} bytes from SSE stream",
+                                        bytes.len()
+                                    );
+
+                                    use std::fmt::Write as _;
+
+                                    // Convert bytes to UTF-8 string
+                                    let chunk_str = match std::str::from_utf8(&bytes) {
+                                        Ok(s) => s,
+                                        Err(_) => {
+                                            // Handle invalid UTF-8 by doing lossy conversion.
+                                            // This is rare but can happen with network corruption.
+                                            let mut tmp = String::with_capacity(bytes.len() * 2);
+                                            for &b in bytes.as_ref() {
+                                                let _ = write!(&mut tmp, "{}", char::from(b));
+                                            }
+                                            buf.push_str(&tmp);
+                                            continue;
+                                        }
+                                    };
+
+                                    // Append the new chunk to our buffer
+                                    buf.push_str(chunk_str);
+
+                                    // === STEP 5: Parse complete SSE messages ===
+                                    // SSE messages are separated by blank lines (\n\n).
+                                    // Process all complete messages currently in the buffer.
+                                    loop {
+                                        if let Some(idx) = buf.find("\n\n") {
+                                            // Extract one complete SSE message
+                                            let event_block = buf[..idx].to_string();
+                                            buf.drain(..idx + 2); // Remove message + blank line from buffer
+
+                                            // Parse the SSE event fields according to the W3C spec
+                                            let mut event_name: Option<&str> = None;
+                                            let mut data_lines: Vec<&str> = Vec::new();
+
+                                            // Process each line in the event block
+                                            for line in event_block.lines() {
+                                                if line.is_empty() {
+                                                    continue;
+                                                }
+                                                if line.starts_with(':') {
+                                                    // Comment line (used for keep-alive pings).
+                                                    // Format: ": ping" or ": <comment text>"
+                                                    continue;
+                                                }
+                                                if let Some(rest) = line.strip_prefix("event:") {
+                                                    // Event type field.
+                                                    // Format: "event: height"
+                                                    event_name = Some(rest.trim());
+                                                    continue;
+                                                }
+                                                if let Some(rest) = line.strip_prefix("data:") {
+                                                    // Data field (can be multiple per event).
+                                                    // Format: "data: 12345"
+                                                    data_lines.push(rest.trim());
+                                                    continue;
+                                                }
+                                                // Ignore other SSE fields like "id:" and "retry:"
+                                            }
+
+                                            // === STEP 6: Process height events ===
+                                            let name = event_name.unwrap_or("");
+                                            if name == "height" {
+                                                // Combine multiple data lines (though typically just one)
+                                                let data = data_lines.join("\n");
+
+                                                // Try parsing as plain integer (preferred format).
+                                                // Server sends: event:height\ndata:12345\n\n
+                                                if let Ok(h) = data.trim().parse::<u64>() {
+                                                    log::debug!("📈 Height update: {}", h);
+
+                                                    // Send the height through the channel.
+                                                    // If the receiver is dropped, exit the task gracefully.
+                                                    if tx.send(Ok(h)).await.is_err() {
+                                                        log::info!(
+                                                            "Receiver dropped, exiting stream task"
+                                                        );
+                                                        return;
+                                                    }
+                                                } else {
+                                                    log::warn!(
+                                                        "❌ Failed to parse height: {}",
+                                                        data
+                                                    );
+                                                    connection_active = false;
+                                                    continue;
+                                                }
+                                            }
+                                        } else {
+                                            // No complete message in buffer yet, wait for more data
+                                            break;
                                         }
                                     }
                                 }
+
+                                // === Stream error occurred (network issue, timeout, etc.) ===
+                                Some(Err(e)) => {
+                                    log::warn!("⚠️  SSE stream error: {:?}", e);
+                                    connection_active = false; // Exit loop and reconnect
+                                }
+
+                                // === Stream ended (server closed the connection) ===
+                                // This happens during server restarts, shutdowns, or SIGTERM simulation
+                                None => {
+                                    log::info!("🔌 SSE stream closed by server, will reconnect");
+                                    connection_active = false; // Exit loop and reconnect
+                                }
                             }
                         }
-                    } else {
-                        break;
+                    }
+
+                    // === Failed to establish HTTP connection ===
+                    Err(e) => {
+                        log::warn!("❌ Failed to connect to height stream: {:?}", e);
                     }
                 }
+
+                // === STEP 7: Wait before reconnecting ===
+                // After any disconnection (graceful or error), wait before attempting to reconnect.
+                // This implements exponential backoff to avoid overwhelming the server.
+                log::info!("⏳ Reconnecting in {:?}...", reconnect_delay);
+                tokio::time::sleep(reconnect_delay).await;
+
+                // Double the delay for the next attempt, up to the maximum.
+                // Pattern: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s (max) → 30s → ...
+                reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
             }
         });
 

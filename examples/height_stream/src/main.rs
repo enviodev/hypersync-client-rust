@@ -8,7 +8,11 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let client = Arc::new(Client::new(ClientConfig {
-        url: Some("http://localhost:1131".parse().unwrap()),
+        url: Some(
+            "https://arbitrum-sepolia.zone1.hypersync.xyz"
+                .parse()
+                .unwrap(),
+        ),
         ..Default::default()
     })?);
 
@@ -20,7 +24,7 @@ async fn main() -> Result<()> {
         match msg {
             Ok(height) => println!("height: {}", height),
             Err(e) => {
-                eprintln!("stream error: {e:?}");
+                eprintln!("stream error - will automatically reconnect: {e:?}");
                 break;
             }
         }
