@@ -21,6 +21,9 @@ pub struct ClientConfig {
     pub retry_base_ms: Option<u64>,
     /// Ceiling time for request backoff.
     pub retry_ceiling_ms: Option<u64>,
+    /// Custom user agent string for HTTP requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
 }
 
 /// Config for hypersync event streaming.
