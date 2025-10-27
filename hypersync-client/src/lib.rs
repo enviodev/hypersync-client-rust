@@ -73,9 +73,14 @@ impl Client {
             .http_req_timeout_millis
             .unwrap_or(NonZeroU64::new(30_000).unwrap());
 
+        let user_agent = cfg
+            .user_agent
+            .unwrap_or_else(|| format!("hypersync-client-rust/{}", env!("CARGO_PKG_VERSION")));
+
         let http_client = reqwest::Client::builder()
             .no_gzip()
             .timeout(Duration::from_millis(timeout.get()))
+            .user_agent(user_agent)
             .build()
             .unwrap();
 

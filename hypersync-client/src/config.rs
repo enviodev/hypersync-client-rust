@@ -24,6 +24,9 @@ pub struct ClientConfig {
     /// Query serialization format to use for HTTP requests.
     #[serde(default)]
     pub serialization_format: SerializationFormat,
+    /// Custom user agent string for HTTP requests.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
 }
 
 /// Determines query serialization format for HTTP requests.
