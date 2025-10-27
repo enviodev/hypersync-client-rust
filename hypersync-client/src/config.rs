@@ -23,7 +23,20 @@ pub struct ClientConfig {
     pub retry_ceiling_ms: Option<u64>,
     /// Custom user agent string for HTTP requests.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_agent: Option<String>,
+    user_agent: Option<String>,
+}
+
+impl ClientConfig {
+    /// Set a custom user agent string for HTTP requests.
+    /// This is intended for internal use by language bindings.
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = Some(user_agent.into());
+        self
+    }
+
+    pub(crate) fn user_agent(&self) -> Option<&str> {
+        self.user_agent.as_deref()
+    }
 }
 
 /// Config for hypersync event streaming.
