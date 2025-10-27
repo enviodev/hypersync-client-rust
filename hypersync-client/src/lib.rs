@@ -76,7 +76,8 @@ impl Client {
         let user_agent = cfg
             .user_agent()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| format!("hypersync-client-rust/{}", env!("CARGO_PKG_VERSION")));
+            // hscr stands for hypersync client rust
+            .unwrap_or_else(|| format!("hscr/{}", env!("CARGO_PKG_VERSION")));
 
         let http_client = reqwest::Client::builder()
             .no_gzip()
