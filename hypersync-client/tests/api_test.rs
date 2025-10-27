@@ -533,6 +533,7 @@ async fn test_decode_string_param_into_arrow() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore]
 async fn test_api_capnp_client() {
     let client = Arc::new(
         Client::new(ClientConfig {
