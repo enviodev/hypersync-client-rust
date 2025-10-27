@@ -13,10 +13,8 @@ pub mod transaction;
 pub mod types;
 
 // Cap'n Proto generated code
-#[allow(clippy::all)]
-pub mod hypersync_net_types_capnp {
-    include!(concat!(env!("OUT_DIR"), "/hypersync_net_types_capnp.rs"));
-}
+mod __generated__;
+pub use __generated__::hypersync_net_types_capnp;
 
 // Re-export types from modules for backward compatibility and convenience
 pub use block::{BlockFilter, BlockSelection};
