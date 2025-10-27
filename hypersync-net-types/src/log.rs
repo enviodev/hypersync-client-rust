@@ -25,7 +25,7 @@ impl BuilderReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
         builder: &mut hypersync_net_types_capnp::log_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set addresses
-        {
+        if !self.address.is_empty() {
             let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
             for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
@@ -38,7 +38,7 @@ impl BuilderReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
         }
 
         // Set topics
-        {
+        if !self.topics.is_empty() {
             let mut topics_list = builder.reborrow().init_topics(self.topics.len() as u32);
             for (i, topic_vec) in self.topics.iter().enumerate() {
                 let mut topic_list = topics_list

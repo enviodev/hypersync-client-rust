@@ -35,7 +35,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         builder: &mut hypersync_net_types_capnp::trace_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set from addresses
-        {
+        if !self.from.is_empty() {
             let mut from_list = builder.reborrow().init_from(self.from.len() as u32);
             for (i, addr) in self.from.iter().enumerate() {
                 from_list.set(i as u32, addr.as_slice());
@@ -48,7 +48,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set to addresses
-        {
+        if !self.to.is_empty() {
             let mut to_list = builder.reborrow().init_to(self.to.len() as u32);
             for (i, addr) in self.to.iter().enumerate() {
                 to_list.set(i as u32, addr.as_slice());
@@ -61,7 +61,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set addresses
-        {
+        if !self.address.is_empty() {
             let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
             for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
@@ -74,7 +74,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set call types
-        {
+        if !self.call_type.is_empty() {
             let mut call_type_list = builder
                 .reborrow()
                 .init_call_type(self.call_type.len() as u32);
@@ -84,7 +84,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set reward types
-        {
+        if !self.reward_type.is_empty() {
             let mut reward_type_list = builder
                 .reborrow()
                 .init_reward_type(self.reward_type.len() as u32);
@@ -94,7 +94,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set types
-        {
+        if !self.type_.is_empty() {
             let mut type_list = builder.reborrow().init_type(self.type_.len() as u32);
             for (i, type_) in self.type_.iter().enumerate() {
                 type_list.set(i as u32, type_);
@@ -102,7 +102,7 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
         }
 
         // Set sighash
-        {
+        if !self.sighash.is_empty() {
             let mut sighash_list = builder.reborrow().init_sighash(self.sighash.len() as u32);
             for (i, sighash) in self.sighash.iter().enumerate() {
                 sighash_list.set(i as u32, sighash.as_slice());

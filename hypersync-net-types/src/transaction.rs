@@ -65,7 +65,7 @@ impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
         builder: &mut hypersync_net_types_capnp::authorization_selection::Builder,
     ) -> Result<(), capnp::Error> {
         // Set chain ids
-        {
+        if !self.chain_id.is_empty() {
             let mut chain_list = builder.reborrow().init_chain_id(self.chain_id.len() as u32);
             for (i, chain_id) in self.chain_id.iter().enumerate() {
                 chain_list.set(i as u32, *chain_id);
@@ -73,7 +73,7 @@ impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
         }
 
         // Set addresses
-        {
+        if !self.address.is_empty() {
             let mut addr_list = builder.reborrow().init_address(self.address.len() as u32);
             for (i, addr) in self.address.iter().enumerate() {
                 addr_list.set(i as u32, addr.as_slice());
@@ -120,7 +120,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         builder: &mut hypersync_net_types_capnp::transaction_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set from addresses
-        {
+        if !self.from.is_empty() {
             let mut from_list = builder.reborrow().init_from(self.from.len() as u32);
             for (i, addr) in self.from.iter().enumerate() {
                 from_list.set(i as u32, addr.as_slice());
@@ -133,7 +133,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set to addresses
-        {
+        if !self.to.is_empty() {
             let mut to_list = builder.reborrow().init_to(self.to.len() as u32);
             for (i, addr) in self.to.iter().enumerate() {
                 to_list.set(i as u32, addr.as_slice());
@@ -146,7 +146,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set sighash
-        {
+        if !self.sighash.is_empty() {
             let mut sighash_list = builder.reborrow().init_sighash(self.sighash.len() as u32);
             for (i, sighash) in self.sighash.iter().enumerate() {
                 sighash_list.set(i as u32, sighash.as_slice());
@@ -160,7 +160,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set type
-        {
+        if !self.type_.is_empty() {
             let mut type_list = builder.reborrow().init_type(self.type_.len() as u32);
             for (i, type_) in self.type_.iter().enumerate() {
                 type_list.set(i as u32, *type_);
@@ -168,7 +168,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set contract addresses
-        {
+        if !self.contract_address.is_empty() {
             let mut contract_list = builder
                 .reborrow()
                 .init_contract_address(self.contract_address.len() as u32);
@@ -185,7 +185,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set hashes
-        {
+        if !self.hash.is_empty() {
             let mut hash_list = builder.reborrow().init_hash(self.hash.len() as u32);
             for (i, hash) in self.hash.iter().enumerate() {
                 hash_list.set(i as u32, hash.as_slice());
@@ -193,7 +193,7 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
         }
 
         // Set authorization list
-        {
+        if !self.authorization_list.is_empty() {
             let mut auth_list = builder
                 .reborrow()
                 .init_authorization_list(self.authorization_list.len() as u32);

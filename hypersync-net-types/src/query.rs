@@ -487,10 +487,11 @@ pub mod tests {
         }
 
         println!(
-            "\nBenchmark {}\ncapnp: {}\njson:  {}\n",
+            "\nBenchmark {}\ncapnp: {}\njson:  {}\n capnp-size improv: {}",
             label,
             make_bench(ser_elapsed, deser_elapsed, ser.len()),
             make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len()),
+            (ser_json.len() as f64 / ser.len() as f64)
         );
     }
 

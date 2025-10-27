@@ -23,7 +23,7 @@ impl BuilderReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilt
         builder: &mut hypersync_net_types_capnp::block_filter::Builder,
     ) -> Result<(), capnp::Error> {
         // Set hashes
-        {
+        if !self.hash.is_empty() {
             let mut hash_list = builder.reborrow().init_hash(self.hash.len() as u32);
             for (i, hash) in self.hash.iter().enumerate() {
                 hash_list.set(i as u32, hash.as_slice());
@@ -31,7 +31,7 @@ impl BuilderReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilt
         }
 
         // Set miners
-        {
+        if !self.miner.is_empty() {
             let mut miner_list = builder.reborrow().init_miner(self.miner.len() as u32);
             for (i, miner) in self.miner.iter().enumerate() {
                 miner_list.set(i as u32, miner.as_slice());
