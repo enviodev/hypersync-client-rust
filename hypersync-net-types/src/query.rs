@@ -106,6 +106,28 @@ pub struct FieldSelection {
 }
 
 impl Query {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        // Check compression.rs benchmarks
+        // regulas capnp bytes compresses better with zstd than
+        // capnp packed bytes
+        let capnp_bytes = self
+            .to_capnp_bytes()
+            .map_err(|e| format!("Failed converting query to capnp message: {e}"))?;
+
+        // ZSTD level 6 seems to have the best tradeoffs in terms of achieving
+        // a small payload, and being fast to decode once encoded.
+        let compressed_bytes = zstd::encode_all(capnp_bytes.as_slice(), 6)
+            .map_err(|e| format!("Failed compressing capnp message to bytes: {e}"))?;
+        Ok(compressed_bytes)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+        // Check compression.rs benchmarks
+        let decompressed_bytes = zstd::decode_all(bytes)?;
+        let query = Query::from_capnp_bytes(&decompressed_bytes)?;
+        Ok(query)
+    }
+
     /// Serialize Query to Cap'n Proto format and return as bytes
     pub fn to_capnp_bytes(&self) -> Result<Vec<u8>, capnp::Error> {
         let mut message = Builder::new_default();

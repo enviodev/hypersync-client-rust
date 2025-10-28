@@ -435,7 +435,7 @@ impl Client {
             req = req.bearer_auth(bearer_token);
         }
 
-        let query_bytes = query.to_capnp_bytes().context("serialize query to capnp")?;
+        let query_bytes = query.to_bytes().context("serialize query to bytes")?;
         let res = req
             .header("content-type", "application/x-capnp")
             .body(query_bytes)
