@@ -74,8 +74,7 @@ impl Client {
             .unwrap_or(NonZeroU64::new(30_000).unwrap());
 
         let user_agent = cfg
-            .user_agent()
-            .map(|s| s.to_string())
+            .user_agent
             // hscr stands for hypersync client rust
             .unwrap_or_else(|| format!("hscr/{}", env!("CARGO_PKG_VERSION")));
 

@@ -25,8 +25,9 @@ pub struct ClientConfig {
     #[serde(default)]
     pub serialization_format: SerializationFormat,
     /// Custom user agent string for HTTP requests.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    user_agent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[doc(hidden)]
+    pub user_agent: Option<String>,
 }
 
 impl ClientConfig {
@@ -35,10 +36,6 @@ impl ClientConfig {
     pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
         self
-    }
-
-    pub(crate) fn user_agent(&self) -> Option<&str> {
-        self.user_agent.as_deref()
     }
 }
 
