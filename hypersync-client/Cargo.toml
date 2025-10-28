@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-client"
-version = "0.20.0-rc.1"
+version = "0.20.0-user-agent-1"
 edition = "2021"
 description = "client library for hypersync"
 license = "MPL-2.0"
