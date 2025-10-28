@@ -4,7 +4,7 @@ use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
 use crate::{hypersync_net_types_capnp, BuilderReader};
 use capnp::message::Builder;
-use capnp::{message::ReaderOptions, serialize_packed};
+use capnp::message::ReaderOptions;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -114,14 +114,36 @@ impl Query {
         self.populate_capnp_query(query)?;
 
         let mut buf = Vec::new();
-        serialize_packed::write_message(&mut buf, &message)?;
+        capnp::serialize::write_message(&mut buf, &message)?;
         Ok(buf)
     }
 
-    /// Deserialize Query from Cap'n Proto packed bytes
+    /// Deserialize Query from Cap'n Proto bytes
     pub fn from_capnp_bytes(bytes: &[u8]) -> Result<Self, capnp::Error> {
         let message_reader =
-            serialize_packed::read_message(&mut std::io::Cursor::new(bytes), ReaderOptions::new())?;
+            capnp::serialize::read_message(&mut std::io::Cursor::new(bytes), ReaderOptions::new())?;
+        let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
+
+        Self::from_capnp_query(query)
+    }
+    /// Serialize using packed format (for testing)
+    pub fn to_capnp_bytes_packed(&self) -> Result<Vec<u8>, capnp::Error> {
+        let mut message = Builder::new_default();
+        let query = message.init_root::<hypersync_net_types_capnp::query::Builder>();
+
+        self.populate_capnp_query(query)?;
+
+        let mut buf = Vec::new();
+        capnp::serialize_packed::write_message(&mut buf, &message)?;
+        Ok(buf)
+    }
+
+    /// Deserialize using packed format (for testing)
+    pub fn from_capnp_bytes_packed(bytes: &[u8]) -> Result<Self, capnp::Error> {
+        let message_reader = capnp::serialize_packed::read_message(
+            &mut std::io::Cursor::new(bytes),
+            ReaderOptions::new(),
+        )?;
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
 
         Self::from_capnp_query(query)
@@ -447,79 +469,38 @@ impl Query {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::log::LogFilter;
-
     use super::*;
-    use arrayvec::ArrayVec;
-    use hypersync_format::{Address, FixedSizeData, Hex, LogArgument};
     use pretty_assertions::assert_eq;
 
     pub fn test_query_serde(query: Query, label: &str) {
-        // time start
-        let ser_start = std::time::Instant::now();
-        let ser = query.to_capnp_bytes().unwrap();
-        let ser_elapsed = ser_start.elapsed();
-
-        let deser_start = std::time::Instant::now();
-        let deser = Query::from_capnp_bytes(&ser).unwrap();
-        let deser_elapsed = deser_start.elapsed();
-
-        assert_eq!(query, deser);
-
-        let ser_capnp_zstd_start = std::time::Instant::now();
-        let ser_capnp_zstd =
-            zstd::encode_all(query.to_capnp_bytes().unwrap().as_slice(), 0).unwrap();
-        let ser_capnp_zstd_elapsed = ser_capnp_zstd_start.elapsed();
-
-        let deser_capnp_zstd_start = std::time::Instant::now();
-        let deser_capnp_zstd = zstd::decode_all(ser_capnp_zstd.as_slice()).unwrap();
-        let deser_capnp: Query = Query::from_capnp_bytes(&deser_capnp_zstd).unwrap();
-        let deser_capnp_zstd_elapsed = deser_capnp_zstd_start.elapsed();
-
-        assert_eq!(query, deser_capnp);
-
-        let ser_json_start = std::time::Instant::now();
-        let ser_json = serde_json::to_string(&query).unwrap();
-        let ser_json_elapsed = ser_json_start.elapsed();
-
-        let deser_json_start = std::time::Instant::now();
-        let deser_json: Query = serde_json::from_str(&ser_json).unwrap();
-        let deser_json_elapsed = deser_json_start.elapsed();
-
-        assert_eq!(query, deser_json);
-
-        let ser_zstd_start = std::time::Instant::now();
-        let ser_json = serde_json::to_string(&query).unwrap();
-        let ser_zstd = zstd::encode_all(ser_json.as_bytes(), 0).unwrap();
-        let ser_zstd_elapsed = ser_zstd_start.elapsed();
-
-        let deser_zstd_start = std::time::Instant::now();
-        let deser_zstd = zstd::decode_all(ser_zstd.as_slice()).unwrap();
-        let deser_json: Query =
-            serde_json::from_str(&String::from_utf8(deser_zstd).unwrap()).unwrap();
-        let deser_zstd_elapsed = deser_zstd_start.elapsed();
-        assert_eq!(query, deser_json);
-
-        fn make_bench(
-            ser: std::time::Duration,
-            deser: std::time::Duration,
-            size: usize,
-        ) -> serde_json::Value {
-            serde_json::json!({
-                "ser": ser.as_micros(),
-                "deser": deser.as_micros(),
-                "size": size,
-            })
+        fn test_encode_decode<T: PartialEq + std::fmt::Debug>(
+            input: &T,
+            label: String,
+            encode: impl FnOnce(&T) -> Vec<u8>,
+            decode: impl FnOnce(&[u8]) -> T,
+        ) {
+            let val = encode(input);
+            let decoded = decode(&val);
+            assert_eq!(input, &decoded, "{label} does not match");
         }
 
-        println!(
-            "\nBenchmark {}\ncapnp: {}\njson:  {}\ncapnp-zstd:  {}\njson-zstd:  {}\nzstd-size improv: {}",
-            label,
-            make_bench(ser_elapsed, deser_elapsed, ser.len()),
-            make_bench(ser_json_elapsed, deser_json_elapsed, ser_json.len()),
-            make_bench(ser_capnp_zstd_elapsed, deser_capnp_zstd_elapsed, ser_capnp_zstd.len()),
-            make_bench(ser_zstd_elapsed, deser_zstd_elapsed, ser_zstd.len()),
-            (ser_json.len() as f64 / ser.len() as f64)
+        test_encode_decode(
+            &query,
+            label.to_string() + "-capnp",
+            |q| q.to_capnp_bytes().unwrap(),
+            |bytes| Query::from_capnp_bytes(bytes).unwrap(),
+        );
+        test_encode_decode(
+            &query,
+            label.to_string() + "-capnp-packed",
+            |q| q.to_capnp_bytes_packed().unwrap(),
+            |bytes| Query::from_capnp_bytes_packed(bytes).unwrap(),
+        );
+        test_encode_decode(
+            &query,
+            label.to_string() + "-json",
+            |q| serde_json::to_vec(q).unwrap(),
+            |bytes| serde_json::from_slice(bytes).unwrap(),
         );
     }
 
@@ -567,87 +548,5 @@ pub mod tests {
             join_mode: JoinMode::JoinAll,
         };
         test_query_serde(query, "base query with_non_null_values");
-    }
-
-    fn build_mock_logs(
-        num_contracts: usize,
-        num_topic_0_per_contract: usize,
-        num_addresses_per_contract: usize,
-    ) -> Vec<LogSelection> {
-        fn mock_topic(input_a: usize, input_b: usize) -> FixedSizeData<32> {
-            use sha3::{Digest, Sha3_256};
-            let mut hasher = Sha3_256::new();
-            hasher.update(input_a.to_le_bytes());
-            hasher.update(input_b.to_le_bytes());
-            let result = hasher.finalize();
-            let val: [u8; 32] = result.into();
-            FixedSizeData::from(val)
-        }
-
-        fn mock_address(input_a: usize, input_b: usize) -> Address {
-            let topic = mock_topic(input_a, input_b);
-            let address: [u8; 20] = topic.as_ref()[0..20].try_into().unwrap();
-            Address::from(address)
-        }
-        let mut logs: Vec<LogSelection> = Vec::new();
-
-        for contract_idx in 0..num_contracts {
-            let mut topics = ArrayVec::new();
-            topics.push(vec![]);
-            let mut log_selection = LogFilter {
-                address: vec![],
-                address_filter: None,
-                topics,
-            };
-
-            for topic_idx in 0..num_topic_0_per_contract {
-                log_selection.topics[0].push(mock_topic(contract_idx, topic_idx));
-            }
-
-            for addr_idx in 0..num_addresses_per_contract {
-                let address = mock_address(contract_idx, addr_idx);
-                log_selection.address.push(address);
-            }
-            logs.push(log_selection.into());
-        }
-        logs
-    }
-
-    #[test]
-    pub fn test_huge_payload() {
-        let logs = build_mock_logs(5, 6, 1000);
-
-        let query = Query {
-            from_block: 50,
-            to_block: Some(500),
-            logs,
-            ..Default::default()
-        };
-        test_query_serde(query, "huge payload");
-    }
-    #[test]
-    pub fn test_moderate_payload() {
-        let logs = build_mock_logs(5, 6, 3);
-
-        let query = Query {
-            from_block: 50,
-            to_block: Some(500),
-            logs,
-            ..Default::default()
-        };
-        test_query_serde(query, "moderate payload");
-    }
-
-    #[test]
-    pub fn test_huge_payload_less_contracts() {
-        let logs = build_mock_logs(1, 3, 10000);
-
-        let query = Query {
-            from_block: 50,
-            to_block: Some(500),
-            logs,
-            ..Default::default()
-        };
-        test_query_serde(query, "huge payload less contracts");
     }
 }

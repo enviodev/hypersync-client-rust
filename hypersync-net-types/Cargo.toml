@@ -14,12 +14,17 @@ hypersync-format = { path = "../hypersync-format", version = "0.5" }
 schemars = "1.0.4"
 strum = "0.27.2"
 strum_macros = "0.27.2"
-
+zstd = "0.13.3"
 
 [dev-dependencies]
 hypersync-schema = { path = "../hypersync-schema" }
 serde_json = "1"
 pretty_assertions = "1"
-zstd = "0.13.3"
 sha3 = "0.10.8"
 flate2 = "1.1.5"
+lz4_flex = "0.11.5"
+tabled = "0.20.0"
+
+[[bench]]
+name = "compression"
+harness = false
