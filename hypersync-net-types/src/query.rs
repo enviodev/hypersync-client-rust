@@ -62,7 +62,7 @@ pub struct Query {
     /// Selects join mode for the query,
     /// Default: join in this order logs -> transactions -> traces -> blocks
     /// JoinAll: join everything to everything. For example if logSelection matches log0, we get the
-    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
+    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
     /// to blocks, traces.
     /// JoinNothing: join nothing.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -80,7 +80,7 @@ pub enum JoinMode {
     /// Join in this order logs -> transactions -> traces -> blocks
     Default,
     /// Join everything to everything. For example if logSelection matches log0, we get the
-    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applites similarly
+    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
     /// to blocks, traces.
     JoinAll,
     /// JoinNothing: join nothing.
