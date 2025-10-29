@@ -3,6 +3,7 @@ use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
 use crate::{hypersync_net_types_capnp, BuilderReader};
+use anyhow::Context;
 use capnp::message::Builder;
 use capnp::message::ReaderOptions;
 use serde::{Deserialize, Serialize};
@@ -106,18 +107,18 @@ pub struct FieldSelection {
 }
 
 impl Query {
-    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+    pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         // Check compression.rs benchmarks
         // regulas capnp bytes compresses better with zstd than
         // capnp packed bytes
         let capnp_bytes = self
             .to_capnp_bytes()
-            .map_err(|e| format!("Failed converting query to capnp message: {e}"))?;
+            .context("Failed converting query to capnp message")?;
 
         // ZSTD level 6 seems to have the best tradeoffs in terms of achieving
         // a small payload, and being fast to decode once encoded.
         let compressed_bytes = zstd::encode_all(capnp_bytes.as_slice(), 6)
-            .map_err(|e| format!("Failed compressing capnp message to bytes: {e}"))?;
+            .context("Failed compressing capnp message to bytes")?;
         Ok(compressed_bytes)
     }
 

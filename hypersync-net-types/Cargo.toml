@@ -15,6 +15,7 @@ schemars = "1.0.4"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 zstd = "0.13.3"
+anyhow = "1.0.100"
 
 [dev-dependencies]
 hypersync-schema = { path = "../hypersync-schema" }
