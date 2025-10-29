@@ -90,6 +90,7 @@ pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
             logs,
             traces,
             decoded_logs: Vec::new(),
+            decoded_traces: Vec::new(),
         },
         rollback_guard,
     })
