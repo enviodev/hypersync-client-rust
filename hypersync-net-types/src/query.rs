@@ -314,77 +314,54 @@ impl Query {
         let include_all_blocks = body.get_include_all_blocks();
 
         // Parse field selection
-        let field_selection =
-            if body.has_field_selection() {
-                let fs = body.get_field_selection()?;
+        let field_selection = if body.has_field_selection() {
+            let fs = body.get_field_selection()?;
 
-                let block_fields = if fs.has_block() {
-                    let block_list = fs.get_block()?;
-                    (0..block_list.len())
-                        .map(|i| {
-                            BlockField::from_capnp(
-                                block_list
-                                    .get(i)
-                                    .ok()
-                                    .unwrap_or(hypersync_net_types_capnp::BlockField::Number),
-                            )
-                        })
-                        .collect::<BTreeSet<_>>()
-                } else {
-                    BTreeSet::new()
-                };
-
-                let transaction_fields =
-                    if fs.has_transaction() {
-                        let tx_list = fs.get_transaction()?;
-                        (0..tx_list.len())
-                            .map(|i| {
-                                TransactionField::from_capnp(tx_list.get(i).ok().unwrap_or(
-                                    hypersync_net_types_capnp::TransactionField::BlockHash,
-                                ))
-                            })
-                            .collect::<BTreeSet<_>>()
-                    } else {
-                        BTreeSet::new()
-                    };
-
-                let log_fields =
-                    if fs.has_log() {
-                        let log_list = fs.get_log()?;
-                        (0..log_list.len())
-                            .map(|i| {
-                                LogField::from_capnp(log_list.get(i).ok().unwrap_or(
-                                    hypersync_net_types_capnp::LogField::TransactionHash,
-                                ))
-                            })
-                            .collect::<BTreeSet<_>>()
-                    } else {
-                        BTreeSet::new()
-                    };
-
-                let trace_fields =
-                    if fs.has_trace() {
-                        let trace_list = fs.get_trace()?;
-                        (0..trace_list.len())
-                            .map(|i| {
-                                TraceField::from_capnp(trace_list.get(i).ok().unwrap_or(
-                                    hypersync_net_types_capnp::TraceField::TransactionHash,
-                                ))
-                            })
-                            .collect::<BTreeSet<_>>()
-                    } else {
-                        BTreeSet::new()
-                    };
-
-                FieldSelection {
-                    block: block_fields,
-                    transaction: transaction_fields,
-                    log: log_fields,
-                    trace: trace_fields,
-                }
+            let block_fields = if fs.has_block() {
+                let block_list = fs.get_block()?;
+                (0..block_list.len())
+                    .map(|i| block_list.get(i).map(BlockField::from_capnp))
+                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
             } else {
-                FieldSelection::default()
+                BTreeSet::new()
             };
+
+            let transaction_fields = if fs.has_transaction() {
+                let tx_list = fs.get_transaction()?;
+                (0..tx_list.len())
+                    .map(|i| tx_list.get(i).map(TransactionField::from_capnp))
+                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
+            } else {
+                BTreeSet::new()
+            };
+
+            let log_fields = if fs.has_log() {
+                let log_list = fs.get_log()?;
+                (0..log_list.len())
+                    .map(|i| log_list.get(i).map(LogField::from_capnp))
+                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
+            } else {
+                BTreeSet::new()
+            };
+
+            let trace_fields = if fs.has_trace() {
+                let trace_list = fs.get_trace()?;
+                (0..trace_list.len())
+                    .map(|i| trace_list.get(i).map(TraceField::from_capnp))
+                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
+            } else {
+                BTreeSet::new()
+            };
+
+            FieldSelection {
+                block: block_fields,
+                transaction: transaction_fields,
+                log: log_fields,
+                trace: trace_fields,
+            }
+        } else {
+            FieldSelection::default()
+        };
 
         // Parse max values using OptUInt64
         let max_num_blocks = if body.has_max_num_blocks() {
