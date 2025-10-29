@@ -178,150 +178,148 @@ struct Encoding {
     decode_time: std::time::Duration,
 }
 
-fn benchmark_compression(query: Query, label: &str) -> Vec<Encoding> {
-    use tabled::{Table, Tabled};
+use tabled::{Table, Tabled};
 
-    #[derive(Tabled)]
-    struct EncodingRow {
-        name: String,
-        bytes_len: String,
-        encode_time: String,
-        decode_time: String,
-    }
+#[derive(Tabled)]
+struct EncodingRow {
+    name: String,
+    bytes_len: String,
+    encode_time: String,
+    decode_time: String,
+}
 
-    impl Encoding {
-        fn to_table(rows: Vec<Encoding>) -> Table {
-            let smallest_bytes = rows.iter().map(|r| r.bytes.len()).min().unwrap();
-            let shortest_encode_time = rows.iter().map(|r| r.encode_time).min().unwrap();
-            let shortest_decode_time = rows.iter().map(|r| r.decode_time).min().unwrap();
+impl Encoding {
+    fn to_table(rows: Vec<Encoding>) -> Table {
+        let smallest_bytes = rows.iter().map(|r| r.bytes.len()).min().unwrap();
+        let shortest_encode_time = rows.iter().map(|r| r.encode_time).min().unwrap();
+        let shortest_decode_time = rows.iter().map(|r| r.decode_time).min().unwrap();
 
-            let mut table_rows = Vec::new();
-            for encoding in rows {
-                table_rows.push(encoding.to_encoding_row(
-                    smallest_bytes,
-                    shortest_encode_time,
-                    shortest_decode_time,
-                ));
-            }
-            Table::new(table_rows)
+        let mut table_rows = Vec::new();
+        for encoding in rows {
+            table_rows.push(encoding.to_encoding_row(
+                smallest_bytes,
+                shortest_encode_time,
+                shortest_decode_time,
+            ));
         }
-        fn to_encoding_row(
-            &self,
-            smallest_bytes: usize,
-            shortest_encode_time: Duration,
-            shortest_decode_time: Duration,
-        ) -> EncodingRow {
-            fn percentage_incr(a: f64, b: f64) -> f64 {
-                ((a - b) / b * 100.0).round()
-            }
-            fn add_percentage(val: Duration, lowest: Duration) -> String {
-                if val == lowest {
-                    format!("{val:?}")
-                } else {
-                    let percentage =
-                        percentage_incr(val.as_micros() as f64, lowest.as_micros() as f64);
-                    format!("{val:?} ({percentage}%)")
-                }
-            }
-
-            let bytes_len = if self.bytes.len() == smallest_bytes {
-                format!("{}", self.bytes.len())
+        Table::new(table_rows)
+    }
+    fn to_encoding_row(
+        &self,
+        smallest_bytes: usize,
+        shortest_encode_time: Duration,
+        shortest_decode_time: Duration,
+    ) -> EncodingRow {
+        fn percentage_incr(a: f64, b: f64) -> f64 {
+            ((a - b) / b * 100.0).round()
+        }
+        fn add_percentage(val: Duration, lowest: Duration) -> String {
+            if val == lowest {
+                format!("{val:?}")
             } else {
-                let percentage = percentage_incr(self.bytes.len() as f64, smallest_bytes as f64);
-                format!("{} ({percentage}%)", self.bytes.len())
-            };
-
-            EncodingRow {
-                name: self.name.clone(),
-                bytes_len,
-                encode_time: add_percentage(self.encode_time, shortest_encode_time),
-                decode_time: add_percentage(self.decode_time, shortest_decode_time),
-            }
-        }
-        fn new<T: PartialEq + std::fmt::Debug>(
-            input: &T,
-            name: String,
-            encode: impl FnOnce(&T) -> Vec<u8>,
-            decode: impl FnOnce(&[u8]) -> T,
-        ) -> Encoding {
-            let encode_start = std::time::Instant::now();
-            let val = encode(input);
-            let encode_time = encode_start.elapsed();
-
-            let decode_start = std::time::Instant::now();
-            let decoded = decode(&val);
-            let decode_time = decode_start.elapsed();
-            assert_eq!(input, &decoded);
-
-            Encoding {
-                name,
-                bytes: val,
-                encode_time,
-                decode_time,
+                let percentage = percentage_incr(val.as_micros() as f64, lowest.as_micros() as f64);
+                format!("{val:?} ({percentage}%)")
             }
         }
 
-        fn with_compression(
-            &self,
-            name: &'static str,
-            compress: impl FnOnce(&[u8], u32) -> Vec<u8>,
-            decompress: impl FnOnce(&[u8], u32) -> Vec<u8>,
-            level: u32,
-        ) -> Encoding {
-            let name = format!("{}-{}{}", self.name, name, level);
-            let mut compressed_data = Self::new(
-                &self.bytes,
-                name,
-                |bytes| compress(bytes, level),
-                |bytes| decompress(bytes, level),
-            );
+        let bytes_len = if self.bytes.len() == smallest_bytes {
+            format!("{}", self.bytes.len())
+        } else {
+            let percentage = percentage_incr(self.bytes.len() as f64, smallest_bytes as f64);
+            format!("{} ({percentage}%)", self.bytes.len())
+        };
 
-            compressed_data.encode_time += self.encode_time;
-            compressed_data.decode_time += self.decode_time;
-
-            compressed_data
+        EncodingRow {
+            name: self.name.clone(),
+            bytes_len,
+            encode_time: add_percentage(self.encode_time, shortest_encode_time),
+            decode_time: add_percentage(self.decode_time, shortest_decode_time),
         }
+    }
+    fn new<T: PartialEq + std::fmt::Debug>(
+        input: &T,
+        name: String,
+        encode: impl FnOnce(&T) -> Vec<u8>,
+        decode: impl FnOnce(&[u8]) -> T,
+    ) -> Encoding {
+        let encode_start = std::time::Instant::now();
+        let val = encode(input);
+        let encode_time = encode_start.elapsed();
 
-        fn add_to_table_with_compressions(self, table_vec: &mut Vec<Encoding>) {
-            table_vec.push(self.clone());
+        let decode_start = std::time::Instant::now();
+        let decoded = decode(&val);
+        let decode_time = decode_start.elapsed();
+        assert_eq!(input, &decoded);
 
-            fn zlib_encode(bytes: &[u8], level: u32) -> Vec<u8> {
-                use flate2::{write::ZlibEncoder, Compression};
-                let mut enc = ZlibEncoder::new(Vec::new(), Compression::new(level));
-                enc.write_all(bytes).unwrap();
-                enc.finish().unwrap()
-            }
-            fn zlib_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
-                use flate2::read::ZlibDecoder;
-                let mut dec = ZlibDecoder::new(bytes);
-                let mut buf = Vec::new();
-                dec.read_to_end(&mut buf).unwrap();
-                buf
-            }
-
-            fn zstd_encode(bytes: &[u8], level: u32) -> Vec<u8> {
-                zstd::encode_all(bytes, level as i32).unwrap()
-            }
-            fn zstd_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
-                zstd::decode_all(bytes).unwrap()
-            }
-            table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 3));
-            table_vec.push(self.with_compression("zlib", zlib_encode, zlib_decode, 3));
-            table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 9));
-            table_vec.push(self.with_compression("zlib", zlib_encode, zlib_decode, 9));
-            table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 6));
-            table_vec.push(self.with_compression("lz4", lz4_encode, lz4_decode, 0));
-            table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 12));
-
-            fn lz4_encode(bytes: &[u8], _level: u32) -> Vec<u8> {
-                lz4_flex::compress(bytes)
-            }
-            fn lz4_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
-                lz4_flex::decompress(bytes, u32::MAX as usize).unwrap()
-            }
+        Encoding {
+            name,
+            bytes: val,
+            encode_time,
+            decode_time,
         }
     }
 
+    fn with_compression(
+        &self,
+        name: &'static str,
+        compress: impl FnOnce(&[u8], u32) -> Vec<u8>,
+        decompress: impl FnOnce(&[u8], u32) -> Vec<u8>,
+        level: u32,
+    ) -> Encoding {
+        let name = format!("{}-{}{}", self.name, name, level);
+        let mut compressed_data = Self::new(
+            &self.bytes,
+            name,
+            |bytes| compress(bytes, level),
+            |bytes| decompress(bytes, level),
+        );
+
+        compressed_data.encode_time += self.encode_time;
+        compressed_data.decode_time += self.decode_time;
+
+        compressed_data
+    }
+
+    fn add_to_table_with_compressions(self, table_vec: &mut Vec<Encoding>) {
+        table_vec.push(self.clone());
+
+        fn zlib_encode(bytes: &[u8], level: u32) -> Vec<u8> {
+            use flate2::{write::ZlibEncoder, Compression};
+            let mut enc = ZlibEncoder::new(Vec::new(), Compression::new(level));
+            enc.write_all(bytes).unwrap();
+            enc.finish().unwrap()
+        }
+        fn zlib_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
+            use flate2::read::ZlibDecoder;
+            let mut dec = ZlibDecoder::new(bytes);
+            let mut buf = Vec::new();
+            dec.read_to_end(&mut buf).unwrap();
+            buf
+        }
+
+        fn zstd_encode(bytes: &[u8], level: u32) -> Vec<u8> {
+            zstd::encode_all(bytes, level as i32).unwrap()
+        }
+        fn zstd_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
+            zstd::decode_all(bytes).unwrap()
+        }
+        table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 3));
+        table_vec.push(self.with_compression("zlib", zlib_encode, zlib_decode, 3));
+        table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 9));
+        table_vec.push(self.with_compression("zlib", zlib_encode, zlib_decode, 9));
+        table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 6));
+        table_vec.push(self.with_compression("lz4", lz4_encode, lz4_decode, 0));
+        table_vec.push(self.with_compression("zstd", zstd_encode, zstd_decode, 12));
+
+        fn lz4_encode(bytes: &[u8], _level: u32) -> Vec<u8> {
+            lz4_flex::compress(bytes)
+        }
+        fn lz4_decode(bytes: &[u8], _level: u32) -> Vec<u8> {
+            lz4_flex::decompress(bytes, u32::MAX as usize).unwrap()
+        }
+    }
+}
+fn benchmark_compression(query: Query, label: &str) -> Vec<Encoding> {
     let capnp_packed = {
         fn to_capnp_bytes_packed(query: &Query) -> Vec<u8> {
             query.to_capnp_bytes_packed().unwrap()
@@ -383,5 +381,5 @@ fn benchmark_compression(query: Query, label: &str) -> Vec<Encoding> {
     let table = Encoding::to_table(table_rows.clone());
 
     println!("Benchmark {label}\n{table}\n");
-    return table_rows;
+    table_rows
 }
