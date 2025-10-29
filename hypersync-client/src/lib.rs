@@ -35,7 +35,7 @@ use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::HexOutput;
-pub use config::{ClientConfig, StreamConfig};
+pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
@@ -61,6 +61,8 @@ pub struct Client {
     retry_base_ms: u64,
     /// Ceiling time for request backoff.
     retry_ceiling_ms: u64,
+    /// Query serialization format to use for HTTP requests.
+    serialization_format: SerializationFormat,
 }
 
 impl Client {
@@ -86,6 +88,7 @@ impl Client {
             retry_backoff_ms: cfg.retry_backoff_ms.unwrap_or(500),
             retry_base_ms: cfg.retry_base_ms.unwrap_or(200),
             retry_ceiling_ms: cfg.retry_ceiling_ms.unwrap_or(5_000),
+            serialization_format: cfg.serialization_format,
         })
     }
 
@@ -383,8 +386,8 @@ impl Client {
         ))
     }
 
-    /// Executes query once and returns the result in (Arrow, size) format.
-    async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+    /// Executes query once and returns the result in (Arrow, size) format using JSON serialization.
+    async fn get_arrow_impl_json(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut url = self.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -416,6 +419,56 @@ impl Client {
         })?;
 
         Ok((res, bytes.len().try_into().unwrap()))
+    }
+
+    /// Executes query once and returns the result in (Arrow, size) format using Cap'n Proto serialization.
+    async fn get_arrow_impl_capnp(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+        let mut url = self.url.clone();
+        let mut segments = url.path_segments_mut().ok().context("get path segments")?;
+        segments.push("query");
+        segments.push("arrow-ipc");
+        segments.push("capnp");
+        std::mem::drop(segments);
+        let mut req = self.http_client.request(Method::POST, url);
+
+        if let Some(bearer_token) = &self.bearer_token {
+            req = req.bearer_auth(bearer_token);
+        }
+
+        let query_bytes = query.to_bytes().context("serialize query to bytes")?;
+        let res = req
+            .header("content-type", "application/x-capnp")
+            .body(query_bytes)
+            .send()
+            .await
+            .context("execute http req")?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let text = res.text().await.context("read text to see error")?;
+
+            return Err(anyhow!(
+                "http response status code {}, err body: {}",
+                status,
+                text
+            ));
+        }
+
+        let bytes = res.bytes().await.context("read response body bytes")?;
+
+        let res = tokio::task::block_in_place(|| {
+            parse_query_response(&bytes).context("parse query response")
+        })?;
+
+        Ok((res, bytes.len().try_into().unwrap()))
+    }
+
+    /// Executes query once and returns the result in (Arrow, size) format.
+    async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+        match self.serialization_format {
+            SerializationFormat::Json => self.get_arrow_impl_json(query).await,
+            SerializationFormat::CapnProto => self.get_arrow_impl_capnp(query).await,
+        }
     }
 
     /// Executes query with retries and returns the response in Arrow format.

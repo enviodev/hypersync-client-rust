@@ -21,6 +21,25 @@ pub struct ClientConfig {
     pub retry_base_ms: Option<u64>,
     /// Ceiling time for request backoff.
     pub retry_ceiling_ms: Option<u64>,
+    /// Query serialization format to use for HTTP requests.
+    #[serde(default)]
+    pub serialization_format: SerializationFormat,
+}
+
+/// Determines query serialization format for HTTP requests.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum SerializationFormat {
+    /// Use JSON serialization (default)
+    Json,
+    /// Use Cap'n Proto binary serialization
+    CapnProto,
+}
+
+impl Default for SerializationFormat {
+    fn default() -> Self {
+        // Keep this the default until all hs instances are upgraded to use Cap'n Proto endpoint
+        Self::Json
+    }
 }
 
 /// Config for hypersync event streaming.
