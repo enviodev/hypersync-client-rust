@@ -29,35 +29,13 @@ pub struct BlockRange {
     pub to_block: Option<u64>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Request<T> {
-    #[serde(flatten)]
-    pub block_range: BlockRange,
-    #[serde(flatten)]
-    pub body: T,
-}
-
-pub enum QueryOrId {
-    QueryBody(QueryBody),
-    QueryId(QueryId),
-}
-
-impl From<Query> for Request<QueryOrId> {
-    fn from(query: Query) -> Self {
-        Self {
-            block_range: query.block_range,
-            body: QueryOrId::QueryBody(query.body),
-        }
-    }
-}
-
-impl From<QueryId> for Request<QueryOrId> {
-    fn from(query_id: QueryId) -> Self {
-        Self {
-            block_range: BlockRange::default(),
-            body: QueryOrId::QueryId(query_id),
-        }
-    }
+pub enum Request {
+    QueryBody(Query),
+    QueryId {
+        from_block: u64,
+        to_block: Option<u64>,
+        id: QueryId,
+    },
 }
 
 impl BuilderReader<hypersync_net_types_capnp::query::Owned> for Query {
@@ -66,21 +44,105 @@ impl BuilderReader<hypersync_net_types_capnp::query::Owned> for Query {
         request: &mut hypersync_net_types_capnp::query::Builder,
     ) -> Result<(), capnp::Error> {
         let mut block_range_builder = request.reborrow().init_block_range();
-        self.block_range
-            .populate_builder(&mut block_range_builder)?;
 
-        let mut query_body_builder = request.reborrow().init_body().init_query();
-        self.body.populate_builder(&mut query_body_builder)?;
+        block_range_builder.set_from_block(self.from_block);
+
+        if let Some(to_block) = self.to_block {
+            let mut to_block_builder = block_range_builder.reborrow().init_to_block();
+            to_block_builder.set_value(to_block)
+        }
+
+        let mut query_body = request.reborrow().init_body().init_query();
+
+        query_body
+            .reborrow()
+            .set_include_all_blocks(self.include_all_blocks);
+
+        // Set max nums using OptUInt64
+        if let Some(max_num_blocks) = self.max_num_blocks {
+            let mut max_blocks_builder = query_body.reborrow().init_max_num_blocks();
+            max_blocks_builder.set_value(max_num_blocks as u64);
+        }
+        if let Some(max_num_transactions) = self.max_num_transactions {
+            let mut max_tx_builder = query_body.reborrow().init_max_num_transactions();
+            max_tx_builder.set_value(max_num_transactions as u64);
+        }
+        if let Some(max_num_logs) = self.max_num_logs {
+            let mut max_logs_builder = query_body.reborrow().init_max_num_logs();
+            max_logs_builder.set_value(max_num_logs as u64);
+        }
+        if let Some(max_num_traces) = self.max_num_traces {
+            let mut max_traces_builder = query_body.reborrow().init_max_num_traces();
+            max_traces_builder.set_value(max_num_traces as u64);
+        }
+
+        // Set join mode
+        let join_mode = match self.join_mode {
+            JoinMode::Default => hypersync_net_types_capnp::JoinMode::Default,
+            JoinMode::JoinAll => hypersync_net_types_capnp::JoinMode::JoinAll,
+            JoinMode::JoinNothing => hypersync_net_types_capnp::JoinMode::JoinNothing,
+        };
+        query_body.reborrow().set_join_mode(join_mode);
+
+        // Set field selection
+        {
+            let mut field_selection = query_body.reborrow().init_field_selection();
+            self.field_selection
+                .populate_builder(&mut field_selection)?;
+        }
+
+        // Set logs
+        {
+            let mut logs_list = query_body.reborrow().init_logs(self.logs.len() as u32);
+            for (i, log_selection) in self.logs.iter().enumerate() {
+                let mut log_sel = logs_list.reborrow().get(i as u32);
+                log_selection.populate_builder(&mut log_sel)?;
+            }
+        }
+
+        // Set transactions
+        {
+            let mut tx_list = query_body
+                .reborrow()
+                .init_transactions(self.transactions.len() as u32);
+            for (i, tx_selection) in self.transactions.iter().enumerate() {
+                let mut tx_sel = tx_list.reborrow().get(i as u32);
+                tx_selection.populate_builder(&mut tx_sel)?;
+            }
+        }
+
+        // Set traces
+        {
+            let mut trace_list = query_body.reborrow().init_traces(self.traces.len() as u32);
+            for (i, trace_selection) in self.traces.iter().enumerate() {
+                let mut trace_sel = trace_list.reborrow().get(i as u32);
+                trace_selection.populate_builder(&mut trace_sel)?;
+            }
+        }
+
+        // Set blocks
+        {
+            let mut block_list = query_body.reborrow().init_blocks(self.blocks.len() as u32);
+            for (i, block_selection) in self.blocks.iter().enumerate() {
+                let mut block_sel = block_list.reborrow().get(i as u32);
+                block_selection.populate_builder(&mut block_sel)?;
+            }
+        }
+
         Ok(())
     }
 
-    fn from_reader(
-        request: hypersync_net_types_capnp::query::Reader,
-    ) -> Result<Self, capnp::Error> {
-        let block_range = BlockRange::from_reader(request.get_block_range()?)?;
-        let body = match request.get_body().which()? {
-            hypersync_net_types_capnp::query::body::Which::Query(query) => {
-                QueryBody::from_reader(query?)?
+    fn from_reader(query: hypersync_net_types_capnp::query::Reader) -> Result<Self, capnp::Error> {
+        let block_range = query.get_block_range()?;
+        let from_block = block_range.get_from_block();
+        let to_block = if block_range.has_to_block() {
+            Some(block_range.get_to_block()?.get_value())
+        } else {
+            None
+        };
+        let body_reader = match query.get_body().which()? {
+            hypersync_net_types_capnp::query::body::Which::Query(query_body_reader) => {
+                query_body_reader?
             }
             hypersync_net_types_capnp::query::body::Which::QueryId(_) => {
                 return Err(capnp::Error::failed(
@@ -88,14 +150,118 @@ impl BuilderReader<hypersync_net_types_capnp::query::Owned> for Query {
                 ));
             }
         };
-        Ok(Self { block_range, body })
+
+        let include_all_blocks = body_reader.get_include_all_blocks();
+
+        // Parse field selection
+        let field_selection = if body_reader.has_field_selection() {
+            let fs = body_reader.get_field_selection()?;
+            FieldSelection::from_reader(fs)?
+        } else {
+            FieldSelection::default()
+        };
+
+        // Parse max values using OptUInt64
+        let max_num_blocks = if body_reader.has_max_num_blocks() {
+            let max_blocks_reader = body_reader.get_max_num_blocks()?;
+            let value = max_blocks_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_transactions = if body_reader.has_max_num_transactions() {
+            let max_tx_reader = body_reader.get_max_num_transactions()?;
+            let value = max_tx_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_logs = if body_reader.has_max_num_logs() {
+            let max_logs_reader = body_reader.get_max_num_logs()?;
+            let value = max_logs_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_traces = if body_reader.has_max_num_traces() {
+            let max_traces_reader = body_reader.get_max_num_traces()?;
+            let value = max_traces_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+
+        // Parse join mode
+        let join_mode = match body_reader.get_join_mode()? {
+            hypersync_net_types_capnp::JoinMode::Default => JoinMode::Default,
+            hypersync_net_types_capnp::JoinMode::JoinAll => JoinMode::JoinAll,
+            hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
+        };
+
+        // Parse selections
+        let mut logs = Vec::new();
+        if body_reader.has_logs() {
+            let logs_list = body_reader.get_logs()?;
+            for log_reader in logs_list {
+                logs.push(LogSelection::from_reader(log_reader)?);
+            }
+        }
+
+        let mut transactions = Vec::new();
+        if body_reader.has_transactions() {
+            let tx_list = body_reader.get_transactions()?;
+            for tx_reader in tx_list {
+                transactions.push(TransactionSelection::from_reader(tx_reader)?);
+            }
+        }
+
+        let mut traces = Vec::new();
+        if body_reader.has_traces() {
+            let traces_list = body_reader.get_traces()?;
+            for trace_reader in traces_list {
+                traces.push(TraceSelection::from_reader(trace_reader)?);
+            }
+        }
+
+        let mut blocks = Vec::new();
+        if body_reader.has_blocks() {
+            let blocks_list = body_reader.get_blocks()?;
+            for block_reader in blocks_list {
+                blocks.push(BlockSelection::from_reader(block_reader)?);
+            }
+        }
+
+        Ok(Self {
+            from_block,
+            to_block,
+            logs,
+            transactions,
+            traces,
+            blocks,
+            include_all_blocks,
+            field_selection,
+            max_num_blocks,
+            max_num_transactions,
+            max_num_logs,
+            max_num_traces,
+            join_mode,
+        })
     }
 }
 
-pub type Query = Request<QueryBody>;
-
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct QueryBody {
+pub struct Query {
+    /// The block to start the query from
+    pub from_block: u64,
+    /// The block to end the query at. If not specified, the query will go until the
+    ///  end of data. Exclusive, the returned range will be [from_block..to_block).
+    ///
+    /// The query will return before it reaches this target block if it hits the time limit
+    ///  configured on the server. The user should continue their query by putting the
+    ///  next_block field in the response into from_block field of their next query. This implements
+    ///  pagination.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_block: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub logs: Vec<LogSelection>,
     /// List of transaction selections, the query will return transactions that match any of these selections
@@ -230,217 +396,6 @@ impl Query {
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
 
         Self::from_reader(query)
-    }
-}
-
-impl BuilderReader<hypersync_net_types_capnp::block_range::Owned> for BlockRange {
-    fn populate_builder(
-        &self,
-        block_range_builder: &mut hypersync_net_types_capnp::block_range::Builder,
-    ) -> Result<(), capnp::Error> {
-        block_range_builder.set_from_block(self.from_block);
-
-        if let Some(to_block) = self.to_block {
-            let mut to_block_builder = block_range_builder.reborrow().init_to_block();
-            to_block_builder.set_value(to_block)
-        }
-        Ok(())
-    }
-
-    fn from_reader(
-        block_range: hypersync_net_types_capnp::block_range::Reader,
-    ) -> Result<Self, capnp::Error> {
-        let from_block = block_range.get_from_block();
-        let to_block = if block_range.has_to_block() {
-            Some(block_range.get_to_block()?.get_value())
-        } else {
-            None
-        };
-        Ok(Self {
-            from_block,
-            to_block,
-        })
-    }
-}
-impl BuilderReader<hypersync_net_types_capnp::query_body::Owned> for QueryBody {
-    fn populate_builder(
-        &self,
-        query_body: &mut hypersync_net_types_capnp::query_body::Builder,
-    ) -> Result<(), capnp::Error> {
-        query_body
-            .reborrow()
-            .set_include_all_blocks(self.include_all_blocks);
-
-        // Set max nums using OptUInt64
-        if let Some(max_num_blocks) = self.max_num_blocks {
-            let mut max_blocks_builder = query_body.reborrow().init_max_num_blocks();
-            max_blocks_builder.set_value(max_num_blocks as u64);
-        }
-        if let Some(max_num_transactions) = self.max_num_transactions {
-            let mut max_tx_builder = query_body.reborrow().init_max_num_transactions();
-            max_tx_builder.set_value(max_num_transactions as u64);
-        }
-        if let Some(max_num_logs) = self.max_num_logs {
-            let mut max_logs_builder = query_body.reborrow().init_max_num_logs();
-            max_logs_builder.set_value(max_num_logs as u64);
-        }
-        if let Some(max_num_traces) = self.max_num_traces {
-            let mut max_traces_builder = query_body.reborrow().init_max_num_traces();
-            max_traces_builder.set_value(max_num_traces as u64);
-        }
-
-        // Set join mode
-        let join_mode = match self.join_mode {
-            JoinMode::Default => hypersync_net_types_capnp::JoinMode::Default,
-            JoinMode::JoinAll => hypersync_net_types_capnp::JoinMode::JoinAll,
-            JoinMode::JoinNothing => hypersync_net_types_capnp::JoinMode::JoinNothing,
-        };
-        query_body.reborrow().set_join_mode(join_mode);
-
-        // Set field selection
-        {
-            let mut field_selection = query_body.reborrow().init_field_selection();
-            self.field_selection
-                .populate_builder(&mut field_selection)?;
-        }
-
-        // Set logs
-        {
-            let mut logs_list = query_body.reborrow().init_logs(self.logs.len() as u32);
-            for (i, log_selection) in self.logs.iter().enumerate() {
-                let mut log_sel = logs_list.reborrow().get(i as u32);
-                log_selection.populate_builder(&mut log_sel)?;
-            }
-        }
-
-        // Set transactions
-        {
-            let mut tx_list = query_body
-                .reborrow()
-                .init_transactions(self.transactions.len() as u32);
-            for (i, tx_selection) in self.transactions.iter().enumerate() {
-                let mut tx_sel = tx_list.reborrow().get(i as u32);
-                tx_selection.populate_builder(&mut tx_sel)?;
-            }
-        }
-
-        // Set traces
-        {
-            let mut trace_list = query_body.reborrow().init_traces(self.traces.len() as u32);
-            for (i, trace_selection) in self.traces.iter().enumerate() {
-                let mut trace_sel = trace_list.reborrow().get(i as u32);
-                trace_selection.populate_builder(&mut trace_sel)?;
-            }
-        }
-
-        // Set blocks
-        {
-            let mut block_list = query_body.reborrow().init_blocks(self.blocks.len() as u32);
-            for (i, block_selection) in self.blocks.iter().enumerate() {
-                let mut block_sel = block_list.reborrow().get(i as u32);
-                block_selection.populate_builder(&mut block_sel)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn from_reader(
-        query_body: hypersync_net_types_capnp::query_body::Reader,
-    ) -> Result<Self, capnp::Error> {
-        let include_all_blocks = query_body.get_include_all_blocks();
-
-        // Parse field selection
-        let field_selection = if query_body.has_field_selection() {
-            let fs = query_body.get_field_selection()?;
-            FieldSelection::from_reader(fs)?
-        } else {
-            FieldSelection::default()
-        };
-
-        // Parse max values using OptUInt64
-        let max_num_blocks = if query_body.has_max_num_blocks() {
-            let max_blocks_reader = query_body.get_max_num_blocks()?;
-            let value = max_blocks_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_transactions = if query_body.has_max_num_transactions() {
-            let max_tx_reader = query_body.get_max_num_transactions()?;
-            let value = max_tx_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_logs = if query_body.has_max_num_logs() {
-            let max_logs_reader = query_body.get_max_num_logs()?;
-            let value = max_logs_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_traces = if query_body.has_max_num_traces() {
-            let max_traces_reader = query_body.get_max_num_traces()?;
-            let value = max_traces_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-
-        // Parse join mode
-        let join_mode = match query_body.get_join_mode()? {
-            hypersync_net_types_capnp::JoinMode::Default => JoinMode::Default,
-            hypersync_net_types_capnp::JoinMode::JoinAll => JoinMode::JoinAll,
-            hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
-        };
-
-        // Parse selections
-        let mut logs = Vec::new();
-        if query_body.has_logs() {
-            let logs_list = query_body.get_logs()?;
-            for log_reader in logs_list {
-                logs.push(LogSelection::from_reader(log_reader)?);
-            }
-        }
-
-        let mut transactions = Vec::new();
-        if query_body.has_transactions() {
-            let tx_list = query_body.get_transactions()?;
-            for tx_reader in tx_list {
-                transactions.push(TransactionSelection::from_reader(tx_reader)?);
-            }
-        }
-
-        let mut traces = Vec::new();
-        if query_body.has_traces() {
-            let traces_list = query_body.get_traces()?;
-            for trace_reader in traces_list {
-                traces.push(TraceSelection::from_reader(trace_reader)?);
-            }
-        }
-
-        let mut blocks = Vec::new();
-        if query_body.has_blocks() {
-            let blocks_list = query_body.get_blocks()?;
-            for block_reader in blocks_list {
-                blocks.push(BlockSelection::from_reader(block_reader)?);
-            }
-        }
-
-        Ok(Self {
-            logs,
-            transactions,
-            traces,
-            blocks,
-            include_all_blocks,
-            field_selection,
-            max_num_blocks,
-            max_num_transactions,
-            max_num_logs,
-            max_num_traces,
-            join_mode,
-        })
     }
 }
 

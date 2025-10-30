@@ -80,6 +80,6 @@ async fn main() {
         }
 
         // continue query from next_block
-        query.block_range.from_block = res.next_block;
+        query.from_block = res.next_block;
     }
 }

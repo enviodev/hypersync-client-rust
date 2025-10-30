@@ -42,7 +42,7 @@ pub async fn stream_arrow(
 
     let (tx, rx) = mpsc::channel(concurrency * 2);
 
-    let to_block = match query.block_range.to_block {
+    let to_block = match query.to_block {
         Some(to_block) => to_block,
         None => client.get_height().await.context("get height")?,
     };
@@ -62,7 +62,7 @@ pub async fn stream_arrow(
                         }
                     };
 
-                    query.block_range.from_block = res.next_block;
+                    query.from_block = res.next_block;
                     if tx.send(Ok(res)).await.is_err() {
                         return;
                     }
@@ -74,19 +74,14 @@ pub async fn stream_arrow(
             }
         }
 
-        let range_iter = BlockRangeIterator::new(
-            query.block_range.from_block,
-            to_block,
-            step.clone(),
-            reverse,
-        );
+        let range_iter = BlockRangeIterator::new(query.from_block, to_block, step.clone(), reverse);
 
         let mut futs = range_iter
             .enumerate()
             .map(move |(req_idx, (start, end, generation))| {
                 let mut query = query.clone();
-                query.block_range.from_block = start;
-                query.block_range.to_block = Some(end);
+                query.from_block = start;
+                query.to_block = Some(end);
                 let client = client.clone();
                 async move { (generation, req_idx, run_query_to_end(client, query).await) }
             })
@@ -427,7 +422,7 @@ async fn run_query_to_end(
 ) -> Result<(Vec<ArrowResponse>, u64)> {
     let mut resps = Vec::new();
 
-    let to_block = query.block_range.to_block.unwrap();
+    let to_block = query.to_block.unwrap();
 
     let mut size = 0;
 
@@ -447,7 +442,7 @@ async fn run_query_to_end(
         if next_block >= to_block {
             break;
         } else {
-            query.block_range.from_block = next_block;
+            query.from_block = next_block;
         }
     }
 
