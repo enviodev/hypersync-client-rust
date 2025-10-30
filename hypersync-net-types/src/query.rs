@@ -94,18 +94,6 @@ impl Default for JoinMode {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct FieldSelection {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub block: BTreeSet<BlockField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub transaction: BTreeSet<TransactionField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub log: BTreeSet<LogField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub trace: BTreeSet<TraceField>,
-}
-
 impl Query {
     pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         // Check compression.rs benchmarks
@@ -220,38 +208,8 @@ impl Query {
         // Set field selection
         {
             let mut field_selection = body_builder.reborrow().init_field_selection();
-
-            // Set block fields
-            let mut block_list = field_selection
-                .reborrow()
-                .init_block(self.field_selection.block.len() as u32);
-            for (i, field) in self.field_selection.block.iter().enumerate() {
-                block_list.set(i as u32, field.to_capnp());
-            }
-
-            // Set transaction fields
-            let mut tx_list = field_selection
-                .reborrow()
-                .init_transaction(self.field_selection.transaction.len() as u32);
-            for (i, field) in self.field_selection.transaction.iter().enumerate() {
-                tx_list.set(i as u32, field.to_capnp());
-            }
-
-            // Set log fields
-            let mut log_list = field_selection
-                .reborrow()
-                .init_log(self.field_selection.log.len() as u32);
-            for (i, field) in self.field_selection.log.iter().enumerate() {
-                log_list.set(i as u32, field.to_capnp());
-            }
-
-            // Set trace fields
-            let mut trace_list = field_selection
-                .reborrow()
-                .init_trace(self.field_selection.trace.len() as u32);
-            for (i, field) in self.field_selection.trace.iter().enumerate() {
-                trace_list.set(i as u32, field.to_capnp());
-            }
+            self.field_selection
+                .populate_builder(&mut field_selection)?;
         }
 
         // Set logs
@@ -324,49 +282,7 @@ impl Query {
         // Parse field selection
         let field_selection = if body.has_field_selection() {
             let fs = body.get_field_selection()?;
-
-            let block_fields = if fs.has_block() {
-                let block_list = fs.get_block()?;
-                (0..block_list.len())
-                    .map(|i| block_list.get(i).map(BlockField::from_capnp))
-                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
-            } else {
-                BTreeSet::new()
-            };
-
-            let transaction_fields = if fs.has_transaction() {
-                let tx_list = fs.get_transaction()?;
-                (0..tx_list.len())
-                    .map(|i| tx_list.get(i).map(TransactionField::from_capnp))
-                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
-            } else {
-                BTreeSet::new()
-            };
-
-            let log_fields = if fs.has_log() {
-                let log_list = fs.get_log()?;
-                (0..log_list.len())
-                    .map(|i| log_list.get(i).map(LogField::from_capnp))
-                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
-            } else {
-                BTreeSet::new()
-            };
-
-            let trace_fields = if fs.has_trace() {
-                let trace_list = fs.get_trace()?;
-                (0..trace_list.len())
-                    .map(|i| trace_list.get(i).map(TraceField::from_capnp))
-                    .collect::<Result<BTreeSet<_>, capnp::NotInSchema>>()?
-            } else {
-                BTreeSet::new()
-            };
-
-            FieldSelection {
-                block: block_fields,
-                transaction: transaction_fields,
-                log: log_fields,
-                trace: trace_fields,
-            }
+            FieldSelection::from_reader(fs)?
         } else {
             FieldSelection::default()
         };
@@ -471,6 +387,108 @@ impl Query {
             max_num_logs,
             max_num_traces,
             join_mode,
+        })
+    }
+}
+
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FieldSelection {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub block: BTreeSet<BlockField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub transaction: BTreeSet<TransactionField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub log: BTreeSet<LogField>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub trace: BTreeSet<TraceField>,
+}
+
+impl BuilderReader<hypersync_net_types_capnp::field_selection::Owned> for FieldSelection {
+    fn populate_builder(
+        &self,
+        field_selection: &mut hypersync_net_types_capnp::field_selection::Builder,
+    ) -> Result<(), capnp::Error> {
+        // Set block fields
+        if !self.block.is_empty() {
+            let mut block_list = field_selection
+                .reborrow()
+                .init_block(self.block.len() as u32);
+            for (i, field) in self.block.iter().enumerate() {
+                block_list.set(i as u32, field.to_capnp());
+            }
+        }
+
+        if !self.transaction.is_empty() {
+            // Set transaction fields
+            let mut tx_list = field_selection
+                .reborrow()
+                .init_transaction(self.transaction.len() as u32);
+            for (i, field) in self.transaction.iter().enumerate() {
+                tx_list.set(i as u32, field.to_capnp());
+            }
+        }
+
+        if !self.log.is_empty() {
+            // Set log fields
+            let mut log_list = field_selection.reborrow().init_log(self.log.len() as u32);
+            for (i, field) in self.log.iter().enumerate() {
+                log_list.set(i as u32, field.to_capnp());
+            }
+        }
+
+        if !self.trace.is_empty() {
+            // Set trace fields
+            let mut trace_list = field_selection
+                .reborrow()
+                .init_trace(self.trace.len() as u32);
+            for (i, field) in self.trace.iter().enumerate() {
+                trace_list.set(i as u32, field.to_capnp());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn from_reader(
+        fs: hypersync_net_types_capnp::field_selection::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let mut block_fields = BTreeSet::new();
+        if fs.has_block() {
+            let block_list = fs.get_block()?;
+            for block in block_list {
+                block_fields.insert(BlockField::from_capnp(block?));
+            }
+        }
+
+        let mut transaction_fields = BTreeSet::new();
+        if fs.has_transaction() {
+            let tx_list = fs.get_transaction()?;
+            for tx in tx_list {
+                transaction_fields.insert(TransactionField::from_capnp(tx?));
+            }
+        }
+
+        let mut log_fields = BTreeSet::new();
+        if fs.has_log() {
+            let log_list = fs.get_log()?;
+            for log in log_list {
+                log_fields.insert(LogField::from_capnp(log?));
+            }
+        }
+
+        let mut trace_fields = BTreeSet::new();
+        if fs.has_trace() {
+            let trace_list = fs.get_trace()?;
+            for trace in trace_list {
+                trace_fields.insert(TraceField::from_capnp(trace?));
+            }
+        };
+
+        Ok(FieldSelection {
+            block: block_fields,
+            transaction: transaction_fields,
+            log: log_fields,
+            trace: trace_fields,
         })
     }
 }
