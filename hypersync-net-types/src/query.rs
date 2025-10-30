@@ -12,7 +12,39 @@ use std::collections::BTreeSet;
 
 /// A 128 bit hash of the query body, used as a unique identifier for the query body
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct QueryId(FixedSizeData<16>);
+pub struct QueryId(pub FixedSizeData<16>);
+impl QueryId {
+    pub fn from_query_body_reader(
+        reader: hypersync_net_types_capnp::query_body::Reader<'_>,
+    ) -> Result<QueryId, capnp::Error> {
+        // See https://capnproto.org/encoding.html#canonicalization
+        // we need to ensure the query body is canonicalized for hashing
+        let mut canon_builder = capnp::message::Builder::new_default();
+        canon_builder.set_root_canonical(reader)?;
+
+        let segment = match canon_builder.get_segments_for_output() {
+            capnp::OutputSegments::SingleSegment([segment]) => segment,
+            capnp::OutputSegments::MultiSegment(items) => {
+                return Err(capnp::Error::failed(format!(
+                    "Expected exactly 1 segment, found {}",
+                    items.len(),
+                )))
+            }
+        };
+
+        let hash: u128 = xxhash_rust::xxh3::xxh3_128(segment);
+
+        Ok(QueryId(FixedSizeData::<16>::from(hash.to_be_bytes())))
+    }
+
+    pub fn from_query(query: &Query) -> Result<Self, capnp::Error> {
+        let mut message = Builder::new_default();
+        let mut query_body_builder =
+            message.init_root::<hypersync_net_types_capnp::query_body::Builder>();
+        query_body_builder.build_from_query(query)?;
+        Self::from_query_body_reader(query_body_builder.into_reader())
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
 pub struct BlockRange {
@@ -38,12 +70,6 @@ pub enum Request {
     },
 }
 
-impl Query {
-    fn get_query_id(&self) -> QueryId {
-        todo!()
-    }
-}
-
 impl hypersync_net_types_capnp::block_range::Builder<'_> {
     pub fn set(&mut self, from_block: u64, to_block: Option<u64>) -> Result<(), capnp::Error> {
         self.reborrow().set_from_block(from_block);
@@ -58,28 +84,29 @@ impl hypersync_net_types_capnp::block_range::Builder<'_> {
 }
 
 impl hypersync_net_types_capnp::query::Builder<'_> {
-    pub fn set_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
+    pub fn build_full_query_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
         let mut block_range_builder = self.reborrow().init_block_range();
         block_range_builder.set(query.from_block, query.to_block)?;
 
         let mut query_body_builder = self.reborrow().init_body().init_query();
-        query_body_builder.set(query)?;
+        query_body_builder.build_from_query(query)?;
 
         Ok(())
     }
 
-    pub fn set_query_id(&mut self, query: &Query) -> Result<(), capnp::Error> {
+    pub fn build_query_id_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
         self.reborrow()
             .init_block_range()
             .set(query.from_block, query.to_block)?;
-        let id = query.get_query_id();
+
+        let id = QueryId::from_query(query)?;
         self.reborrow().init_body().set_query_id(id.0.as_slice());
         Ok(())
     }
 }
 
 impl hypersync_net_types_capnp::query_body::Builder<'_> {
-    pub fn set(&mut self, query: &Query) -> Result<(), capnp::Error> {
+    pub fn build_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
         self.reborrow()
             .set_include_all_blocks(query.include_all_blocks);
 
@@ -358,7 +385,6 @@ impl Default for JoinMode {
         Self::Default
     }
 }
-
 impl Query {
     pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
         // Check compression.rs benchmarks
@@ -387,7 +413,7 @@ impl Query {
         let mut message = Builder::new_default();
         let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
 
-        query_builder.set_query(self)?;
+        query_builder.build_full_query_from_query(self)?;
 
         // self.populate_builder(&mut query)?;
 
@@ -409,7 +435,7 @@ impl Query {
         let mut message = Builder::new_default();
         let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
 
-        query_builder.set_query(self)?;
+        query_builder.build_full_query_from_query(self)?;
 
         let mut buf = Vec::new();
         capnp::serialize_packed::write_message(&mut buf, &message)?;
@@ -534,6 +560,8 @@ impl CapnpReader<hypersync_net_types_capnp::field_selection::Owned> for FieldSel
 
 #[cfg(test)]
 pub mod tests {
+    use crate::{BlockFilter, LogFilter};
+
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -613,5 +641,97 @@ pub mod tests {
             join_mode: JoinMode::JoinAll,
         };
         test_query_serde(query, "base query with_non_null_values");
+    }
+
+    #[test]
+    fn test_query_id() {
+        let query = Query {
+            logs: vec![Default::default()].into_iter().collect(),
+            field_selection: FieldSelection {
+                log: LogField::all(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let query_id = QueryId::from_query(&query).unwrap();
+        println!("{query_id:?}");
+    }
+
+    #[test]
+    fn test_needs_canonicalization_for_hashing() {
+        fn add_log_selection(
+            query_body_builder: &mut hypersync_net_types_capnp::query_body::Builder,
+        ) {
+            let mut logs_builder = query_body_builder.reborrow().init_logs(1).get(0);
+            LogSelection::from(LogFilter {
+                address: vec![FixedSizeData::<20>::from([1u8; 20])],
+                ..Default::default()
+            })
+            .populate_builder(&mut logs_builder)
+            .unwrap();
+        }
+        fn add_block_selection(
+            query_body_builder: &mut hypersync_net_types_capnp::query_body::Builder,
+        ) {
+            let mut block_selection_builder = query_body_builder.reborrow().init_blocks(1).get(0);
+            BlockSelection::from(BlockFilter {
+                hash: vec![FixedSizeData::<32>::from([1u8; 32])],
+                ..Default::default()
+            })
+            .populate_builder(&mut block_selection_builder)
+            .unwrap();
+        }
+        let (hash_a, hash_a_canon) = {
+            let mut message = Builder::new_default();
+            let mut query_body_builder =
+                message.init_root::<hypersync_net_types_capnp::query_body::Builder>();
+            add_log_selection(&mut query_body_builder);
+            add_block_selection(&mut query_body_builder);
+
+            let mut message_canon = Builder::new_default();
+            message_canon
+                .set_root_canonical(query_body_builder.into_reader())
+                .unwrap();
+
+            let mut buf = Vec::new();
+            capnp::serialize::write_message(&mut buf, &message).unwrap();
+            let hash = xxhash_rust::xxh3::xxh3_128(&buf);
+            let mut buf = Vec::new();
+            capnp::serialize::write_message(&mut buf, &message_canon).unwrap();
+            let hash_canon = xxhash_rust::xxh3::xxh3_128(&buf);
+            (hash, hash_canon)
+        };
+
+        let (hash_b, hash_b_canon) = {
+            let mut message = Builder::new_default();
+            let mut query_body_builder =
+                message.init_root::<hypersync_net_types_capnp::query_body::Builder>();
+            // Insert block then log (the opposite order), allocater will not canonicalize
+            add_block_selection(&mut query_body_builder);
+            add_log_selection(&mut query_body_builder);
+
+            let mut message_canon = Builder::new_default();
+            message_canon
+                .set_root_canonical(query_body_builder.into_reader())
+                .unwrap();
+
+            let mut buf = Vec::new();
+            capnp::serialize::write_message(&mut buf, &message).unwrap();
+            let hash = xxhash_rust::xxh3::xxh3_128(&buf);
+            let mut buf = Vec::new();
+            capnp::serialize::write_message(&mut buf, &message_canon).unwrap();
+            let hash_canon = xxhash_rust::xxh3::xxh3_128(&buf);
+            (hash, hash_canon)
+        };
+        assert_ne!(
+            hash_a, hash_b,
+            "queries should be different since they are not canonicalized"
+        );
+
+        assert_eq!(
+            hash_a_canon, hash_b_canon,
+            "queries should be the same since they are canonicalized"
+        );
     }
 }
