@@ -120,9 +120,9 @@ impl Query {
     /// Serialize Query to Cap'n Proto format and return as bytes
     pub fn to_capnp_bytes(&self) -> Result<Vec<u8>, capnp::Error> {
         let mut message = Builder::new_default();
-        let query = message.init_root::<hypersync_net_types_capnp::query::Builder>();
+        let mut query = message.init_root::<hypersync_net_types_capnp::query::Builder>();
 
-        self.populate_capnp_query(query)?;
+        self.populate_builder(&mut query)?;
 
         let mut buf = Vec::new();
         capnp::serialize::write_message(&mut buf, &message)?;
@@ -135,14 +135,14 @@ impl Query {
             capnp::serialize::read_message(&mut std::io::Cursor::new(bytes), ReaderOptions::new())?;
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
 
-        Self::from_capnp_query(query)
+        Self::from_reader(query)
     }
     /// Serialize using packed format (for testing)
     pub fn to_capnp_bytes_packed(&self) -> Result<Vec<u8>, capnp::Error> {
         let mut message = Builder::new_default();
-        let query = message.init_root::<hypersync_net_types_capnp::query::Builder>();
+        let mut query = message.init_root::<hypersync_net_types_capnp::query::Builder>();
 
-        self.populate_capnp_query(query)?;
+        self.populate_builder(&mut query)?;
 
         let mut buf = Vec::new();
         capnp::serialize_packed::write_message(&mut buf, &message)?;
@@ -157,12 +157,14 @@ impl Query {
         )?;
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
 
-        Self::from_capnp_query(query)
+        Self::from_reader(query)
     }
+}
 
-    fn populate_capnp_query(
+impl BuilderReader<hypersync_net_types_capnp::query::Owned> for Query {
+    fn populate_builder(
         &self,
-        mut query: hypersync_net_types_capnp::query::Builder,
+        query: &mut hypersync_net_types_capnp::query::Builder,
     ) -> Result<(), capnp::Error> {
         let mut block_range_builder = query.reborrow().init_block_range();
         block_range_builder.set_from_block(self.from_block);
@@ -257,9 +259,7 @@ impl Query {
         Ok(())
     }
 
-    fn from_capnp_query(
-        query: hypersync_net_types_capnp::query::Reader,
-    ) -> Result<Self, capnp::Error> {
+    fn from_reader(query: hypersync_net_types_capnp::query::Reader) -> Result<Self, capnp::Error> {
         let block_range = query.get_block_range()?;
 
         let from_block = block_range.get_from_block();
