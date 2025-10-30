@@ -155,8 +155,8 @@ impl Client {
     ) -> Result<EventResponse> {
         check_simple_stream_params(&config)?;
 
-        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
-        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.body.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.body.field_selection);
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -377,8 +377,8 @@ impl Client {
     /// Add block, transaction and log fields selection to the query, executes it with retries
     /// and returns the response.
     pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
-        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
-        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.body.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.body.field_selection);
         let arrow_response = self.get_arrow(&query).await.context("get data")?;
         Ok(EventResponse::from_arrow_response(
             &arrow_response,
@@ -549,9 +549,9 @@ impl Client {
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
         check_simple_stream_params(&config)?;
 
-        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.body.field_selection);
 
-        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.body.field_selection);
 
         let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
             mpsc::channel(config.concurrency.unwrap_or(10));

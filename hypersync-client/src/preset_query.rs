@@ -5,6 +5,7 @@ use arrayvec::ArrayVec;
 use hypersync_format::{Address, LogArgument};
 use hypersync_net_types::block::BlockField;
 use hypersync_net_types::log::LogField;
+use hypersync_net_types::query::{BlockRange, QueryBody};
 use hypersync_net_types::transaction::TransactionField;
 use hypersync_net_types::{
     FieldSelection, LogFilter, LogSelection, Query, TransactionFilter, TransactionSelection,
@@ -19,16 +20,20 @@ pub fn blocks_and_transactions(from_block: u64, to_block: Option<u64>) -> Query 
     let all_tx_fields = TransactionField::all();
 
     Query {
-        from_block,
-        to_block,
-        include_all_blocks: true,
-        transactions: vec![TransactionSelection::default()],
-        field_selection: FieldSelection {
-            block: all_block_fields,
-            transaction: all_tx_fields,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            include_all_blocks: true,
+            transactions: vec![TransactionSelection::default()],
+            field_selection: FieldSelection {
+                block: all_block_fields,
+                transaction: all_tx_fields,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
 
@@ -46,16 +51,20 @@ pub fn blocks_and_transaction_hashes(from_block: u64, to_block: Option<u64>) -> 
     let all_block_fields = BlockField::all();
 
     Query {
-        from_block,
-        to_block,
-        include_all_blocks: true,
-        transactions: vec![TransactionSelection::default()],
-        field_selection: FieldSelection {
-            block: all_block_fields,
-            transaction: tx_field_selection,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            include_all_blocks: true,
+            transactions: vec![TransactionSelection::default()],
+            field_selection: FieldSelection {
+                block: all_block_fields,
+                transaction: tx_field_selection,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
 
@@ -67,17 +76,21 @@ pub fn logs(from_block: u64, to_block: Option<u64>, contract_address: Address) -
     let all_log_fields = LogField::all();
 
     Query {
-        from_block,
-        to_block,
-        logs: vec![LogSelection::from(LogFilter {
-            address: vec![contract_address],
-            ..Default::default()
-        })],
-        field_selection: FieldSelection {
-            log: all_log_fields,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            logs: vec![LogSelection::from(LogFilter {
+                address: vec![contract_address],
+                ..Default::default()
+            })],
+            field_selection: FieldSelection {
+                log: all_log_fields,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
 
@@ -98,18 +111,22 @@ pub fn logs_of_event(
     let all_log_fields = LogField::all();
 
     Query {
-        from_block,
-        to_block,
-        logs: vec![LogSelection::from(LogFilter {
-            address: vec![contract_address],
-            topics,
-            ..Default::default()
-        })],
-        field_selection: FieldSelection {
-            log: all_log_fields,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            logs: vec![LogSelection::from(LogFilter {
+                address: vec![contract_address],
+                topics,
+                ..Default::default()
+            })],
+            field_selection: FieldSelection {
+                log: all_log_fields,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
 
@@ -121,14 +138,18 @@ pub fn transactions(from_block: u64, to_block: Option<u64>) -> Query {
     let all_txn_fields = TransactionField::all();
 
     Query {
-        from_block,
-        to_block,
-        transactions: vec![TransactionSelection::default()],
-        field_selection: FieldSelection {
-            transaction: all_txn_fields,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            transactions: vec![TransactionSelection::default()],
+            field_selection: FieldSelection {
+                transaction: all_txn_fields,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
 
@@ -144,16 +165,20 @@ pub fn transactions_from_address(
     let all_txn_fields = TransactionField::all();
 
     Query {
-        from_block,
-        to_block,
-        transactions: vec![TransactionSelection::from(TransactionFilter {
-            from: vec![address],
-            ..Default::default()
-        })],
-        field_selection: FieldSelection {
-            transaction: all_txn_fields,
+        block_range: BlockRange {
+            from_block,
+            to_block,
+        },
+        body: QueryBody {
+            transactions: vec![TransactionSelection::from(TransactionFilter {
+                from: vec![address],
+                ..Default::default()
+            })],
+            field_selection: FieldSelection {
+                transaction: all_txn_fields,
+                ..Default::default()
+            },
             ..Default::default()
         },
-        ..Default::default()
     }
 }
