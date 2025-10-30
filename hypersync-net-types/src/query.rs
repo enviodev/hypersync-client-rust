@@ -185,7 +185,7 @@ impl Query {
         }
 
         // Hehe
-        let mut body_builder = query.reborrow().init_body();
+        let mut body_builder = query.reborrow().init_body().init_query();
 
         body_builder
             .reborrow()
@@ -310,7 +310,15 @@ impl Query {
         } else {
             None
         };
-        let body = query.get_body()?;
+        let body = match query.get_body().which()? {
+            hypersync_net_types_capnp::query::body::Which::Query(query) => query?,
+            hypersync_net_types_capnp::query::body::Which::QueryId(_) => {
+                return Err(capnp::Error::unimplemented(
+                    "QueryId not yet implemented".to_string(),
+                ))
+            }
+        };
+
         let include_all_blocks = body.get_include_all_blocks();
 
         // Parse field selection

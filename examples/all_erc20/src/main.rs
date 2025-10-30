@@ -3,7 +3,9 @@
 
 use std::{sync::Arc, time::Instant};
 
-use hypersync_client::{Client, ClientConfig, ColumnMapping, DataType, StreamConfig};
+use hypersync_client::{
+    Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
+};
 use polars_arrow::{
     array::{Array, Float64Array},
     compute,
@@ -15,7 +17,12 @@ async fn main() {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::new(ClientConfig {
+        url: Some("http://localhost:1131".parse().unwrap()),
+        serialization_format: SerializationFormat::CapnProto,
+        ..Default::default()
+    })
+    .unwrap();
 
     let query = serde_json::from_value(serde_json::json!( {
         // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).

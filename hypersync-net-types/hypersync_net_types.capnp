@@ -228,9 +228,13 @@ struct BlockRange {
     toBlock @1 :OptUInt64;
 }
 
+
 struct Query {
     blockRange @0 :BlockRange;
-    body @1 :QueryBody;
+    body :union { 
+        query @1 :QueryBody; 
+        queryId @2 :Data; 
+    }
 }
 
 struct OptUInt64 {
