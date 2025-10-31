@@ -48,11 +48,11 @@ impl<T> From<T> for Selection<T> {
     }
 }
 
-pub(crate) trait CapnpBuilder<O: capnp::traits::Owned> {
+pub trait CapnpBuilder<O: capnp::traits::Owned> {
     fn populate_builder<'a>(&self, builder: &mut O::Builder<'a>) -> Result<(), capnp::Error>;
 }
 
-pub(crate) trait CapnpReader<O: capnp::traits::Owned> {
+pub trait CapnpReader<O: capnp::traits::Owned> {
     fn from_reader<'a>(reader: O::Reader<'a>) -> Result<Self, capnp::Error>
     where
         Self: Sized;
