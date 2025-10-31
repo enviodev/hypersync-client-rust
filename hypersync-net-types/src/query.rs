@@ -22,6 +22,8 @@ impl QueryId {
         let mut canon_builder = capnp::message::Builder::new_default();
         canon_builder.set_root_canonical(reader)?;
 
+        // After canonicalization, there is only one segment.
+        // We can just hash this withouth the segment table
         let segment = match canon_builder.get_segments_for_output() {
             capnp::OutputSegments::SingleSegment([segment]) => segment,
             capnp::OutputSegments::MultiSegment(items) => {

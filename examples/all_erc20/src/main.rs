@@ -19,7 +19,9 @@ async fn main() {
     // create default client, uses eth mainnet
     let client = Client::new(ClientConfig {
         url: Some("http://localhost:1131".parse().unwrap()),
-        serialization_format: SerializationFormat::CapnProto,
+        serialization_format: SerializationFormat::CapnProto {
+            should_cache_queries: true,
+        },
         ..Default::default()
     })
     .unwrap();

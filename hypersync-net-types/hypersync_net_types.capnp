@@ -23,6 +23,13 @@ struct QueryResponse {
     rollbackGuard @4 :RollbackGuard;
 }
 
+struct CachedQueryResponse {
+    either: union {
+        queryResponse @0 :QueryResponse;
+        notCached @1 :Void;
+    }
+}
+
 struct Selection(T) {
     include @0 :T;
     exclude @1 :T;
