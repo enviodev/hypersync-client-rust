@@ -78,23 +78,34 @@ pub enum Request {
 }
 
 impl Request {
-    pub fn from_capnp_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+    pub fn from_capnp_bytes(bytes: &[u8]) -> Result<Self, capnp::Error> {
         let message_reader =
             capnp::serialize_packed::read_message(bytes, capnp::message::ReaderOptions::new())?;
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
+        Request::from_reader(query)
+    }
+}
+
+impl CapnpReader<hypersync_net_types_capnp::query::Owned> for Request {
+    fn from_reader(query: hypersync_net_types_capnp::query::Reader) -> Result<Self, capnp::Error> {
+        let block_range = query.get_block_range()?;
+        let from_block = block_range.get_from_block();
+        let to_block = if block_range.has_to_block() {
+            Some(block_range.get_to_block()?.get_value())
+        } else {
+            None
+        };
+
         match query.get_body().which()? {
-            hypersync_net_types_capnp::query::body::Which::Query(_) => {
-                Ok(Self::QueryBody(Box::new(Query::from_reader(query)?)))
+            hypersync_net_types_capnp::query::body::Which::Query(query_body_reader) => {
+                let body_reader = query_body_reader?;
+                Ok(Self::QueryBody(Box::new(
+                    Query::from_capnp_query_body_reader(&body_reader, from_block, to_block)?,
+                )))
             }
             hypersync_net_types_capnp::query::body::Which::QueryId(id_bytes) => {
-                let id = QueryId::from_bytes(id_bytes?)?;
-                let block_range = query.get_block_range()?;
-                let from_block = block_range.get_from_block();
-                let to_block = if block_range.has_to_block() {
-                    Some(block_range.get_to_block()?.get_value())
-                } else {
-                    None
-                };
+                let id = QueryId::from_bytes(id_bytes?)
+                    .map_err(|_| capnp::Error::failed("Invalid query id bytes".to_string()))?;
 
                 Ok(Self::QueryId {
                     from_block,
@@ -241,101 +252,7 @@ impl CapnpReader<hypersync_net_types_capnp::query::Owned> for Query {
             }
         };
 
-        let include_all_blocks = body_reader.get_include_all_blocks();
-
-        // Parse field selection
-        let field_selection = if body_reader.has_field_selection() {
-            let fs = body_reader.get_field_selection()?;
-            FieldSelection::from_reader(fs)?
-        } else {
-            FieldSelection::default()
-        };
-
-        // Parse max values using OptUInt64
-        let max_num_blocks = if body_reader.has_max_num_blocks() {
-            let max_blocks_reader = body_reader.get_max_num_blocks()?;
-            let value = max_blocks_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_transactions = if body_reader.has_max_num_transactions() {
-            let max_tx_reader = body_reader.get_max_num_transactions()?;
-            let value = max_tx_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_logs = if body_reader.has_max_num_logs() {
-            let max_logs_reader = body_reader.get_max_num_logs()?;
-            let value = max_logs_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-        let max_num_traces = if body_reader.has_max_num_traces() {
-            let max_traces_reader = body_reader.get_max_num_traces()?;
-            let value = max_traces_reader.get_value();
-            Some(value as usize)
-        } else {
-            None
-        };
-
-        // Parse join mode
-        let join_mode = match body_reader.get_join_mode()? {
-            hypersync_net_types_capnp::JoinMode::Default => JoinMode::Default,
-            hypersync_net_types_capnp::JoinMode::JoinAll => JoinMode::JoinAll,
-            hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
-        };
-
-        // Parse selections
-        let mut logs = Vec::new();
-        if body_reader.has_logs() {
-            let logs_list = body_reader.get_logs()?;
-            for log_reader in logs_list {
-                logs.push(LogSelection::from_reader(log_reader)?);
-            }
-        }
-
-        let mut transactions = Vec::new();
-        if body_reader.has_transactions() {
-            let tx_list = body_reader.get_transactions()?;
-            for tx_reader in tx_list {
-                transactions.push(TransactionSelection::from_reader(tx_reader)?);
-            }
-        }
-
-        let mut traces = Vec::new();
-        if body_reader.has_traces() {
-            let traces_list = body_reader.get_traces()?;
-            for trace_reader in traces_list {
-                traces.push(TraceSelection::from_reader(trace_reader)?);
-            }
-        }
-
-        let mut blocks = Vec::new();
-        if body_reader.has_blocks() {
-            let blocks_list = body_reader.get_blocks()?;
-            for block_reader in blocks_list {
-                blocks.push(BlockSelection::from_reader(block_reader)?);
-            }
-        }
-
-        Ok(Self {
-            from_block,
-            to_block,
-            logs,
-            transactions,
-            traces,
-            blocks,
-            include_all_blocks,
-            field_selection,
-            max_num_blocks,
-            max_num_transactions,
-            max_num_logs,
-            max_num_traces,
-            join_mode,
-        })
+        Query::from_capnp_query_body_reader(&body_reader, from_block, to_block)
     }
 }
 
@@ -487,6 +404,108 @@ impl Query {
         let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
 
         Self::from_reader(query)
+    }
+
+    pub fn from_capnp_query_body_reader(
+        query_body_reader: &hypersync_net_types_capnp::query_body::Reader,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> Result<Self, capnp::Error> {
+        let include_all_blocks = query_body_reader.get_include_all_blocks();
+
+        // Parse field selection
+        let field_selection = if query_body_reader.has_field_selection() {
+            let fs = query_body_reader.get_field_selection()?;
+            FieldSelection::from_reader(fs)?
+        } else {
+            FieldSelection::default()
+        };
+
+        // Parse max values using OptUInt64
+        let max_num_blocks = if query_body_reader.has_max_num_blocks() {
+            let max_blocks_reader = query_body_reader.get_max_num_blocks()?;
+            let value = max_blocks_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_transactions = if query_body_reader.has_max_num_transactions() {
+            let max_tx_reader = query_body_reader.get_max_num_transactions()?;
+            let value = max_tx_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_logs = if query_body_reader.has_max_num_logs() {
+            let max_logs_reader = query_body_reader.get_max_num_logs()?;
+            let value = max_logs_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+        let max_num_traces = if query_body_reader.has_max_num_traces() {
+            let max_traces_reader = query_body_reader.get_max_num_traces()?;
+            let value = max_traces_reader.get_value();
+            Some(value as usize)
+        } else {
+            None
+        };
+
+        // Parse join mode
+        let join_mode = match query_body_reader.get_join_mode()? {
+            hypersync_net_types_capnp::JoinMode::Default => JoinMode::Default,
+            hypersync_net_types_capnp::JoinMode::JoinAll => JoinMode::JoinAll,
+            hypersync_net_types_capnp::JoinMode::JoinNothing => JoinMode::JoinNothing,
+        };
+
+        // Parse selections
+        let mut logs = Vec::new();
+        if query_body_reader.has_logs() {
+            let logs_list = query_body_reader.get_logs()?;
+            for log_reader in logs_list {
+                logs.push(LogSelection::from_reader(log_reader)?);
+            }
+        }
+
+        let mut transactions = Vec::new();
+        if query_body_reader.has_transactions() {
+            let tx_list = query_body_reader.get_transactions()?;
+            for tx_reader in tx_list {
+                transactions.push(TransactionSelection::from_reader(tx_reader)?);
+            }
+        }
+
+        let mut traces = Vec::new();
+        if query_body_reader.has_traces() {
+            let traces_list = query_body_reader.get_traces()?;
+            for trace_reader in traces_list {
+                traces.push(TraceSelection::from_reader(trace_reader)?);
+            }
+        }
+
+        let mut blocks = Vec::new();
+        if query_body_reader.has_blocks() {
+            let blocks_list = query_body_reader.get_blocks()?;
+            for block_reader in blocks_list {
+                blocks.push(BlockSelection::from_reader(block_reader)?);
+            }
+        }
+
+        Ok(Self {
+            from_block,
+            to_block,
+            logs,
+            transactions,
+            traces,
+            blocks,
+            include_all_blocks,
+            field_selection,
+            max_num_blocks,
+            max_num_transactions,
+            max_num_logs,
+            max_num_traces,
+            join_mode,
+        })
     }
 }
 
