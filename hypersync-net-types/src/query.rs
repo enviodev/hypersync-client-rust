@@ -14,6 +14,11 @@ use std::collections::BTreeSet;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct QueryId(pub FixedSizeData<16>);
 impl QueryId {
+    pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        let data = FixedSizeData::<16>::try_from(bytes).context("invalid query id length")?;
+        Ok(Self(data))
+    }
+
     pub fn from_query_body_reader(
         reader: hypersync_net_types_capnp::query_body::Reader<'_>,
     ) -> Result<QueryId, capnp::Error> {
@@ -70,6 +75,35 @@ pub enum Request {
         to_block: Option<u64>,
         id: QueryId,
     },
+}
+
+impl Request {
+    pub fn from_capnp_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        let message_reader =
+            capnp::serialize_packed::read_message(bytes, capnp::message::ReaderOptions::new())?;
+        let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
+        match query.get_body().which()? {
+            hypersync_net_types_capnp::query::body::Which::Query(_) => {
+                Ok(Self::QueryBody(Box::new(Query::from_reader(query)?)))
+            }
+            hypersync_net_types_capnp::query::body::Which::QueryId(id_bytes) => {
+                let id = QueryId::from_bytes(id_bytes?)?;
+                let block_range = query.get_block_range()?;
+                let from_block = block_range.get_from_block();
+                let to_block = if block_range.has_to_block() {
+                    Some(block_range.get_to_block()?.get_value())
+                } else {
+                    None
+                };
+
+                Ok(Self::QueryId {
+                    from_block,
+                    to_block,
+                    id,
+                })
+            }
+        }
+    }
 }
 
 impl hypersync_net_types_capnp::block_range::Builder<'_> {
