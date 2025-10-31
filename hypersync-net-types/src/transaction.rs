@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, BuilderReader, Selection};
+use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
 
@@ -57,7 +57,7 @@ pub struct TransactionFilter {
     pub authorization_list: Vec<AuthorizationSelection>,
 }
 
-impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
+impl CapnpBuilder<hypersync_net_types_capnp::authorization_selection::Owned>
     for AuthorizationSelection
 {
     fn populate_builder(
@@ -82,7 +82,11 @@ impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
 
         Ok(())
     }
+}
 
+impl CapnpReader<hypersync_net_types_capnp::authorization_selection::Owned>
+    for AuthorizationSelection
+{
     /// Deserialize AuthorizationSelection from Cap'n Proto reader
     fn from_reader(
         reader: hypersync_net_types_capnp::authorization_selection::Reader,
@@ -114,7 +118,7 @@ impl BuilderReader<hypersync_net_types_capnp::authorization_selection::Owned>
     }
 }
 
-impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for TransactionFilter {
+impl CapnpBuilder<hypersync_net_types_capnp::transaction_filter::Owned> for TransactionFilter {
     fn populate_builder(
         &self,
         builder: &mut hypersync_net_types_capnp::transaction_filter::Builder,
@@ -205,7 +209,9 @@ impl BuilderReader<hypersync_net_types_capnp::transaction_filter::Owned> for Tra
 
         Ok(())
     }
+}
 
+impl CapnpReader<hypersync_net_types_capnp::transaction_filter::Owned> for TransactionFilter {
     /// Deserialize TransactionSelection from Cap'n Proto reader
     fn from_reader(
         reader: hypersync_net_types_capnp::transaction_filter::Reader,

@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, BuilderReader, Selection};
+use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
 use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -17,30 +17,7 @@ pub struct BlockFilter {
     pub miner: Vec<Address>,
 }
 
-impl BuilderReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
-    fn populate_builder(
-        &self,
-        builder: &mut hypersync_net_types_capnp::block_filter::Builder,
-    ) -> Result<(), capnp::Error> {
-        // Set hashes
-        if !self.hash.is_empty() {
-            let mut hash_list = builder.reborrow().init_hash(self.hash.len() as u32);
-            for (i, hash) in self.hash.iter().enumerate() {
-                hash_list.set(i as u32, hash.as_slice());
-            }
-        }
-
-        // Set miners
-        if !self.miner.is_empty() {
-            let mut miner_list = builder.reborrow().init_miner(self.miner.len() as u32);
-            for (i, miner) in self.miner.iter().enumerate() {
-                miner_list.set(i as u32, miner.as_slice());
-            }
-        }
-
-        Ok(())
-    }
-
+impl CapnpReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
     /// Deserialize BlockSelection from Cap'n Proto reader
     fn from_reader(
         reader: hypersync_net_types_capnp::block_filter::Reader,
@@ -76,6 +53,31 @@ impl BuilderReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilt
         }
 
         Ok(Self { hash, miner })
+    }
+}
+
+impl CapnpBuilder<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
+    fn populate_builder(
+        &self,
+        builder: &mut hypersync_net_types_capnp::block_filter::Builder,
+    ) -> Result<(), capnp::Error> {
+        // Set hashes
+        if !self.hash.is_empty() {
+            let mut hash_list = builder.reborrow().init_hash(self.hash.len() as u32);
+            for (i, hash) in self.hash.iter().enumerate() {
+                hash_list.set(i as u32, hash.as_slice());
+            }
+        }
+
+        // Set miners
+        if !self.miner.is_empty() {
+            let mut miner_list = builder.reborrow().init_miner(self.miner.len() as u32);
+            for (i, miner) in self.miner.iter().enumerate() {
+                miner_list.set(i as u32, miner.as_slice());
+            }
+        }
+
+        Ok(())
     }
 }
 

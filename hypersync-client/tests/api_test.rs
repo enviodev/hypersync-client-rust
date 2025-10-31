@@ -538,7 +538,9 @@ async fn test_api_capnp_client() {
     let client = Arc::new(
         Client::new(ClientConfig {
             url: Some("http://localhost:1131".parse().unwrap()),
-            serialization_format: SerializationFormat::CapnProto,
+            serialization_format: SerializationFormat::CapnProto {
+                should_cache_queries: true,
+            },
 
             ..Default::default()
         })

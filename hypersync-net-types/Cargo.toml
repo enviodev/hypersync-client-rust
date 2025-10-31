@@ -16,6 +16,7 @@ strum = "0.27.2"
 strum_macros = "0.27.2"
 zstd = "0.13.3"
 anyhow = "1.0.100"
+xxhash-rust = "0.8.15"
 
 [dev-dependencies]
 hypersync-schema = { path = "../hypersync-schema" }

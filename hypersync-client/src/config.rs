@@ -32,7 +32,10 @@ pub enum SerializationFormat {
     /// Use JSON serialization (default)
     Json,
     /// Use Cap'n Proto binary serialization
-    CapnProto,
+    CapnProto {
+        /// Whether to use query caching
+        should_cache_queries: bool,
+    },
 }
 
 impl Default for SerializationFormat {

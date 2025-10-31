@@ -48,18 +48,20 @@ impl<T> From<T> for Selection<T> {
     }
 }
 
-pub(crate) trait BuilderReader<O: capnp::traits::Owned, E = capnp::Error> {
-    fn populate_builder<'a>(&self, builder: &mut O::Builder<'a>) -> Result<(), E>;
+pub trait CapnpBuilder<O: capnp::traits::Owned> {
+    fn populate_builder<'a>(&self, builder: &mut O::Builder<'a>) -> Result<(), capnp::Error>;
+}
 
-    fn from_reader<'a>(reader: O::Reader<'a>) -> Result<Self, E>
+pub trait CapnpReader<O: capnp::traits::Owned> {
+    fn from_reader<'a>(reader: O::Reader<'a>) -> Result<Self, capnp::Error>
     where
         Self: Sized;
 }
 
-impl<O, T> BuilderReader<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
+impl<O, T> CapnpBuilder<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
 where
     O: capnp::traits::Owned,
-    T: BuilderReader<O, capnp::Error>,
+    T: CapnpBuilder<O>,
 {
     fn populate_builder<'a>(
         &self,
@@ -77,7 +79,13 @@ where
 
         Ok(())
     }
+}
 
+impl<O, T> CapnpReader<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
+where
+    O: capnp::traits::Owned,
+    T: CapnpReader<O>,
+{
     fn from_reader<'a>(
         reader: hypersync_net_types_capnp::selection::Reader<'a, O>,
     ) -> Result<Self, capnp::Error> {

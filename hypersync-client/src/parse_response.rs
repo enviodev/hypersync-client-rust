@@ -26,16 +26,9 @@ fn read_chunks(bytes: &[u8]) -> Result<Vec<ArrowBatch>> {
     Ok(chunks)
 }
 
-pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
-    let mut opts = capnp::message::ReaderOptions::new();
-    opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
-    let message_reader =
-        capnp::serialize_packed::read_message(bytes, opts).context("create message reader")?;
-
-    let query_response = message_reader
-        .get_root::<hypersync_net_types_capnp::query_response::Reader>()
-        .context("get root")?;
-
+pub fn read_query_response(
+    query_response: &hypersync_net_types_capnp::query_response::Reader,
+) -> Result<ArrowResponse> {
     let archive_height = match query_response.get_archive_height() {
         -1 => None,
         h => Some(
@@ -70,12 +63,13 @@ pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
 
     let data = query_response.get_data().context("read data")?;
 
-    let blocks = read_chunks(data.get_blocks().context("get data")?).context("parse block data")?;
-    let transactions =
-        read_chunks(data.get_transactions().context("get data")?).context("parse tx data")?;
-    let logs = read_chunks(data.get_logs().context("get data")?).context("parse log data")?;
+    let blocks =
+        read_chunks(data.get_blocks().context("get block data")?).context("parse block data")?;
+    let transactions = read_chunks(data.get_transactions().context("get transaction data")?)
+        .context("parse tx data")?;
+    let logs = read_chunks(data.get_logs().context("get log data")?).context("parse log data")?;
     let traces = if data.has_traces() {
-        read_chunks(data.get_traces().context("get data")?).context("parse traces data")?
+        read_chunks(data.get_traces().context("get trace data")?).context("parse traces data")?
     } else {
         Vec::new()
     };
@@ -93,4 +87,16 @@ pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
         },
         rollback_guard,
     })
+}
+
+pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
+    let mut opts = capnp::message::ReaderOptions::new();
+    opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
+    let message_reader =
+        capnp::serialize_packed::read_message(bytes, opts).context("create message reader")?;
+
+    let query_response = message_reader
+        .get_root::<hypersync_net_types_capnp::query_response::Reader>()
+        .context("get root")?;
+    read_query_response(&query_response).context("read query response")
 }
