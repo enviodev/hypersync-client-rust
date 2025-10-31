@@ -486,26 +486,17 @@ impl Client {
                 .context("execute http req")?;
 
             let status = res.status();
-            if !status.is_success() {
-                let text = res.text().await.context("read text to see error")?;
+            if status.is_success() {
+                let bytes = res.bytes().await.context("read response body bytes")?;
 
-                return Err(anyhow!(
-                    "http response status code {}, err body: {}",
-                    status,
-                    text
-                ));
-            }
-
-            let bytes = res.bytes().await.context("read response body bytes")?;
-
-            let mut opts = capnp::message::ReaderOptions::new();
-            opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
-            let message_reader = capnp::serialize_packed::read_message(bytes.as_ref(), opts)
-                .context("create message reader")?;
-            let query_response = message_reader
-                .get_root::<hypersync_net_types_capnp::cached_query_response::Reader>()
-                .context("get cached_query_response root")?;
-            match query_response.get_either().which()? {
+                let mut opts = capnp::message::ReaderOptions::new();
+                opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
+                let message_reader = capnp::serialize_packed::read_message(bytes.as_ref(), opts)
+                    .context("create message reader")?;
+                let query_response = message_reader
+                    .get_root::<hypersync_net_types_capnp::cached_query_response::Reader>()
+                    .context("get cached_query_response root")?;
+                match query_response.get_either().which()? {
                 hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
                     query_response,
                 ) => {
@@ -519,6 +510,14 @@ impl Client {
                 hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
                     dbg!("query was not cached");
                 }
+            }
+            } else {
+                let text = res.text().await.context("read text to see error")?;
+                log::error!(
+                    "Failed cache query, will retry full query. {}, err body: {}",
+                    status,
+                    text
+                );
             }
         };
 
