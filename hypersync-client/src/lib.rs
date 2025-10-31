@@ -509,15 +509,15 @@ impl Client {
                 hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
                     query_response,
                 ) => {
-                    log::trace!("query was cached");
+                    dbg!("query was cached");
                     let res = tokio::task::block_in_place(|| {
                         let res = query_response?;
-                        read_query_response(&res).context("parse query response")
+                        read_query_response(&res).context("parse query response cached")
                     })?;
                     return Ok((res, bytes.len().try_into().unwrap()));
                 }
                 hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
-                    log::trace!("query was not cached");
+                    dbg!("query was not cached");
                 }
             }
         };

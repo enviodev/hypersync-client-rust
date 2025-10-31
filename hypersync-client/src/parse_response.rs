@@ -63,12 +63,13 @@ pub fn read_query_response(
 
     let data = query_response.get_data().context("read data")?;
 
-    let blocks = read_chunks(data.get_blocks().context("get data")?).context("parse block data")?;
-    let transactions =
-        read_chunks(data.get_transactions().context("get data")?).context("parse tx data")?;
-    let logs = read_chunks(data.get_logs().context("get data")?).context("parse log data")?;
+    let blocks =
+        read_chunks(data.get_blocks().context("get block data")?).context("parse block data")?;
+    let transactions = read_chunks(data.get_transactions().context("get transaction data")?)
+        .context("parse tx data")?;
+    let logs = read_chunks(data.get_logs().context("get log data")?).context("parse log data")?;
     let traces = if data.has_traces() {
-        read_chunks(data.get_traces().context("get data")?).context("parse traces data")?
+        read_chunks(data.get_traces().context("get trace data")?).context("parse traces data")?
     } else {
         Vec::new()
     };
@@ -97,5 +98,5 @@ pub fn parse_query_response(bytes: &[u8]) -> Result<ArrowResponse> {
     let query_response = message_reader
         .get_root::<hypersync_net_types_capnp::query_response::Reader>()
         .context("get root")?;
-    read_query_response(&query_response)
+    read_query_response(&query_response).context("read query response")
 }

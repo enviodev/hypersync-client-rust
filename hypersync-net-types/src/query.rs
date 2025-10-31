@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 /// A 128 bit hash of the query body, used as a unique identifier for the query body
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QueryId(pub FixedSizeData<16>);
 impl QueryId {
     pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
