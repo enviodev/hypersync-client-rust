@@ -203,6 +203,7 @@ impl fmt::Debug for Quantity {
     }
 }
 
+#[cfg(feature = "arbitrary")]
 impl<'input> arbitrary::Arbitrary<'input> for Quantity {
     fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
         let value = u.arbitrary::<u64>()?;

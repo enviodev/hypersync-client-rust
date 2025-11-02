@@ -20,8 +20,8 @@ use crate::{Error, Result};
     derive_more::Deref,
     derive_more::Add,
     derive_more::Sub,
-    arbitrary::Arbitrary,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TransactionType(pub u8);
 
 struct TransactionTypeVisitor;

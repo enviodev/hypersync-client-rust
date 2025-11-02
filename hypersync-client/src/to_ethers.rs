@@ -1,6 +1,4 @@
 //! This module implement specification for Provider generic from ethers.
-#![cfg(feature = "ethers")]
-
 use crate::simple_types::{Block, Log, Trace, Transaction};
 use ethers;
 use ethers::prelude::{CallResult, CreateResult};
@@ -14,7 +12,7 @@ use ethers::types::{
 use hypersync_format::{AccessList, Address, Data, Hash, Quantity};
 use polars_arrow::array::ViewType;
 use std::default::Default;
-use std::fmt::{Display, Formatter, Write};
+use std::fmt::{Display, Formatter};
 
 /// Error happened during hypersync -> 3rd-party type conversion
 #[derive(Debug, Clone)]
@@ -774,13 +772,7 @@ impl TryFrom<Log> for EtherLog {
             topics: value
                 .topics
                 .into_iter()
-                .filter_map(|topic| {
-                    if let Some(topic) = topic {
-                        Some(topic.into())
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|topic| topic.map(|t| t.into()))
                 .collect::<Vec<H256>>(),
             data: Bytes::from_iter(
                 value

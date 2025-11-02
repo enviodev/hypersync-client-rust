@@ -17,8 +17,8 @@ use std::result::Result as StdResult;
     derive_more::Deref,
     PartialOrd,
     Ord,
-    arbitrary::Arbitrary,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FixedSizeData<const N: usize>(Box<[u8; N]>);
 
 impl<const N: usize> Default for FixedSizeData<N> {

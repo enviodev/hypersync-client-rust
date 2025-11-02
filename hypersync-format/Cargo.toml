@@ -17,7 +17,7 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 nohash-hasher = "0.2.0"
 ethabi = { version = "18.0.0", features = ["parity-codec"], optional = true }
 ethers = { version = "2.0.14", optional = true }
-arbitrary = { version = "1.4.2", features = ["derive"] }
+arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 serde_test = "1"
@@ -28,3 +28,4 @@ bincode = "1"
 
 [features]
 ethers = ["dep:ethers", "dep:ethabi"]
+arbitrary = ["dep:arbitrary"]

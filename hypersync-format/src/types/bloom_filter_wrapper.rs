@@ -62,6 +62,7 @@ impl FilterWrapper {
     }
 }
 
+#[cfg(feature = "arbitrary")]
 impl<'input> arbitrary::Arbitrary<'input> for FilterWrapper {
     fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
         let bits_per_key = u.arbitrary::<usize>()? % 64 + 1;

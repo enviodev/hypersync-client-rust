@@ -25,6 +25,7 @@ pub use withdrawal::Withdrawal;
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct BlockHeader {
     pub number: BlockNumber,
@@ -58,19 +59,12 @@ pub struct BlockHeader {
     pub mix_hash: Option<Hash>,
 }
 
-impl BlockHeader {
-    pub fn arbitrary<'input>(u: &mut arbitrary::Unstructured<'input>, number: ) -> arbitrary::Result<Self> {
-        
-
-        todo!()
-    }
-}
-
 /// Evm block object
 ///
 /// A block will contain a header and either a list of full transaction objects or
 /// a list of only transaction hashes.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct Block<Tx> {
     #[serde(flatten)]
@@ -82,6 +76,7 @@ pub struct Block<Tx> {
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
     pub block_hash: Hash,
@@ -118,6 +113,7 @@ pub struct Transaction {
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct AccessList {
     pub address: Option<Address>,
@@ -128,6 +124,7 @@ pub struct AccessList {
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct Authorization {
     pub chain_id: Quantity,
@@ -142,6 +139,7 @@ pub struct Authorization {
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionReceipt {
     pub transaction_hash: Hash,
@@ -212,10 +210,35 @@ pub struct Log {
     pub block_timestamp: Option<Quantity>,
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'input> arbitrary::Arbitrary<'input> for Log {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
+        let num_topics = u.arbitrary::<u8>()? % 4 + 1;
+        let mut topics = ArrayVec::<LogArgument, 4>::new();
+        for _ in 0..num_topics {
+            topics.push(u.arbitrary()?);
+        }
+
+        Ok(Self {
+            removed: u.arbitrary()?,
+            log_index: u.arbitrary()?,
+            transaction_index: u.arbitrary()?,
+            transaction_hash: u.arbitrary()?,
+            block_hash: u.arbitrary()?,
+            block_number: u.arbitrary()?,
+            address: u.arbitrary()?,
+            data: u.arbitrary()?,
+            topics,
+            block_timestamp: u.arbitrary()?,
+        })
+    }
+}
+
 /// Evm trace object (parity style, returned from trace_block request on RPC)
 ///
 /// See trace_block documentation online for meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct Trace {
     pub action: TraceAction,
@@ -235,6 +258,7 @@ pub struct Trace {
 ///
 /// See trace_block documentation online for meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct TraceAction {
     pub from: Option<Address>,
@@ -256,6 +280,7 @@ pub struct TraceAction {
 ///
 /// See trace_block documentation online for meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct TraceResult {
     pub address: Option<Address>,
@@ -265,6 +290,7 @@ pub struct TraceResult {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct DebugBlockTrace {
     pub result: DebugTxTrace,
@@ -272,6 +298,7 @@ pub struct DebugBlockTrace {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct DebugTxTrace {
     #[serde(rename = "type")]

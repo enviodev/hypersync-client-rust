@@ -8,16 +8,9 @@ use std::result::Result as StdResult;
 use super::Hex;
 
 #[derive(
-    Default,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    derive_more::From,
-    derive_more::Into,
-    derive_more::Deref,
-    arbitrary::Arbitrary,
+    Default, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Data(Box<[u8]>);
 
 impl AsRef<[u8]> for Data {
