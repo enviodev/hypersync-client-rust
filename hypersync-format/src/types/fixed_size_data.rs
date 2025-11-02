@@ -17,6 +17,7 @@ use std::result::Result as StdResult;
     derive_more::Deref,
     PartialOrd,
     Ord,
+    arbitrary::Arbitrary,
 )]
 pub struct FixedSizeData<const N: usize>(Box<[u8; N]>);
 

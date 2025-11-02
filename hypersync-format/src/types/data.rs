@@ -8,7 +8,15 @@ use std::result::Result as StdResult;
 use super::Hex;
 
 #[derive(
-    Default, Clone, PartialEq, Eq, Hash, derive_more::From, derive_more::Into, derive_more::Deref,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    derive_more::From,
+    derive_more::Into,
+    derive_more::Deref,
+    arbitrary::Arbitrary,
 )]
 pub struct Data(Box<[u8]>);
 

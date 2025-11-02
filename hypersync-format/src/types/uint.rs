@@ -19,6 +19,7 @@ use std::str::FromStr;
     derive_more::Deref,
     derive_more::Add,
     derive_more::Sub,
+    arbitrary::Arbitrary,
 )]
 pub struct UInt(u64);
 

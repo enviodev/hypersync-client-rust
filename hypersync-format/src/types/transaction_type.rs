@@ -20,6 +20,7 @@ use crate::{Error, Result};
     derive_more::Deref,
     derive_more::Add,
     derive_more::Sub,
+    arbitrary::Arbitrary,
 )]
 pub struct TransactionType(pub u8);
 

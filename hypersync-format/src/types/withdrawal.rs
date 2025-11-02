@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// Evm withdrawal object
 ///
 /// See ethereum rpc spec for the meaning of fields
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, arbitrary::Arbitrary)]
 #[serde(rename_all = "camelCase")]
 pub struct Withdrawal {
     pub index: Option<Quantity>,

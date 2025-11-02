@@ -62,6 +62,14 @@ impl FilterWrapper {
     }
 }
 
+impl<'input> arbitrary::Arbitrary<'input> for FilterWrapper {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
+        let bits_per_key = u.arbitrary::<usize>()? % 64 + 1;
+        let keys = u.arbitrary_iter()?.map(|k| k.unwrap());
+        Ok(Self::from_keys(keys, Some(bits_per_key)).unwrap())
+    }
+}
+
 // Implement Serialize and Deserialize for FilterWrapper using hex encoding
 impl Serialize for FilterWrapper {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>

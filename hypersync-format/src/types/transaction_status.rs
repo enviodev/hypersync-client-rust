@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 use super::Hex;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, arbitrary::Arbitrary)]
 pub enum TransactionStatus {
     Success,
     Failure,
