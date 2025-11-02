@@ -76,9 +76,10 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     t == &T::default()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Default)]
 pub enum JoinMode {
     /// Join in this order logs -> transactions -> traces -> blocks
+    #[default]
     Default,
     /// Join everything to everything. For example if logSelection matches log0, we get the
     /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
@@ -86,12 +87,6 @@ pub enum JoinMode {
     JoinAll,
     /// JoinNothing: join nothing.
     JoinNothing,
-}
-
-impl Default for JoinMode {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]

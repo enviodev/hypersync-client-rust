@@ -6,7 +6,6 @@
 use hypersync_format::*;
 
 use serde::de::{DeserializeOwned, Error};
-use serde_path_to_error;
 
 pub fn deserialize_with_path<T>(json: &str) -> std::result::Result<T, serde_json::Error>
 where
