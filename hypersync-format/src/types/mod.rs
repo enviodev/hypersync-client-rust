@@ -58,6 +58,14 @@ pub struct BlockHeader {
     pub mix_hash: Option<Hash>,
 }
 
+impl BlockHeader {
+    pub fn arbitrary<'input>(u: &mut arbitrary::Unstructured<'input>, number: ) -> arbitrary::Result<Self> {
+        
+
+        todo!()
+    }
+}
+
 /// Evm block object
 ///
 /// A block will contain a header and either a list of full transaction objects or
