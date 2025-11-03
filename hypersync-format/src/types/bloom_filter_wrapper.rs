@@ -66,8 +66,8 @@ impl FilterWrapper {
 impl<'input> arbitrary::Arbitrary<'input> for FilterWrapper {
     fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
         let bits_per_key = u.arbitrary::<usize>()? % 64 + 1;
-        let keys = u.arbitrary_iter()?.map(|k| k.unwrap());
-        Ok(Self::from_keys(keys, Some(bits_per_key)).unwrap())
+        let keys = u.arbitrary_iter()?.collect::<arbitrary::Result<Vec<_>>>()?;
+        Ok(Self::from_keys(keys.into_iter(), Some(bits_per_key)).unwrap())
     }
 }
 
