@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, BuilderReader, Selection};
+use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +29,7 @@ pub struct TraceFilter {
     pub sighash: Vec<Sighash>,
 }
 
-impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter {
+impl CapnpBuilder<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter {
     fn populate_builder(
         &self,
         builder: &mut hypersync_net_types_capnp::trace_filter::Builder,
@@ -111,7 +111,9 @@ impl BuilderReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilt
 
         Ok(())
     }
+}
 
+impl CapnpReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter {
     /// Deserialize TraceSelection from Cap'n Proto reader
     fn from_reader(
         reader: hypersync_net_types_capnp::trace_filter::Reader,

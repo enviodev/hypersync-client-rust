@@ -772,7 +772,7 @@ impl TryFrom<Log> for EtherLog {
             topics: value
                 .topics
                 .into_iter()
-                .filter_map(|topic| topic.map(|t| t.into()))
+                .filter_map(|topic| topic.map(H256::from))
                 .collect::<Vec<H256>>(),
             data: Bytes::from_iter(
                 value

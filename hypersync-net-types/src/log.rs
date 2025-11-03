@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, BuilderReader, Selection};
+use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub struct LogFilter {
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
 }
 
-impl BuilderReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
+impl CapnpBuilder<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
     fn populate_builder(
         &self,
         builder: &mut hypersync_net_types_capnp::log_filter::Builder,
@@ -52,7 +52,9 @@ impl BuilderReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
 
         Ok(())
     }
+}
 
+impl CapnpReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
     /// Deserialize LogSelection from Cap'n Proto reader
     fn from_reader(
         reader: hypersync_net_types_capnp::log_filter::Reader,

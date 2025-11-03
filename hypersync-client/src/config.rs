@@ -27,13 +27,16 @@ pub struct ClientConfig {
 }
 
 /// Determines query serialization format for HTTP requests.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SerializationFormat {
     /// Use JSON serialization (default)
     #[default]
     Json,
     /// Use Cap'n Proto binary serialization
-    CapnProto,
+    CapnProto {
+        /// Whether to use query caching
+        should_cache_queries: bool,
+    },
 }
 
 /// Config for hypersync event streaming.
@@ -72,7 +75,7 @@ pub struct StreamConfig {
 }
 
 /// Determines format of Binary column
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum HexOutput {
     /// Binary column won't be formatted as hex
     #[default]
