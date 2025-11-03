@@ -456,7 +456,6 @@ impl Client {
 
             let mut req = self.http_client.request(Method::POST, url.clone());
             req = req.header("content-type", "application/x-capnp");
-            req = req.header("x-hypersync-cache-queries", "true");
             if let Some(bearer_token) = &self.bearer_token {
                 req = req.bearer_auth(bearer_token);
             }
