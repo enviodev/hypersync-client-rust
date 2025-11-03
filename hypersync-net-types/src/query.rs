@@ -52,21 +52,6 @@ impl QueryId {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
-pub struct BlockRange {
-    /// The block to start the query from
-    pub from_block: u64,
-    /// The block to end the query at. If not specified, the query will go until the
-    ///  end of data. Exclusive, the returned range will be [from_block..to_block).
-    ///
-    /// The query will return before it reaches this target block if it hits the time limit
-    ///  configured on the server. The user should continue their query by putting the
-    ///  next_block field in the response into from_block field of their next query. This implements
-    ///  pagination.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to_block: Option<u64>,
-}
-
 pub enum Request {
     QueryBody {
         should_cache: bool,
