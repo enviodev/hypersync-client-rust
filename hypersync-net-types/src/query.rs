@@ -5,7 +5,6 @@ use crate::transaction::{TransactionField, TransactionSelection};
 use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
 use anyhow::Context;
 use capnp::message::Builder;
-use capnp::message::ReaderOptions;
 use hypersync_format::FixedSizeData;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -69,7 +68,10 @@ pub struct BlockRange {
 }
 
 pub enum Request {
-    QueryBody(Box<Query>),
+    QueryBody {
+        should_cache: bool,
+        query: Box<Query>,
+    },
     QueryId {
         from_block: u64,
         to_block: Option<u64>,
@@ -99,9 +101,14 @@ impl CapnpReader<hypersync_net_types_capnp::query::Owned> for Request {
         match query.get_body().which()? {
             hypersync_net_types_capnp::query::body::Which::Query(query_body_reader) => {
                 let body_reader = query_body_reader?;
-                Ok(Self::QueryBody(Box::new(
-                    Query::from_capnp_query_body_reader(&body_reader, from_block, to_block)?,
-                )))
+                Ok(Self::QueryBody {
+                    should_cache: query.get_should_cache(),
+                    query: Box::new(Query::from_capnp_query_body_reader(
+                        &body_reader,
+                        from_block,
+                        to_block,
+                    )?),
+                })
             }
             hypersync_net_types_capnp::query::body::Which::QueryId(id_bytes) => {
                 let id = QueryId::from_bytes(id_bytes?)
@@ -131,12 +138,18 @@ impl hypersync_net_types_capnp::block_range::Builder<'_> {
 }
 
 impl hypersync_net_types_capnp::query::Builder<'_> {
-    pub fn build_full_query_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
+    pub fn build_full_query_from_query(
+        &mut self,
+        query: &Query,
+        should_cache: bool,
+    ) -> Result<(), capnp::Error> {
         let mut block_range_builder = self.reborrow().init_block_range();
         block_range_builder.set(query.from_block, query.to_block)?;
 
         let mut query_body_builder = self.reborrow().init_body().init_query();
         query_body_builder.build_from_query(query)?;
+
+        self.set_should_cache(should_cache);
 
         Ok(())
     }
@@ -321,9 +334,10 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
     t == &T::default()
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
 pub enum JoinMode {
     /// Join in this order logs -> transactions -> traces -> blocks
+    #[default]
     Default,
     /// Join everything to everything. For example if logSelection matches log0, we get the
     /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
@@ -333,79 +347,7 @@ pub enum JoinMode {
     JoinNothing,
 }
 
-impl Default for JoinMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
 impl Query {
-    pub fn to_bytes(&self) -> anyhow::Result<Vec<u8>> {
-        // Check compression.rs benchmarks
-        // regulas capnp bytes compresses better with zstd than
-        // capnp packed bytes
-        let capnp_bytes = self
-            .to_capnp_bytes()
-            .context("Failed converting query to capnp message")?;
-
-        // ZSTD level 6 seems to have the best tradeoffs in terms of achieving
-        // a small payload, and being fast to decode once encoded.
-        let compressed_bytes = zstd::encode_all(capnp_bytes.as_slice(), 6)
-            .context("Failed compressing capnp message to bytes")?;
-        Ok(compressed_bytes)
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
-        // Check compression.rs benchmarks
-        let decompressed_bytes = zstd::decode_all(bytes)?;
-        let query = Self::from_capnp_bytes(&decompressed_bytes)?;
-        Ok(query)
-    }
-
-    /// Serialize Query to Cap'n Proto format and return as bytes
-    pub fn to_capnp_bytes(&self) -> Result<Vec<u8>, capnp::Error> {
-        let mut message = Builder::new_default();
-        let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
-
-        query_builder.build_full_query_from_query(self)?;
-
-        // self.populate_builder(&mut query)?;
-
-        let mut buf = Vec::new();
-        capnp::serialize::write_message(&mut buf, &message)?;
-        Ok(buf)
-    }
-
-    /// Deserialize Query from Cap'n Proto bytes
-    pub fn from_capnp_bytes(bytes: &[u8]) -> Result<Self, capnp::Error> {
-        let message_reader =
-            capnp::serialize::read_message(&mut std::io::Cursor::new(bytes), ReaderOptions::new())?;
-        let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
-
-        Self::from_reader(query)
-    }
-    /// Serialize using packed format (for testing)
-    pub fn to_capnp_bytes_packed(&self) -> Result<Vec<u8>, capnp::Error> {
-        let mut message = Builder::new_default();
-        let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
-
-        query_builder.build_full_query_from_query(self)?;
-
-        let mut buf = Vec::new();
-        capnp::serialize_packed::write_message(&mut buf, &message)?;
-        Ok(buf)
-    }
-
-    /// Deserialize using packed format (for testing)
-    pub fn from_capnp_bytes_packed(bytes: &[u8]) -> Result<Self, capnp::Error> {
-        let message_reader = capnp::serialize_packed::read_message(
-            &mut std::io::Cursor::new(bytes),
-            ReaderOptions::new(),
-        )?;
-        let query = message_reader.get_root::<hypersync_net_types_capnp::query::Reader>()?;
-
-        Self::from_reader(query)
-    }
-
     pub fn from_capnp_query_body_reader(
         query_body_reader: &hypersync_net_types_capnp::query_body::Reader,
         from_block: u64,
@@ -618,6 +560,7 @@ pub mod tests {
     use crate::{BlockFilter, LogFilter};
 
     use super::*;
+    use capnp::message::ReaderOptions;
     use pretty_assertions::assert_eq;
 
     pub fn test_query_serde(query: Query, label: &str) {
@@ -632,17 +575,38 @@ pub mod tests {
             assert_eq!(input, &decoded, "{label} does not match");
         }
 
+        fn to_capnp_bytes(query: &Query) -> Vec<u8> {
+            let mut message = Builder::new_default();
+            let mut query_builder =
+                message.init_root::<hypersync_net_types_capnp::query::Builder>();
+
+            query_builder
+                .build_full_query_from_query(query, false)
+                .unwrap();
+
+            let mut buf = Vec::new();
+            capnp::serialize::write_message(&mut buf, &message).unwrap();
+            buf
+        }
+
+        fn from_capnp_bytes(bytes: &[u8]) -> Query {
+            let message_reader = capnp::serialize::read_message(
+                &mut std::io::Cursor::new(bytes),
+                ReaderOptions::new(),
+            )
+            .unwrap();
+            let query = message_reader
+                .get_root::<hypersync_net_types_capnp::query::Reader>()
+                .unwrap();
+
+            Query::from_reader(query).unwrap()
+        }
+
         test_encode_decode(
             &query,
             label.to_string() + "-capnp",
-            |q| q.to_capnp_bytes().unwrap(),
-            |bytes| Query::from_capnp_bytes(bytes).unwrap(),
-        );
-        test_encode_decode(
-            &query,
-            label.to_string() + "-capnp-packed",
-            |q| q.to_capnp_bytes_packed().unwrap(),
-            |bytes| Query::from_capnp_bytes_packed(bytes).unwrap(),
+            to_capnp_bytes,
+            from_capnp_bytes,
         );
         test_encode_decode(
             &query,

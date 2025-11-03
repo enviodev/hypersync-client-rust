@@ -242,6 +242,7 @@ struct Query {
         query @1 :QueryBody; 
         queryId @2 :Data; 
     }
+    shouldCache @3 :Bool;
 }
 
 struct OptUInt64 {

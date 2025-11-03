@@ -14,7 +14,6 @@ hypersync-format = { path = "../hypersync-format", version = "0.5.8" }
 schemars = "1.0.4"
 strum = "0.27.2"
 strum_macros = "0.27.2"
-zstd = "0.13.3"
 anyhow = "1.0.100"
 xxhash-rust = "0.8.15"
 
@@ -25,6 +24,7 @@ pretty_assertions = "1"
 sha3 = "0.10.8"
 flate2 = "1.1.5"
 lz4_flex = "0.11.5"
+zstd = "0.13.3"
 tabled = "0.20.0"
 
 [[bench]]

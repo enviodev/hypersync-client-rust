@@ -73,26 +73,6 @@ impl Client {
             .http_req_timeout_millis
             .unwrap_or(NonZeroU64::new(30_000).unwrap());
 
-        // let mut client_builder = reqwest::Client::builder()
-        //     .no_gzip()
-        //     .timeout(Duration::from_millis(timeout.get()));
-        //
-        // if let SerializationFormat::CapnProto {
-        //     should_cache_queries: true,
-        // } = cfg.serialization_format
-        // {
-        //     let mut default_headers = reqwest::header::HeaderMap::default();
-        //     default_headers.insert(
-        //         "x-hypersync-cache-queries",
-        //         HeaderValue::from_static("true"),
-        //     );
-        //     client_builder.default_headers(default_headers);
-        // }
-        //
-        // if let Some(bearer_token) = &cfg.bearer_token {
-        //     client_builder.bearer_auth(bearer_token);
-        // }
-
         let http_client = reqwest::Client::builder()
             .no_gzip()
             .timeout(Duration::from_millis(timeout.get()))
@@ -460,7 +440,9 @@ impl Client {
         segments.push("capnp");
         std::mem::drop(segments);
 
-        if self.should_cache_queries() {
+        let should_cache = self.should_cache_queries();
+
+        if should_cache {
             let query_with_id = {
                 let mut message = capnp::message::Builder::new_default();
                 let mut query_builder =
@@ -525,7 +507,7 @@ impl Client {
             let mut query_builder =
                 message.init_root::<hypersync_net_types_capnp::query::Builder>();
 
-            query_builder.build_full_query_from_query(query)?;
+            query_builder.build_full_query_from_query(query, should_cache)?;
             let mut bytes = Vec::new();
             capnp::serialize_packed::write_message(&mut bytes, &message)?;
             bytes
@@ -533,9 +515,6 @@ impl Client {
 
         let mut req = self.http_client.request(Method::POST, url);
         req = req.header("content-type", "application/x-capnp");
-        if self.should_cache_queries() {
-            req = req.header("x-hypersync-cache-queries", "true");
-        }
         if let Some(bearer_token) = &self.bearer_token {
             req = req.bearer_auth(bearer_token);
         }
