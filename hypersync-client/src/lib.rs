@@ -3,7 +3,7 @@
 use std::{num::NonZeroU64, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
-use hypersync_net_types::{ArchiveHeight, ChainId, Query};
+use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
 use reqwest::Method;
 
@@ -40,6 +40,7 @@ pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
 
+use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
@@ -421,6 +422,15 @@ impl Client {
         Ok((res, bytes.len().try_into().unwrap()))
     }
 
+    fn should_cache_queries(&self) -> bool {
+        matches!(
+            self.serialization_format,
+            SerializationFormat::CapnProto {
+                should_cache_queries: true
+            }
+        )
+    }
+
     /// Executes query once and returns the result in (Arrow, size) format using Cap'n Proto serialization.
     async fn get_arrow_impl_capnp(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         let mut url = self.url.clone();
@@ -429,16 +439,89 @@ impl Client {
         segments.push("arrow-ipc");
         segments.push("capnp");
         std::mem::drop(segments);
-        let mut req = self.http_client.request(Method::POST, url);
 
+        let should_cache = self.should_cache_queries();
+
+        if should_cache {
+            let query_with_id = {
+                let mut message = capnp::message::Builder::new_default();
+                let mut query_builder =
+                    message.init_root::<hypersync_net_types_capnp::query::Builder>();
+
+                query_builder.build_query_id_from_query(query)?;
+                let mut query_with_id = Vec::new();
+                capnp::serialize_packed::write_message(&mut query_with_id, &message)?;
+                query_with_id
+            };
+
+            let mut req = self.http_client.request(Method::POST, url.clone());
+            req = req.header("content-type", "application/x-capnp");
+            req = req.header("x-hypersync-cache-queries", "true");
+            if let Some(bearer_token) = &self.bearer_token {
+                req = req.bearer_auth(bearer_token);
+            }
+
+            let res = req
+                .body(query_with_id)
+                .send()
+                .await
+                .context("execute http req")?;
+
+            let status = res.status();
+            if status.is_success() {
+                let bytes = res.bytes().await.context("read response body bytes")?;
+
+                let mut opts = capnp::message::ReaderOptions::new();
+                opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
+                let message_reader = capnp::serialize_packed::read_message(bytes.as_ref(), opts)
+                    .context("create message reader")?;
+                let query_response = message_reader
+                    .get_root::<hypersync_net_types_capnp::cached_query_response::Reader>()
+                    .context("get cached_query_response root")?;
+                match query_response.get_either().which()? {
+                hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
+                    query_response,
+                ) => {
+                    let res = tokio::task::block_in_place(|| {
+                        let res = query_response?;
+                        read_query_response(&res).context("parse query response cached")
+                    })?;
+                    return Ok((res, bytes.len().try_into().unwrap()));
+                }
+                hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
+                    log::trace!("query was not cached, retrying with full query");
+                }
+            }
+            } else {
+                let text = res.text().await.context("read text to see error")?;
+                log::error!(
+                    "Failed cache query, will retry full query. {}, err body: {}",
+                    status,
+                    text
+                );
+            }
+        };
+
+        let full_query_bytes = {
+            let mut message = capnp::message::Builder::new_default();
+            let mut query_builder =
+                message.init_root::<hypersync_net_types_capnp::query::Builder>();
+
+            query_builder.build_full_query_from_query(query, should_cache)?;
+            let mut bytes = Vec::new();
+            capnp::serialize_packed::write_message(&mut bytes, &message)?;
+            bytes
+        };
+
+        let mut req = self.http_client.request(Method::POST, url);
+        req = req.header("content-type", "application/x-capnp");
         if let Some(bearer_token) = &self.bearer_token {
             req = req.bearer_auth(bearer_token);
         }
 
-        let query_bytes = query.to_bytes().context("serialize query to bytes")?;
         let res = req
             .header("content-type", "application/x-capnp")
-            .body(query_bytes)
+            .body(full_query_bytes)
             .send()
             .await
             .context("execute http req")?;
@@ -467,7 +550,7 @@ impl Client {
     async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
         match self.serialization_format {
             SerializationFormat::Json => self.get_arrow_impl_json(query).await,
-            SerializationFormat::CapnProto => self.get_arrow_impl_capnp(query).await,
+            SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(query).await,
         }
     }
 

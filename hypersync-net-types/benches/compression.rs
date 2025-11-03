@@ -1,6 +1,10 @@
 use arrayvec::ArrayVec;
+use capnp::message::{HeapAllocator, ReaderOptions};
 use hypersync_format::{Address, FixedSizeData};
-use hypersync_net_types::{log::LogField, FieldSelection, LogFilter, LogSelection, Query};
+use hypersync_net_types::{
+    hypersync_net_types_capnp, log::LogField, CapnpReader, FieldSelection, LogFilter, LogSelection,
+    Query,
+};
 use pretty_assertions::assert_eq;
 use std::{
     collections::HashMap,
@@ -319,37 +323,67 @@ impl Encoding {
         }
     }
 }
+
+fn to_capnp_message(query: &Query) -> capnp::message::Builder<HeapAllocator> {
+    let mut message = capnp::message::Builder::new_default();
+    let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
+    query_builder
+        .build_full_query_from_query(query, false)
+        .unwrap();
+    message
+}
+
+fn to_capnp_bytes(message: capnp::message::Builder<HeapAllocator>) -> Vec<u8> {
+    let mut buf = Vec::new();
+    capnp::serialize::write_message(&mut buf, &message).unwrap();
+    buf
+}
+
+fn to_capnp_bytes_packed(message: capnp::message::Builder<HeapAllocator>) -> Vec<u8> {
+    let mut buf = Vec::new();
+    capnp::serialize_packed::write_message(&mut buf, &message).unwrap();
+    buf
+}
+
+fn from_capnp_bytes(bytes: &[u8]) -> Query {
+    let message_reader = capnp::serialize::read_message(bytes, ReaderOptions::new()).unwrap();
+    let query = message_reader
+        .get_root::<hypersync_net_types_capnp::query::Reader>()
+        .unwrap();
+    Query::from_reader(query).unwrap()
+}
+
+fn from_capnp_bytes_packed(bytes: &[u8]) -> Query {
+    let message_reader =
+        capnp::serialize_packed::read_message(bytes, ReaderOptions::new()).unwrap();
+    let query = message_reader
+        .get_root::<hypersync_net_types_capnp::query::Reader>()
+        .unwrap();
+    Query::from_reader(query).unwrap()
+}
 fn benchmark_compression(query: Query, label: &str) -> Vec<Encoding> {
     let capnp_packed = {
-        fn to_capnp_bytes_packed(query: &Query) -> Vec<u8> {
-            query.to_capnp_bytes_packed().unwrap()
-        }
-
-        fn from_capnp_bytes_packed(bytes: &[u8]) -> Query {
-            Query::from_capnp_bytes_packed(bytes).unwrap()
+        fn as_capnp_bytes_packed(query: &Query) -> Vec<u8> {
+            to_capnp_bytes_packed(to_capnp_message(query))
         }
 
         Encoding::new(
             &query,
             "capnp-packed".to_string(),
-            to_capnp_bytes_packed,
+            as_capnp_bytes_packed,
             from_capnp_bytes_packed,
         )
     };
 
     let capnp = {
-        fn to_capnp_bytes(query: &Query) -> Vec<u8> {
-            query.to_capnp_bytes().unwrap()
-        }
-
-        fn from_capnp_bytes(bytes: &[u8]) -> Query {
-            Query::from_capnp_bytes(bytes).unwrap()
+        fn as_capnp_bytes(query: &Query) -> Vec<u8> {
+            to_capnp_bytes(to_capnp_message(query))
         }
 
         Encoding::new(
             &query,
             "capnp".to_string(),
-            to_capnp_bytes,
+            as_capnp_bytes,
             from_capnp_bytes,
         )
     };
