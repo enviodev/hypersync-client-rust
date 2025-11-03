@@ -9,67 +9,6 @@ use hypersync_format::FixedSizeData;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Query {
-    /// The block to start the query from
-    pub from_block: u64,
-    /// The block to end the query at. If not specified, the query will go until the
-    ///  end of data. Exclusive, the returned range will be [from_block..to_block).
-    ///
-    /// The query will return before it reaches this target block if it hits the time limit
-    ///  configured on the server. The user should continue their query by putting the
-    ///  next_block field in the response into from_block field of their next query. This implements
-    ///  pagination.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to_block: Option<u64>,
-    /// List of log selections, these have an OR relationship between them, so the query will return logs
-    /// that match any of these selections.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub logs: Vec<LogSelection>,
-    /// List of transaction selections, the query will return transactions that match any of these selections
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub transactions: Vec<TransactionSelection>,
-    /// List of trace selections, the query will return traces that match any of these selections
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub traces: Vec<TraceSelection>,
-    /// List of block selections, the query will return blocks that match any of these selections
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub blocks: Vec<BlockSelection>,
-    /// Weather to include all blocks regardless of if they are related to a returned transaction or log. Normally
-    ///  the server will return only the blocks that are related to the transaction or logs in the response. But if this
-    ///  is set to true, the server will return data for all blocks in the requested range [from_block, to_block).
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub include_all_blocks: bool,
-    /// Field selection. The user can select which fields they are interested in, requesting less fields will improve
-    ///  query execution time and reduce the payload size so the user should always use a minimal number of fields.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub field_selection: FieldSelection,
-    /// Maximum number of blocks that should be returned, the server might return more blocks than this number but
-    ///  it won't overshoot by too much.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_num_blocks: Option<usize>,
-    /// Maximum number of transactions that should be returned, the server might return more transactions than this number but
-    ///  it won't overshoot by too much.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_num_transactions: Option<usize>,
-    /// Maximum number of logs that should be returned, the server might return more logs than this number but
-    ///  it won't overshoot by too much.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_num_logs: Option<usize>,
-    /// Maximum number of traces that should be returned, the server might return more traces than this number but
-    ///  it won't overshoot by too much.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_num_traces: Option<usize>,
-    /// Selects join mode for the query,
-    /// Default: join in this order logs -> transactions -> traces -> blocks
-    /// JoinAll: join everything to everything. For example if logSelection matches log0, we get the
-    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
-    /// to blocks, traces.
-    /// JoinNothing: join nothing.
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub join_mode: JoinMode,
-}
-
 /// Used to skip serializing a defaulted serde field if
 /// the value matches the default value.
 fn is_default<T: Default + PartialEq>(t: &T) -> bool {
