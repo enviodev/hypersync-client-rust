@@ -9,36 +9,6 @@ use hypersync_format::FixedSizeData;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-/// Used to skip serializing a defaulted serde field if
-/// the value matches the default value.
-fn is_default<T: Default + PartialEq>(t: &T) -> bool {
-    t == &T::default()
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy, Default)]
-pub enum JoinMode {
-    /// Join in this order logs -> transactions -> traces -> blocks
-    #[default]
-    Default,
-    /// Join everything to everything. For example if logSelection matches log0, we get the
-    /// associated transaction of log0 and then we get associated logs of that transaction as well. Applies similarly
-    /// to blocks, traces.
-    JoinAll,
-    /// JoinNothing: join nothing.
-    JoinNothing,
-}
-
-#[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct FieldSelection {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub block: BTreeSet<BlockField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub transaction: BTreeSet<TransactionField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub log: BTreeSet<LogField>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub trace: BTreeSet<TraceField>,
-}
 /// A 128 bit hash of the query body, used as a unique identifier for the query body
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct QueryId(pub FixedSizeData<16>);
