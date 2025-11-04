@@ -13,6 +13,7 @@ struct Input {
     trace: f::Trace,
 }
 
+// Test if roundtripping the data through bincode produces same results
 fuzz_target!(|data: Input| {
     let bin = bincode::serialize(&data).unwrap();
 

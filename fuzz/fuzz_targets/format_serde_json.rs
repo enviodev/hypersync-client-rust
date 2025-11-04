@@ -13,6 +13,7 @@ struct Input {
     trace: f::Trace,
 }
 
+// Test if roundtripping the data through json produces same results
 fuzz_target!(|data: Input| {
     let json = serde_json::to_vec(&data).unwrap();
 
