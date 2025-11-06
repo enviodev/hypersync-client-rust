@@ -703,6 +703,12 @@ struct HeightSsePayloadJson {
 const INITIAL_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 const MAX_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
 const MAX_CONNECTION_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+/// Timeout for detecting dead connections. Server sends keepalive pings every 5s (when idle),
+/// so we timeout after 15s (3x the ping interval) if no data is received.
+/// This allows the client to detect server crashes that don't trigger graceful shutdown.
+/// Note: The server uses smart keepalive - it only pings when no height updates occur,
+/// so active chains won't generate unnecessary pings.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 impl Client {
     /// Streams latest archive height updates from the server using the `/height/sse` SSE endpoint.
@@ -824,9 +830,24 @@ impl Client {
 
                         // Main message processing loop - runs until the connection drops
                         while connection_active {
-                            match byte_stream.next().await {
+                            // Wait for next chunk with timeout to detect dead connections.
+                            // Server sends keepalive pings every 20s, so if we don't receive
+                            // ANY data (including pings) within 60s, the connection is dead.
+                            let next_chunk =
+                                tokio::time::timeout(READ_TIMEOUT, byte_stream.next()).await;
+
+                            match next_chunk {
+                                // === Timeout: no data received within READ_TIMEOUT ===
+                                Err(_) => {
+                                    log::warn!(
+                                        "⏱️  No data received for {:?}, connection appears dead",
+                                        READ_TIMEOUT
+                                    );
+                                    connection_active = false;
+                                }
+
                                 // === Successfully received bytes from the stream ===
-                                Some(Ok(bytes)) => {
+                                Ok(Some(Ok(bytes))) => {
                                     log::trace!(
                                         "📦 Received {} bytes from SSE stream",
                                         bytes.len()
@@ -926,14 +947,14 @@ impl Client {
                                 }
 
                                 // === Stream error occurred (network issue, timeout, etc.) ===
-                                Some(Err(e)) => {
+                                Ok(Some(Err(e))) => {
                                     log::warn!("⚠️  SSE stream error: {:?}", e);
                                     connection_active = false; // Exit loop and reconnect
                                 }
 
                                 // === Stream ended (server closed the connection) ===
                                 // This happens during server restarts, shutdowns, or SIGTERM simulation
-                                None => {
+                                Ok(None) => {
                                     log::info!("🔌 SSE stream closed by server, will reconnect");
                                     connection_active = false; // Exit loop and reconnect
                                 }
