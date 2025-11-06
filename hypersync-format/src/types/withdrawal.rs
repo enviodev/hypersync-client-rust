@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// See ethereum rpc spec for the meaning of fields
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 #[serde(rename_all = "camelCase")]
 pub struct Withdrawal {
     pub index: Option<Quantity>,

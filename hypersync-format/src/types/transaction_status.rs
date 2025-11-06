@@ -8,6 +8,7 @@ use std::str::FromStr;
 use super::Hex;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TransactionStatus {
     Success,
     Failure,

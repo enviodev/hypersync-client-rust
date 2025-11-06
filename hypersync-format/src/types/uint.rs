@@ -20,6 +20,7 @@ use std::str::FromStr;
     derive_more::Add,
     derive_more::Sub,
 )]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct UInt(u64);
 
 impl FromStr for UInt {

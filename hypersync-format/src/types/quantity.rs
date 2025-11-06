@@ -203,6 +203,16 @@ impl fmt::Debug for Quantity {
     }
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'input> arbitrary::Arbitrary<'input> for Quantity {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
+        let value = u.arbitrary::<u64>()?;
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Quantity;
