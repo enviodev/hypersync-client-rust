@@ -128,6 +128,14 @@ impl<const N: usize> std::str::FromStr for FixedSizeData<N> {
     }
 }
 
+impl<const N: usize> TryFrom<&str> for FixedSizeData<N> {
+    type Error = Error;
+
+    fn try_from(s: &str) -> StdResult<Self, Self::Error> {
+        std::str::FromStr::from_str(s)
+    }
+}
+
 impl<const N: usize> fmt::Display for FixedSizeData<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Reuse your existing `encode_hex` function for printing

@@ -1,9 +1,21 @@
 use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
+use anyhow::Context;
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
 use serde::{Deserialize, Serialize};
 
 pub type LogSelection = Selection<LogFilter>;
+
+impl LogSelection {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn add_address(mut self, address: Address) -> Self {
+        self.include.address.push(address);
+        self
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct LogFilter {
@@ -17,6 +29,94 @@ pub struct LogFilter {
     ///  topic specified in nth element of topics, the log will be returned. Empty means match all.
     #[serde(default, skip_serializing_if = "ArrayVec::is_empty")]
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
+}
+
+impl LogFilter {
+    /// Base filter to match all logs
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid address at position {idx}"))?,
+            );
+        }
+        self.address = converted_addresses;
+        Ok(self)
+    }
+
+    fn topic_any<I, T>(mut self, topic_idx: usize, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        if topic_idx > 3 {
+            anyhow::bail!("topic index should not be greater than 3");
+        }
+
+        if self.topics.len() <= topic_idx {
+            for _ in 0..=(topic_idx - self.topics.len()) {
+                self.topics.push(Vec::new());
+            }
+        }
+        let topic_selection = self
+            .topics
+            .get_mut(topic_idx)
+            .expect("topic should exist from previous check");
+        topic_selection.clear();
+        for (idx, topic) in topics.into_iter().enumerate() {
+            topic_selection.push(
+                topic
+                    .try_into()
+                    .with_context(|| format!("invalid topic at position {idx}"))?,
+            );
+        }
+        Ok(self)
+    }
+
+    pub fn topic0_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.topic_any(0, topics)
+    }
+    pub fn topic1_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.topic_any(1, topics)
+    }
+    pub fn topic2_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.topic_any(2, topics)
+    }
+    pub fn topic3_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.topic_any(3, topics)
+    }
 }
 
 impl CapnpBuilder<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
@@ -293,5 +393,51 @@ mod tests {
         };
 
         test_query_serde(query, "log selection with full values");
+    }
+
+    #[test]
+    fn test_log_filter_builder() -> anyhow::Result<()> {
+        let lf = LogFilter::new()
+            .address_any([
+                "0xdadB0d80178819F2319190D340ce9A924f783711",
+                "0xdadB0d80178819F2319190D340ce9A924f783712",
+            ])?
+            .topic0_any([
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            ])?;
+
+        assert_eq!(lf.address.len(), 2);
+        assert_eq!(lf.topics.len(), 1);
+        assert_eq!(lf.topics[0].len(), 2);
+        assert_eq!(lf.address_filter, None);
+
+        let lf =
+            lf.topic0_any(["0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"])?;
+        assert_eq!(
+            lf.topics[0].len(),
+            1,
+            "shoul overwrite previous topic0 selection"
+        );
+
+        let lf = lf.topic3_any([
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        ])?;
+
+        assert_eq!(lf.topics[3].len(), 2, "should have correctly added topic3");
+        assert_eq!(
+            lf.topics[2].len(),
+            0,
+            "should have added empty topics before the first non-empty topic"
+        );
+        assert_eq!(
+            lf.topics[1].len(),
+            0,
+            "should have added empty topics before the first non-empty topic"
+        );
+        assert_eq!(lf.topics[0].len(), 1, "topic0 should not have been changed");
+
+        Ok(())
     }
 }
