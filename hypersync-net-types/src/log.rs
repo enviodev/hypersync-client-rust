@@ -6,17 +6,6 @@ use serde::{Deserialize, Serialize};
 
 pub type LogSelection = Selection<LogFilter>;
 
-impl LogSelection {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
-    pub fn add_address(mut self, address: Address) -> Self {
-        self.include.address.push(address);
-        self
-    }
-}
-
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct LogFilter {
     /// Address of the contract, any logs that has any of these addresses will be returned.

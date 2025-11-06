@@ -2,7 +2,7 @@ use crate::block::{BlockField, BlockSelection};
 use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
+use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, LogFilter};
 use anyhow::Context;
 use capnp::message::Builder;
 use hypersync_format::FixedSizeData;
@@ -333,6 +333,39 @@ pub enum JoinMode {
 }
 
 impl Query {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn from_block(mut self, from_block: u64) -> Self {
+        self.from_block = from_block;
+        self
+    }
+
+    pub fn to_block(mut self, to_block: u64) -> Self {
+        self.to_block = Some(to_block);
+        self
+    }
+
+    pub fn match_log_filter_any<I>(mut self, logs: I) -> Self
+    where
+        I: IntoIterator<Item = LogFilter>,
+    {
+        let log_selection: Vec<LogSelection> = logs.into_iter().map(From::from).collect();
+        self.logs = log_selection;
+        self
+    }
+
+    pub fn add_log_selection(mut self, log_selection: LogSelection) -> Self {
+        self.logs.push(log_selection);
+        self
+    }
+
+    pub fn select_fields(mut self, field_selection: FieldSelection) -> Self {
+        self.field_selection = field_selection;
+        self
+    }
+
     pub fn from_capnp_query_body_reader(
         query_body_reader: &hypersync_net_types_capnp::query_body::Reader,
         from_block: u64,
@@ -446,6 +479,173 @@ pub struct FieldSelection {
     pub log: BTreeSet<LogField>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub trace: BTreeSet<TraceField>,
+}
+
+impl FieldSelection {
+    /// Create a new empty field selection.
+    /// 
+    /// This creates a field selection with no fields selected. You can then use the builder
+    /// methods to select specific fields for each data type (block, transaction, log, trace).
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use hypersync_net_types::FieldSelection;
+    /// 
+    /// // Create empty field selection
+    /// let field_selection = FieldSelection::new();
+    /// 
+    /// // All field sets are empty by default
+    /// assert!(field_selection.block.is_empty());
+    /// assert!(field_selection.transaction.is_empty());
+    /// assert!(field_selection.log.is_empty());
+    /// assert!(field_selection.trace.is_empty());
+    /// ```
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Select specific block fields to include in query results.
+    /// 
+    /// This method allows you to specify which block fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// 
+    /// # Arguments
+    /// * `fields` - An iterable of `BlockField` values to select
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use hypersync_net_types::{FieldSelection, block::BlockField, transaction::TransactionField};
+    /// 
+    /// // Select specific block fields
+    /// let field_selection = FieldSelection::new()
+    ///     .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
+    /// 
+    /// // Can also use a vector
+    /// let fields = vec![BlockField::Number, BlockField::ParentHash];
+    /// let field_selection = FieldSelection::new()
+    ///     .block(fields);
+    /// 
+    /// // Chain with other field selections
+    /// let field_selection = FieldSelection::new()
+    ///     .block([BlockField::Number])
+    ///     .transaction([TransactionField::Hash]);
+    /// ```
+    pub fn block<T: IntoIterator<Item = BlockField>>(mut self, fields: T) -> Self {
+        self.block.extend(fields);
+        self
+    }
+    /// Select specific transaction fields to include in query results.
+    /// 
+    /// This method allows you to specify which transaction fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// 
+    /// # Arguments
+    /// * `fields` - An iterable of `TransactionField` values to select
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use hypersync_net_types::{FieldSelection, transaction::TransactionField, block::BlockField};
+    /// 
+    /// // Select specific transaction fields
+    /// let field_selection = FieldSelection::new()
+    ///     .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To]);
+    /// 
+    /// // Select fields related to gas and value
+    /// let field_selection = FieldSelection::new()
+    ///     .transaction([
+    ///         TransactionField::GasPrice,
+    ///         TransactionField::GasUsed,
+    ///         TransactionField::Value,
+    ///     ]);
+    /// 
+    /// // Chain with other field selections
+    /// let field_selection = FieldSelection::new()
+    ///     .block([BlockField::Number])
+    ///     .transaction([TransactionField::Hash]);
+    /// ```
+    pub fn transaction<T: IntoIterator<Item = TransactionField>>(mut self, fields: T) -> Self {
+        self.transaction.extend(fields);
+        self
+    }
+    /// Select specific log fields to include in query results.
+    /// 
+    /// This method allows you to specify which log fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// 
+    /// # Arguments
+    /// * `fields` - An iterable of `LogField` values to select
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use hypersync_net_types::{FieldSelection, log::LogField, transaction::TransactionField};
+    /// 
+    /// // Select essential log fields
+    /// let field_selection = FieldSelection::new()
+    ///     .log([LogField::Address, LogField::Data, LogField::Topic0]);
+    /// 
+    /// // Select all topic fields for event analysis
+    /// let field_selection = FieldSelection::new()
+    ///     .log([
+    ///         LogField::Topic0,
+    ///         LogField::Topic1, 
+    ///         LogField::Topic2,
+    ///         LogField::Topic3,
+    ///     ]);
+    /// 
+    /// // Chain with transaction fields for full context
+    /// let field_selection = FieldSelection::new()
+    ///     .transaction([TransactionField::Hash])
+    ///     .log([LogField::Address, LogField::Data]);
+    /// ```
+    pub fn log<T: IntoIterator<Item = LogField>>(mut self, fields: T) -> Self {
+        self.log.extend(fields);
+        self
+    }
+    /// Select specific trace fields to include in query results.
+    /// 
+    /// This method allows you to specify which trace fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// 
+    /// # Arguments
+    /// * `fields` - An iterable of `TraceField` values to select
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use hypersync_net_types::{
+    ///     FieldSelection, 
+    ///     trace::TraceField, 
+    ///     transaction::TransactionField, 
+    ///     log::LogField
+    /// };
+    /// 
+    /// // Select basic trace information
+    /// let field_selection = FieldSelection::new()
+    ///     .trace([TraceField::From, TraceField::To, TraceField::Value]);
+    /// 
+    /// // Select trace execution details
+    /// let field_selection = FieldSelection::new()
+    ///     .trace([
+    ///         TraceField::CallType,
+    ///         TraceField::Input,
+    ///         TraceField::Output,
+    ///         TraceField::Gas,
+    ///         TraceField::GasUsed,
+    ///     ]);
+    /// 
+    /// // Combine with other data types for comprehensive analysis
+    /// let field_selection = FieldSelection::new()
+    ///     .transaction([TransactionField::Hash])
+    ///     .trace([TraceField::From, TraceField::To])
+    ///     .log([LogField::Address]);
+    /// ```
+    pub fn trace<T: IntoIterator<Item = TraceField>>(mut self, fields: T) -> Self {
+        self.trace.extend(fields);
+        self
+    }
 }
 
 impl CapnpBuilder<hypersync_net_types_capnp::field_selection::Owned> for FieldSelection {

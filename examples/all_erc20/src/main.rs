@@ -4,6 +4,7 @@
 use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{
+    net_types::{log::LogField, FieldSelection, LogFilter, LogSelection, Query},
     Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
 };
 use polars_arrow::{
@@ -13,7 +14,7 @@ use polars_arrow::{
 };
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
@@ -25,30 +26,21 @@ async fn main() {
     })
     .unwrap();
 
-    let query = serde_json::from_value(serde_json::json!( {
+    let query = Query::new()
         // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).
-        "from_block": 10123123,
+        .from_block(10123123)
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
-        "logs": [
-            {
-                // We want All ERC20 transfers so no address filter and only a filter for the first topic
-                "topics": [
-                    ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                ]
-            }
-        ],
+        .match_log_filter_any([LogFilter::new()
+            // We want All ERC20 transfers so no address filter and only a filter for the first topic
+            .topic0_any(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?])
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        "field_selection": {
-            "log": [
-                "data",
-                "topic0",
-                "topic1",
-                "topic2",
-                "topic3",
-            ]
-        }
-    }))
-    .unwrap();
+        .select_fields(FieldSelection::new().log([
+            LogField::Data,
+            LogField::Topic0,
+            LogField::Topic1,
+            LogField::Topic2,
+            LogField::Topic3,
+        ]));
 
     println!("Starting the stream");
 
@@ -115,4 +107,5 @@ async fn main() {
             total_amount / num_transfers as f64
         );
     }
+    Ok(())
 }
