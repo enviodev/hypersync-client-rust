@@ -228,8 +228,9 @@ mod tests {
 
     #[test]
     fn test_serde_zero() {
+        use serde_test::Configure;
         assert_eq!(Quantity::default(), Quantity::from(vec![0]));
-        assert_tokens(&Quantity::default(), &[Token::Str("0x0")]);
+        assert_tokens(&Quantity::default().readable(), &[Token::Str("0x0")]);
     }
 
     #[test]
@@ -241,19 +242,27 @@ mod tests {
 
     #[test]
     fn test_deserialize() {
-        assert_de_tokens(&Quantity::from(hex!("420000")), &[Token::Str("0x420000")]);
+        use serde_test::Configure;
+        assert_de_tokens(
+            &Quantity::from(hex!("420000")).readable(),
+            &[Token::Str("0x420000")],
+        );
     }
 
     #[test]
     fn test_deserialize_leading_zeroes() {
-        // Should now accept zero-padded values and normalize them
-        assert_de_tokens(&Quantity::from(hex!("420000")), &[Token::Str("0x00420000")]);
+        use serde_test::Configure;
+        assert_de_tokens(
+            &Quantity::from(hex!("420000")).readable(),
+            &[Token::Str("0x00420000")],
+        );
     }
 
     #[test]
     #[should_panic(expected = "Unexpected quantity")]
     fn test_deserialize_empty() {
-        assert_de_tokens(&Quantity::default(), &[Token::Str("0x")]);
+        use serde_test::Configure;
+        assert_de_tokens(&Quantity::default().readable(), &[Token::Str("0x")]);
     }
 
     #[test]
@@ -292,35 +301,99 @@ mod tests {
 
     #[test]
     fn test_normalize_zero_padded_values() {
-        // Test various zero-padded scenarios
-        // These occur on chains like Tron and Taraxa RPC implementations
-        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::Str("0x0001")]);
-        assert_de_tokens(&Quantity::from(hex!("0a")), &[Token::Str("0x000a")]);
-        assert_de_tokens(&Quantity::from(hex!("42")), &[Token::Str("0x000042")]);
-        assert_de_tokens(&Quantity::from(hex!("1234")), &[Token::Str("0x00001234")]);
+        use serde_test::Configure;
+        assert_de_tokens(
+            &Quantity::from(hex!("01")).readable(),
+            &[Token::Str("0x0001")],
+        );
+        assert_de_tokens(
+            &Quantity::from(hex!("0a")).readable(),
+            &[Token::Str("0x000a")],
+        );
+        assert_de_tokens(
+            &Quantity::from(hex!("42")).readable(),
+            &[Token::Str("0x000042")],
+        );
+        assert_de_tokens(
+            &Quantity::from(hex!("1234")).readable(),
+            &[Token::Str("0x00001234")],
+        );
     }
 
     #[test]
     fn test_zero_value_handling() {
-        // Zero should still be handled correctly
-        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0")]);
-        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x00")]);
-        assert_de_tokens(&Quantity::from(hex!("00")), &[Token::Str("0x0000")]);
+        use serde_test::Configure;
+        assert_de_tokens(&Quantity::from(hex!("00")).readable(), &[Token::Str("0x0")]);
+        assert_de_tokens(
+            &Quantity::from(hex!("00")).readable(),
+            &[Token::Str("0x00")],
+        );
+        assert_de_tokens(
+            &Quantity::from(hex!("00")).readable(),
+            &[Token::Str("0x0000")],
+        );
     }
 
     #[test]
     fn test_deserialize_numeric_u64() {
+        use serde_test::Configure;
         // Numeric JSON values should be accepted (e.g., Sonic timestamps)
-        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::U64(0x66a7c725)]);
-        assert_de_tokens(&Quantity::from(vec![0]), &[Token::U64(0)]);
-        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::U64(1)]);
+        assert_de_tokens(
+            &Quantity::from(hex!("66a7c725")).readable(),
+            &[Token::U64(0x66a7c725)],
+        );
+        assert_de_tokens(&Quantity::from(vec![0]).readable(), &[Token::U64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")).readable(), &[Token::U64(1)]);
     }
 
     #[test]
     fn test_deserialize_numeric_i64() {
-        assert_de_tokens(&Quantity::from(hex!("66a7c725")), &[Token::I64(0x66a7c725)]);
-        assert_de_tokens(&Quantity::from(vec![0]), &[Token::I64(0)]);
-        assert_de_tokens(&Quantity::from(hex!("01")), &[Token::I64(1)]);
+        use serde_test::Configure;
+        assert_de_tokens(
+            &Quantity::from(hex!("66a7c725")).readable(),
+            &[Token::I64(0x66a7c725)],
+        );
+        assert_de_tokens(&Quantity::from(vec![0]).readable(), &[Token::I64(0)]);
+        assert_de_tokens(&Quantity::from(hex!("01")).readable(), &[Token::I64(1)]);
+    }
+
+    #[test]
+    fn test_json_deserialize_integer() {
+        // Test that JSON integers are accepted (like Sonic's blockTimestamp)
+        let json_int = "1754986612";
+        let quantity: Quantity = serde_json::from_str(json_int).unwrap();
+        assert_eq!(quantity, Quantity::from(hex!("689af874")));
+    }
+
+    #[test]
+    fn test_json_deserialize_hex_string() {
+        // Test that hex strings still work
+        let json_hex = "\"0x689af874\"";
+        let quantity: Quantity = serde_json::from_str(json_hex).unwrap();
+        assert_eq!(quantity, Quantity::from(hex!("689af874")));
+    }
+
+    #[test]
+    fn test_json_deserialize_mixed_object() {
+        // Test a realistic scenario like Sonic's response
+        use serde::Deserialize;
+
+        #[derive(Deserialize, Debug)]
+        struct MockReceipt {
+            #[serde(rename = "blockNumber")]
+            block_number: Quantity,
+            #[serde(rename = "blockTimestamp")]
+            block_timestamp: Quantity,
+        }
+
+        let json = r#"{
+        "blockNumber": "0x74",
+        "blockTimestamp": 1754986612
+    }"#;
+
+        let receipt: MockReceipt = serde_json::from_str(json).unwrap();
+        assert_eq!(receipt.block_number, Quantity::from(hex!("74")));
+        assert_eq!(receipt.block_timestamp, Quantity::from(hex!("689af874")));
     }
 
     #[test]
@@ -330,14 +403,5 @@ mod tests {
         let data = bincode::serialize(&val).unwrap();
 
         assert_eq!(val, bincode::deserialize(&data).unwrap());
-    }
-
-    #[test]
-    fn test_json_deserialize_integer() {
-        // Test that JSON integers are accepted (like Sonic's blockTimestamp)
-        let json_int = "1754986612";
-        let quantity: Quantity = serde_json::from_str(json_int).unwrap();
-        // 1754986612 = 0x689af874
-        assert_eq!(quantity, Quantity::from(hex!("689af874")));
     }
 }
