@@ -136,7 +136,14 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_str(QuantityVisitor)
+        // Use deserialize_any for human-readable formats (JSON, etc.) which allows
+        // both hex strings and plain integers (needed for chains like Sonic).
+        // Use deserialize_str for binary formats (bincode, etc.) for compatibility.
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_any(QuantityVisitor)
+        } else {
+            deserializer.deserialize_str(QuantityVisitor)
+        }
     }
 }
 
@@ -323,5 +330,14 @@ mod tests {
         let data = bincode::serialize(&val).unwrap();
 
         assert_eq!(val, bincode::deserialize(&data).unwrap());
+    }
+
+    #[test]
+    fn test_json_deserialize_integer() {
+        // Test that JSON integers are accepted (like Sonic's blockTimestamp)
+        let json_int = "1754986612";
+        let quantity: Quantity = serde_json::from_str(json_int).unwrap();
+        // 1754986612 = 0x689af874
+        assert_eq!(quantity, Quantity::from(hex!("689af874")));
     }
 }
