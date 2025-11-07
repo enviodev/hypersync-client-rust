@@ -18,12 +18,14 @@ mod __generated__;
 pub use __generated__::hypersync_net_types_capnp;
 
 // Re-export types from modules for backward compatibility and convenience
-pub use block::{BlockFilter, BlockSelection};
-pub use log::{LogFilter, LogSelection};
+pub use block::{BlockField, BlockFilter, BlockSelection};
+pub use log::{LogField, LogFilter, LogSelection};
 pub use query::{FieldSelection, JoinMode, Query};
 pub use response::{ArchiveHeight, ChainId, RollbackGuard};
-pub use trace::{TraceFilter, TraceSelection};
-pub use transaction::{AuthorizationSelection, TransactionFilter, TransactionSelection};
+pub use trace::{TraceField, TraceFilter, TraceSelection};
+pub use transaction::{
+    AuthorizationSelection, TransactionField, TransactionFilter, TransactionSelection,
+};
 pub use types::Sighash;
 
 use serde::{Deserialize, Serialize};
