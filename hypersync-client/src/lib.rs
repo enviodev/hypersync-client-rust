@@ -551,20 +551,37 @@ const MAX_CONNECTION_AGE: std::time::Duration = std::time::Duration::from_secs(2
 /// so we timeout after 15s (3x the ping interval).
 const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
+/// Events emitted by the height stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeightStreamEvent {
+    /// Successfully connected or reconnected to the SSE stream.
+    Connected,
+    /// Received a height update from the server.
+    Height(u64),
+    /// Connection lost, will attempt to reconnect after the specified delay.
+    Reconnecting {
+        /// Duration to wait before attempting reconnection.
+        delay: Duration,
+    },
+}
+
 impl Client {
     /// Streams archive height updates from the server via Server-Sent Events.
     ///
     /// Establishes a long-lived SSE connection to `/height/sse` that automatically reconnects
     /// on disconnection with exponential backoff (200ms → 400ms → ... → max 30s).
     ///
+    /// The stream emits [`HeightStreamEvent`] to notify consumers of connection state changes
+    /// and height updates. This allows applications to display connection status to users.
+    ///
     /// # Returns
-    /// Channel receiver yielding `Result<u64>` heights. The background task handles connection
-    /// lifecycle and sends updates through this channel.
+    /// Channel receiver yielding [`HeightStreamEvent`]s. The background task handles connection
+    /// lifecycle and sends events through this channel.
     ///
     /// # Example
     /// ```no_run
     /// # use std::sync::Arc;
-    /// # use hypersync_client::{Client, ClientConfig};
+    /// # use hypersync_client::{Client, ClientConfig, HeightStreamEvent};
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Arc::new(Client::new(ClientConfig {
     ///     url: Some("https://eth.hypersync.xyz".parse()?),
@@ -573,16 +590,19 @@ impl Client {
     ///
     /// let mut rx = client.stream_height().await?;
     ///
-    /// while let Some(result) = rx.recv().await {
-    ///     match result {
-    ///         Ok(height) => println!("Height: {}", height),
-    ///         Err(e) => eprintln!("Error: {}", e),
+    /// while let Some(event) = rx.recv().await {
+    ///     match event {
+    ///         HeightStreamEvent::Connected => println!("Connected to stream"),
+    ///         HeightStreamEvent::Height(h) => println!("Height: {}", h),
+    ///         HeightStreamEvent::Reconnecting { delay } => {
+    ///             println!("Reconnecting in {:?}...", delay)
+    ///         }
     ///     }
     /// }
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn stream_height(self: Arc<Self>) -> Result<mpsc::Receiver<Result<u64>>> {
+    pub async fn stream_height(self: Arc<Self>) -> Result<mpsc::Receiver<HeightStreamEvent>> {
         let (tx, rx) = mpsc::channel(16);
         let client = self.clone();
 
@@ -608,6 +628,15 @@ impl Client {
                         let status = res.status();
                         if !status.is_success() {
                             log::warn!("HTTP error: status code {}", status);
+                            if tx
+                                .send(HeightStreamEvent::Reconnecting {
+                                    delay: reconnect_delay,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
                             tokio::time::sleep(reconnect_delay).await;
                             reconnect_delay =
                                 std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
@@ -615,6 +644,9 @@ impl Client {
                         }
 
                         log::info!("Connected to height SSE stream");
+                        if tx.send(HeightStreamEvent::Connected).await.is_err() {
+                            return;
+                        }
                         reconnect_delay = INITIAL_RECONNECT_DELAY;
 
                         let mut byte_stream = res.bytes_stream();
@@ -663,7 +695,11 @@ impl Client {
                                                 let data = data_lines.join("\n");
                                                 if let Ok(h) = data.trim().parse::<u64>() {
                                                     log::debug!("Height update: {}", h);
-                                                    if tx.send(Ok(h)).await.is_err() {
+                                                    if tx
+                                                        .send(HeightStreamEvent::Height(h))
+                                                        .await
+                                                        .is_err()
+                                                    {
                                                         log::info!("Receiver dropped, exiting");
                                                         return;
                                                     }
@@ -696,6 +732,15 @@ impl Client {
                 }
 
                 log::info!("Reconnecting in {:?}...", reconnect_delay);
+                if tx
+                    .send(HeightStreamEvent::Reconnecting {
+                        delay: reconnect_delay,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
                 tokio::time::sleep(reconnect_delay).await;
                 reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
             }
