@@ -1,4 +1,5 @@
 use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
+use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,337 @@ pub struct TraceFilter {
     pub type_: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sighash: Vec<Sighash>,
+}
+
+impl TraceFilter {
+    /// Create a trace filter that matches any trace.
+    ///
+    /// This creates an empty filter with no constraints, which will match all traces.
+    /// You can then use the builder methods to add specific filtering criteria.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Create a filter that matches any trace
+    /// let filter = TraceFilter::any();
+    ///
+    /// // Chain with other filter methods
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn any() -> Self {
+        Default::default()
+    }
+
+    /// Filter traces by any of the provided "from" addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    /// The "from" address typically represents the caller or originator of the trace.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by a single caller address
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///
+    /// // Filter by multiple caller addresses
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any([
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let caller_address = [
+    ///     0xa0, 0xb8, 0x6a, 0x33, 0xe6, 0xc1, 0x1c, 0x8c, 0x0c, 0x5c,
+    ///     0x0b, 0x5e, 0x6a, 0xde, 0xe3, 0x0d, 0x1a, 0x23, 0x45, 0x67
+    /// ];
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any([caller_address])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_from_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid from address at position {idx}"))?,
+            );
+        }
+        self.from = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter traces by any of the provided "to" addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    /// The "to" address typically represents the target or recipient of the trace.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by a single target address
+    /// let filter = TraceFilter::any()
+    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple target addresses
+    /// let filter = TraceFilter::any()
+    ///     .and_to_address_any([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
+    ///     ])?;
+    ///
+    /// // Chain with from address filtering
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_to_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid to address at position {idx}"))?,
+            );
+        }
+        self.to = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter traces by any of the provided contract addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    /// The address field typically represents the contract address involved in the trace.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by a single contract address
+    /// let filter = TraceFilter::any()
+    ///     .and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///
+    /// // Filter by multiple contract addresses
+    /// let filter = TraceFilter::any()
+    ///     .and_address_any([
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid address at position {idx}"))?,
+            );
+        }
+        self.address = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter traces by any of the provided call types.
+    ///
+    /// This method accepts any iterable of values that can be converted to `String`.
+    /// Common call types include "call", "staticcall", "delegatecall", "create", "create2", etc.
+    ///
+    /// # Arguments
+    /// * `call_types` - An iterable of call type strings to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by specific call types
+    /// let filter = TraceFilter::any()
+    ///     .and_call_type_any(["call", "delegatecall"]);
+    ///
+    /// // Filter by contract creation traces
+    /// let filter = TraceFilter::any()
+    ///     .and_call_type_any(["create", "create2"]);
+    ///
+    /// // Chain with address filtering
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_call_type_any(["call"]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_call_type_any<I, S>(mut self, call_types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.call_type = call_types.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Filter traces by any of the provided reward types.
+    ///
+    /// This method accepts any iterable of values that can be converted to `String`.
+    /// Common reward types include "block", "uncle", etc., typically used for mining rewards.
+    ///
+    /// # Arguments
+    /// * `reward_types` - An iterable of reward type strings to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by block rewards
+    /// let filter = TraceFilter::any()
+    ///     .and_reward_type_any(["block"]);
+    ///
+    /// // Filter by both block and uncle rewards
+    /// let filter = TraceFilter::any()
+    ///     .and_reward_type_any(["block", "uncle"]);
+    /// ```
+    pub fn and_reward_type_any<I, S>(mut self, reward_types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.reward_type = reward_types.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Filter traces by any of the provided trace types.
+    ///
+    /// This method accepts any iterable of values that can be converted to `String`.
+    /// Common trace types include "call", "create", "suicide", "reward", etc.
+    ///
+    /// # Arguments
+    /// * `types` - An iterable of trace type strings to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by call traces
+    /// let filter = TraceFilter::any()
+    ///     .and_type_any(["call"]);
+    ///
+    /// // Filter by multiple trace types
+    /// let filter = TraceFilter::any()
+    ///     .and_type_any(["call", "create", "reward"]);
+    /// ```
+    pub fn and_type_any<I, S>(mut self, types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.type_ = types.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Filter traces by any of the provided function signature hashes (sighashes).
+    ///
+    /// This method accepts any iterable of values that can be converted to `Sighash`.
+    /// Common input types include string slices, byte arrays, and `Sighash` objects.
+    /// Sighashes are the first 4 bytes of the keccak256 hash of a function signature.
+    ///
+    /// # Arguments
+    /// * `sighashes` - An iterable of sighash values to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any sighash fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Filter by transfer function signature
+    /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
+    /// let filter = TraceFilter::any()
+    ///     .and_sighash_any([transfer_sig])?;
+    ///
+    /// // Filter by multiple function signatures
+    /// let filter = TraceFilter::any()
+    ///     .and_sighash_any([
+    ///         "0xa9059cbb", // transfer(address,uint256)
+    ///         "0x095ea7b3", // approve(address,uint256)
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let transfer_bytes = [0xa9, 0x05, 0x9c, 0xbb];
+    /// let filter = TraceFilter::any()
+    ///     .and_sighash_any([transfer_bytes])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_sighash_any<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: TryInto<Sighash>,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_sighashes: Vec<Sighash> = Vec::new();
+        for (idx, sighash) in sighashes.into_iter().enumerate() {
+            converted_sighashes.push(
+                sighash
+                    .try_into()
+                    .with_context(|| format!("invalid sighash at position {idx}"))?,
+            );
+        }
+        self.sighash = converted_sighashes;
+        Ok(self)
+    }
 }
 
 impl CapnpBuilder<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter {
