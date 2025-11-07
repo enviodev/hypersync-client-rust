@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use hypersync_client::{
-    net_types::{FieldSelection, Query, TransactionField, TransactionFilter},
+    net_types::{Query, TransactionField, TransactionFilter},
     Client, ClientConfig, StreamConfig,
 };
 
@@ -19,13 +19,13 @@ async fn main() -> anyhow::Result<()> {
 
     let query = Query::new()
         .from_block(0)
-        .select_fields(FieldSelection::new().transaction([
+        .select_transaction_fields([
             TransactionField::BlockNumber,
             TransactionField::Hash,
             TransactionField::From,
             TransactionField::To,
             TransactionField::Value,
-        ]))
+        ])
         .where_transactions([TransactionFilter::any()
             .and_from_address([address])?
             .and_to_address([address])?]);

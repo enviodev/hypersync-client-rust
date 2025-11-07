@@ -378,7 +378,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -413,15 +413,9 @@ mod tests {
             .unwrap()],
             miner: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
         };
-        let field_selection = FieldSelection {
-            block: BlockField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            blocks: vec![block_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_blocks([block_filter])
+            .select_block_fields(BlockField::all());
 
         test_query_serde(query, "block selection with rest defaults");
     }

@@ -2,7 +2,7 @@
 // WARNING: This example doesn't account for rollbacks
 
 use hypersync_client::{
-    net_types::{FieldSelection, Query, TransactionField},
+    net_types::{Query, TransactionField},
     CallDecoder, Client, ClientConfig,
 };
 use tokio::time::{sleep, Duration};
@@ -28,9 +28,7 @@ async fn main() -> anyhow::Result<()> {
                 .and_to_address([DAI_ADDRESS])?,
         ])
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        .select_fields(
-            FieldSelection::new().transaction([TransactionField::Hash, TransactionField::Input]),
-        );
+        .select_transaction_fields([TransactionField::Hash, TransactionField::Input]);
 
     let decoder = CallDecoder::from_signatures(&[
         "transfer(address dst, uint256 wad)",

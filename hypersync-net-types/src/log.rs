@@ -478,7 +478,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -507,15 +507,9 @@ mod tests {
     #[test]
     fn test_log_selection_serde_with_defaults() {
         let log_selection = LogSelection::default();
-        let field_selection = FieldSelection {
-            log: LogField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            logs: vec![log_selection],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_logs([log_selection])
+            .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with defaults");
     }
@@ -540,15 +534,9 @@ mod tests {
                 topics
             },
         };
-        let field_selection = FieldSelection {
-            log: LogField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            logs: vec![log_selection.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_logs([log_selection])
+            .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with full values");
     }

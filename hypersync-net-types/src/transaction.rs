@@ -1175,7 +1175,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -1204,15 +1204,9 @@ mod tests {
     #[test]
     fn test_transaction_filter_serde_with_defaults() {
         let transaction_filter = TransactionSelection::default();
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions([transaction_filter])
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with defaults");
     }
@@ -1231,15 +1225,9 @@ mod tests {
             hash: Vec::default(),
             authorization_list: Vec::default(),
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions([transaction_filter])
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with explicit defaults");
     }
@@ -1265,15 +1253,9 @@ mod tests {
             .unwrap()],
             authorization_list: Vec::default(),
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions([transaction_filter])
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with full values");
     }
@@ -1299,15 +1281,9 @@ mod tests {
             hash: Vec::default(),
             authorization_list: vec![auth_selection],
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions([transaction_filter])
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "authorization selection with rest defaults");
     }

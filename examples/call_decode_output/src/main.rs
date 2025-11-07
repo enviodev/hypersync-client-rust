@@ -1,7 +1,7 @@
 use alloy_json_abi::Function;
 use anyhow::Context;
 use hypersync_client::{
-    net_types::{FieldSelection, Query, TraceField, TraceFilter},
+    net_types::{Query, TraceField, TraceFilter},
     simple_types::Trace,
     ArrowResponseData, CallDecoder, Client, ClientConfig, FromArrow, StreamConfig,
 };
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 
     let query = Query::new()
         .from_block(16291127) // Aave V3 deployment block
-        .select_fields(FieldSelection::new().trace([TraceField::Input, TraceField::Output]))
+        .select_trace_fields([TraceField::Input, TraceField::Output])
         .where_traces([TraceFilter::any()
             .and_to_address([DAI_ADDRESS])?
             .and_sighash([balance_of_sighash])?]);
@@ -83,3 +83,4 @@ async fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
+

@@ -39,12 +39,9 @@ use std::collections::BTreeSet;
 /// let usdt_transfers = Query::new()
 ///     .from_block(18_000_000)
 ///     .to_block(18_001_000)
-///     .select_fields(
-///         FieldSelection::new()
-///             .block([BlockField::Number, BlockField::Timestamp])
-///             .log([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
-///             .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To])
-///     )
+///     .select_block_fields([BlockField::Number, BlockField::Timestamp])
+///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
+///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::To])
 ///     .where_logs([
 ///         LogFilter::any()
 ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT contract
@@ -66,12 +63,9 @@ use std::collections::BTreeSet;
 ///     .from_block(18_000_000)
 ///     .to_block(18_010_000)
 ///     .join_mode(JoinMode::JoinAll)
-///     .select_fields(
-///         FieldSelection::new()
-///             .block(BlockField::all())
-///             .transaction(TransactionField::all())
-///             .log(LogField::all())
-///     )
+///     .select_block_fields(BlockField::all())
+///     .select_transaction_fields(TransactionField::all())
+///     .select_log_fields(LogField::all())
 ///     .where_logs([
 ///         // Transfer events from USDT and USDC contracts (multiple addresses in one filter)
 ///         LogFilter::any()
@@ -110,10 +104,7 @@ use std::collections::BTreeSet;
 /// let filtered_query = Query::new()
 ///     .from_block(18_000_000)
 ///     .to_block(18_001_000)
-///     .select_fields(
-///         FieldSelection::new()
-///             .log([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
-///     )
+///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
 ///     .where_logs([
 ///         // Include Transfer events from all contracts, but exclude specific problematic contracts
 ///         Selection::new(
@@ -144,7 +135,7 @@ use std::collections::BTreeSet;
 ///     .to_block(18_010_000)
 ///     .join_mode(JoinMode::Default)
 ///     .include_all_blocks()
-///     .select_fields(FieldSelection::new().block(BlockField::all()));
+///     .select_block_fields(BlockField::all());
 /// ```
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Query {
@@ -428,59 +419,191 @@ impl Query {
         self
     }
 
-    /// Set the field selection for the query to specify which fields should be returned.
+    /// Select specific log fields to include in query results.
     ///
-    /// Field selection allows you to optimize query performance and reduce payload size by
-    /// requesting only the fields you need. By default, no fields are selected, which means
-    /// you need to explicitly specify which fields to include in the response.
+    /// This method allows you to specify which log fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// This replaces the previous `select_fields(FieldSelection::new().log(...))` pattern.
     ///
     /// # Arguments
-    /// * `field_selection` - A `FieldSelection` object specifying which fields to include
+    /// * `fields` - An iterable of `LogField` values to select
     ///
     /// # Examples
     ///
     /// ```
-    /// use hypersync_net_types::{Query, FieldSelection, block::BlockField, transaction::TransactionField, log::LogField, trace::TraceField};
+    /// use hypersync_net_types::{Query, log::LogField, transaction::TransactionField};
     ///
-    /// // Select only essential block and transaction fields
-    /// let field_selection = FieldSelection::new()
-    ///     .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp])
-    ///     .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To]);
-    ///
+    /// // Select essential log fields
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .select_fields(field_selection);
+    ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0]);
     ///
-    /// // Select all available fields for comprehensive analysis
-    /// let all_fields = FieldSelection::new()
-    ///     .block(BlockField::all())
-    ///     .transaction(TransactionField::all())
-    ///     .log(LogField::all())
-    ///     .trace(TraceField::all());
-    ///
+    /// // Select all log fields for comprehensive event data
     /// let query = Query::new()
-    ///     .from_block(18_000_000)
-    ///     .select_fields(all_fields);
+    ///     .select_log_fields(LogField::all());
     ///
-    /// // Mixed approach - all blocks and logs, specific transaction fields
-    /// let mixed_fields = FieldSelection::new()
-    ///     .block(BlockField::all())
-    ///     .transaction([
-    ///         TransactionField::Hash,
-    ///         TransactionField::From,
-    ///         TransactionField::To,
-    ///         TransactionField::Value,
-    ///         TransactionField::GasPrice,
-    ///         TransactionField::GasUsed
-    ///     ])
-    ///     .log(LogField::all());
-    ///
+    /// // Select all topic fields for event analysis
     /// let query = Query::new()
-    ///     .from_block(18_000_000)
-    ///     .select_fields(mixed_fields);
+    ///     .select_log_fields([
+    ///         LogField::Topic0,
+    ///         LogField::Topic1,
+    ///         LogField::Topic2,
+    ///         LogField::Topic3,
+    ///     ]);
+    ///
+    /// // Chain with other field selections
+    /// let query = Query::new()
+    ///     .select_log_fields([LogField::Address, LogField::Data])
+    ///     .select_transaction_fields([TransactionField::Hash]);
     /// ```
-    pub fn select_fields(mut self, field_selection: FieldSelection) -> Self {
-        self.field_selection = field_selection;
+    pub fn select_log_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<LogField>,
+    {
+        self.field_selection.log = fields.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Select specific transaction fields to include in query results.
+    ///
+    /// This method allows you to specify which transaction fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// This replaces the previous `select_fields(FieldSelection::new().transaction(...))` pattern.
+    ///
+    /// # Arguments
+    /// * `fields` - An iterable of `TransactionField` values to select
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, transaction::TransactionField, block::BlockField};
+    ///
+    /// // Select specific transaction fields
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::To]);
+    ///
+    /// // Select all transaction fields for complete transaction data
+    /// let query = Query::new()
+    ///     .select_transaction_fields(TransactionField::all());
+    ///
+    /// // Select fields related to gas and value
+    /// let query = Query::new()
+    ///     .select_transaction_fields([
+    ///         TransactionField::GasPrice,
+    ///         TransactionField::GasUsed,
+    ///         TransactionField::Value,
+    ///     ]);
+    ///
+    /// // Chain with other field selections
+    /// let query = Query::new()
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::Value])
+    ///     .select_block_fields([BlockField::Number]);
+    /// ```
+    pub fn select_transaction_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<TransactionField>,
+    {
+        self.field_selection.transaction = fields.into_iter().map(Into::into).collect();
+        self
+    }
+    /// Select specific trace fields to include in query results.
+    ///
+    /// This method allows you to specify which trace fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// This replaces the previous `select_fields(FieldSelection::new().trace(...))` pattern.
+    ///
+    /// # Availability
+    /// **Note**: Trace data is only available on select hypersync instances. Not all blockchain
+    /// networks provide trace data, and it requires additional infrastructure to collect and serve.
+    /// Check your hypersync instance documentation to confirm trace availability for your target network.
+    ///
+    /// # Arguments
+    /// * `fields` - An iterable of `TraceField` values to select
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, trace::TraceField, log::LogField};
+    ///
+    /// // Select basic trace information
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_trace_fields([TraceField::From, TraceField::To, TraceField::Value]);
+    ///
+    /// // Select all trace fields for comprehensive trace analysis
+    /// let query = Query::new()
+    ///     .select_trace_fields(TraceField::all());
+    ///
+    /// // Select trace execution details
+    /// let query = Query::new()
+    ///     .select_trace_fields([
+    ///         TraceField::CallType,
+    ///         TraceField::Input,
+    ///         TraceField::Output,
+    ///         TraceField::Gas,
+    ///         TraceField::GasUsed,
+    ///     ]);
+    ///
+    /// // Chain with other field selections
+    /// let query = Query::new()
+    ///     .select_trace_fields([TraceField::From, TraceField::To])
+    ///     .select_log_fields([LogField::Address]);
+    /// ```
+    pub fn select_trace_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<TraceField>,
+    {
+        self.field_selection.trace = fields.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Select specific block fields to include in query results.
+    ///
+    /// This method allows you to specify which block fields should be returned in the query response.
+    /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    /// This replaces the previous `select_fields(FieldSelection::new().block(...))` pattern.
+    ///
+    /// # Arguments
+    /// * `fields` - An iterable of `BlockField` values to select
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, block::BlockField, transaction::TransactionField};
+    ///
+    /// // Select specific block fields
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_block_fields([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
+    ///
+    /// // Select all block fields for comprehensive data
+    /// let query = Query::new()
+    ///     .select_block_fields(BlockField::all());
+    ///
+    /// // Select essential block metadata
+    /// let query = Query::new()
+    ///     .select_block_fields([
+    ///         BlockField::Number,
+    ///         BlockField::Hash,
+    ///         BlockField::ParentHash,
+    ///         BlockField::Timestamp,
+    ///     ]);
+    ///
+    /// // Chain with other field selections
+    /// let query = Query::new()
+    ///     .select_block_fields([BlockField::Number, BlockField::Timestamp])
+    ///     .select_transaction_fields([TransactionField::Hash]);
+    /// ```
+    pub fn select_block_fields<I>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<BlockField>,
+    {
+        self.field_selection.block = fields.into_iter().map(Into::into).collect();
         self
     }
 
@@ -550,10 +673,7 @@ impl Query {
     ///     .from_block(18_000_000)
     ///     .to_block(18_000_100)
     ///     .include_all_blocks()
-    ///     .select_fields(
-    ///         FieldSelection::new()
-    ///             .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp])
-    ///     );
+    ///     .select_block_fields([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
     ///
     /// // Normal mode - only blocks with matching logs
     /// let query = Query::new()

@@ -2,7 +2,7 @@
 // WARNING: This example doesn't account for rollbacks
 
 use hypersync_client::{
-    net_types::{FieldSelection, LogField, LogFilter, Query},
+    net_types::{LogField, LogFilter, Query},
     Client, ClientConfig, Decoder,
 };
 use tokio::time::{sleep, Duration};
@@ -28,16 +28,14 @@ async fn main() -> anyhow::Result<()> {
         .where_logs([LogFilter::any()
             .and_address([DAI_ADDRESS])?
             // we only want transfer events
-            .and_topic0([
-                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-            ])?])
-        .select_fields(FieldSelection::new().log([
+            .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?])
+        .select_log_fields([
             LogField::Data,
             LogField::Topic0,
             LogField::Topic1,
             LogField::Topic2,
             LogField::Topic3,
-        ]));
+        ]);
 
     let decoder = Decoder::from_signatures(&[
         "Transfer(address indexed from, address indexed to, uint amount)",

@@ -743,7 +743,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -772,15 +772,9 @@ mod tests {
     #[test]
     fn test_trace_filter_serde_with_defaults() {
         let trace_filter = TraceSelection::default();
-        let field_selection = FieldSelection {
-            trace: TraceField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            traces: vec![trace_filter],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_traces([trace_filter])
+            .select_trace_fields(TraceField::all());
 
         test_query_serde(query, "trace selection with defaults");
     }
@@ -801,15 +795,9 @@ mod tests {
             type_: vec!["call".to_string(), "create".to_string()],
             sighash: vec![Sighash::from([0x12, 0x34, 0x56, 0x78])],
         };
-        let field_selection = FieldSelection {
-            trace: TraceField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            traces: vec![trace_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_traces([trace_filter])
+            .select_trace_fields(TraceField::all());
 
         test_query_serde(query, "trace selection with full values");
     }

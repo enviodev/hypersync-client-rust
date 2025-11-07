@@ -4,7 +4,7 @@
 use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{
-    net_types::{log::LogField, FieldSelection, LogFilter, Query},
+    net_types::{LogField, LogFilter, Query},
     Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
 };
 use polars_arrow::{
@@ -34,13 +34,13 @@ async fn main() -> anyhow::Result<()> {
             // We want All ERC20 transfers so no address filter and only a filter for the first topic
             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?])
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        .select_fields(FieldSelection::new().log([
+        .select_log_fields([
             LogField::Data,
             LogField::Topic0,
             LogField::Topic1,
             LogField::Topic2,
             LogField::Topic3,
-        ]));
+        ]);
 
     println!("Starting the stream");
 

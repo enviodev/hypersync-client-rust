@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use hypersync_client::{
     format::Hex,
-    net_types::{FieldSelection, LogField, LogFilter, Query, TransactionField, TransactionFilter},
+    net_types::{LogField, LogFilter, Query, TransactionField, TransactionFilter},
     Client, ClientConfig, Decoder, StreamConfig,
 };
 
@@ -39,16 +39,12 @@ async fn main() -> anyhow::Result<()> {
         .where_logs([
             // We want All ERC20 transfers coming to any of our addresses
             LogFilter::any()
-                .and_topic0([
-                    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-                ])?
+                .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
                 // topic2 is the "to" position
                 .and_topic2(address_topic_filter.clone())?,
             // We want All ERC20 transfers coming from any of our addresses
             LogFilter::any()
-                .and_topic0([
-                    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-                ])?
+                .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
                 // topic1 is the "from" position
                 .and_topic1(address_topic_filter.clone())?,
         ])
@@ -58,22 +54,19 @@ async fn main() -> anyhow::Result<()> {
             TransactionFilter::any().and_to_address(addresses.clone())?,
         ])
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        .select_fields(
-            FieldSelection::new()
-                .log([
-                    LogField::Address,
-                    LogField::Data,
-                    LogField::Topic0,
-                    LogField::Topic1,
-                    LogField::Topic2,
-                    LogField::Topic3,
-                ])
-                .transaction([
-                    TransactionField::From,
-                    TransactionField::To,
-                    TransactionField::Value,
-                ]),
-        );
+        .select_log_fields([
+            LogField::Address,
+            LogField::Data,
+            LogField::Topic0,
+            LogField::Topic1,
+            LogField::Topic2,
+            LogField::Topic3,
+        ])
+        .select_transaction_fields([
+            TransactionField::From,
+            TransactionField::To,
+            TransactionField::Value,
+        ]);
 
     let client = Arc::new(client);
 
