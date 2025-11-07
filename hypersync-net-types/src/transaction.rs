@@ -12,6 +12,108 @@ pub struct AuthorizationSelection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub address: Vec<Address>,
 }
+
+impl AuthorizationSelection {
+    /// Create an authorization selection that matches any authorization.
+    ///
+    /// This creates an empty selection with no constraints, which will match all authorizations.
+    /// You can then use the builder methods to add specific filtering criteria.
+    pub fn any() -> Self {
+        Default::default()
+    }
+
+    /// Filter authorizations by any of the provided chain IDs.
+    ///
+    /// # Arguments
+    /// * `chain_ids` - An iterable of chain IDs to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::AuthorizationSelection;
+    ///
+    /// // Filter by a single chain ID (Ethereum mainnet)
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_chain_id_any([1]);
+    ///
+    /// // Filter by multiple chain IDs
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_chain_id_any([
+    ///         1,      // Ethereum mainnet
+    ///         137,    // Polygon
+    ///         42161,  // Arbitrum One
+    ///     ]);
+    ///
+    /// // Chain with address filter
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_chain_id_any([1, 137])
+    ///     .with_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn with_chain_id_any<I>(mut self, chain_ids: I) -> Self
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        self.chain_id = chain_ids.into_iter().collect();
+        self
+    }
+
+    /// Filter authorizations by any of the provided addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated selection on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::AuthorizationSelection;
+    ///
+    /// // Filter by a single address
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple addresses
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_address_any([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let auth_address = [
+    ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
+    /// ];
+    /// let selection = AuthorizationSelection::any()
+    ///     .with_address_any([auth_address])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn with_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid authorization address at position {idx}"))?,
+            );
+        }
+        self.address = converted_addresses;
+        Ok(self)
+    }
+}
+
 pub type TransactionSelection = Selection<TransactionFilter>;
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -60,59 +162,41 @@ pub struct TransactionFilter {
 
 impl TransactionFilter {
     /// Create a transaction filter that matches any transaction.
-    /// 
+    ///
     /// This creates an empty filter with no constraints, which will match all transactions.
     /// You can then use the builder methods to add specific filtering criteria.
-    /// 
-    /// # Examples
-    /// 
-    /// ```
-    /// use hypersync_net_types::TransactionFilter;
-    /// 
-    /// // Create a filter that matches any transaction
-    /// let filter = TransactionFilter::any();
-    /// 
-    /// // All constraint fields are empty by default
-    /// assert!(filter.from.is_empty());
-    /// assert!(filter.to.is_empty());
-    /// assert!(filter.sighash.is_empty());
-    /// assert!(filter.status.is_none());
-    /// assert!(filter.type_.is_empty());
-    /// assert!(filter.contract_address.is_empty());
-    /// assert!(filter.hash.is_empty());
-    /// ```
     pub fn any() -> Self {
         Default::default()
     }
 
     /// Filter transactions by any of the provided sender addresses.
-    /// 
+    ///
     /// This method accepts any iterable of values that can be converted to `Address`.
     /// Common input types include string slices, byte arrays, and `Address` objects.
-    /// 
+    ///
     /// # Arguments
     /// * `addresses` - An iterable of sender addresses to filter by
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Self)` - The updated filter on success
     /// * `Err(anyhow::Error)` - If any address fails to convert
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter by a single sender address
     /// let filter = TransactionFilter::any()
     ///     .with_from_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
-    /// 
+    ///
     /// // Filter by multiple sender addresses
     /// let filter = TransactionFilter::any()
     ///     .with_from_address_any([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
     ///     ])?;
-    /// 
+    ///
     /// // Using byte arrays
     /// let sender_address = [
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
@@ -141,33 +225,33 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by any of the provided recipient addresses.
-    /// 
+    ///
     /// This method accepts any iterable of values that can be converted to `Address`.
     /// Common input types include string slices, byte arrays, and `Address` objects.
-    /// 
+    ///
     /// # Arguments
     /// * `addresses` - An iterable of recipient addresses to filter by
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Self)` - The updated filter on success
     /// * `Err(anyhow::Error)` - If any address fails to convert
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter by a single recipient address
     /// let filter = TransactionFilter::any()
     ///     .with_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
-    /// 
+    ///
     /// // Filter by multiple recipient addresses (e.g., popular DeFi contracts)
     /// let filter = TransactionFilter::any()
     ///     .with_to_address_any([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
     ///     ])?;
-    /// 
+    ///
     /// // Chain with sender filter
     /// let filter = TransactionFilter::any()
     ///     .with_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
@@ -193,26 +277,26 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by any of the provided function signatures (first 4 bytes of input).
-    /// 
+    ///
     /// This method accepts any iterable of values that can be converted to `Sighash`.
     /// Common input types include string slices, byte arrays, and `Sighash` objects.
-    /// 
+    ///
     /// # Arguments
     /// * `sighashes` - An iterable of function signatures to filter by
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Self)` - The updated filter on success
     /// * `Err(anyhow::Error)` - If any sighash fails to convert
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter by a single function signature (transfer)
     /// let filter = TransactionFilter::any()
     ///     .with_sighash_any(["0xa9059cbb"])?; // transfer(address,uint256)
-    /// 
+    ///
     /// // Filter by multiple function signatures
     /// let filter = TransactionFilter::any()
     ///     .with_sighash_any([
@@ -220,7 +304,7 @@ impl TransactionFilter {
     ///         "0x23b872dd", // transferFrom(address,address,uint256)
     ///         "0x095ea7b3", // approve(address,uint256)
     ///     ])?;
-    /// 
+    ///
     /// // Using byte arrays
     /// let transfer_sig = [0xa9, 0x05, 0x9c, 0xbb];
     /// let filter = TransactionFilter::any()
@@ -246,23 +330,23 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by status (success or failure).
-    /// 
+    ///
     /// # Arguments
     /// * `status` - The transaction status to filter by (typically 0 for failure, 1 for success)
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter for successful transactions only
     /// let filter = TransactionFilter::any()
     ///     .with_status(1);
-    /// 
+    ///
     /// // Filter for failed transactions only
     /// let filter = TransactionFilter::any()
     ///     .with_status(0);
-    /// 
+    ///
     /// // Chain with other filters
     /// let filter = TransactionFilter::any()
     ///     .with_from_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
@@ -275,23 +359,23 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by any of the provided transaction types.
-    /// 
+    ///
     /// # Arguments
     /// * `types` - An iterable of transaction types to filter by
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter for legacy transactions only
     /// let filter = TransactionFilter::any()
     ///     .with_type_any([0]);
-    /// 
+    ///
     /// // Filter for EIP-1559 transactions only
     /// let filter = TransactionFilter::any()
     ///     .with_type_any([2]);
-    /// 
+    ///
     /// // Filter for multiple transaction types
     /// let filter = TransactionFilter::any()
     ///     .with_type_any([0, 1, 2]); // Legacy, Access List, and EIP-1559
@@ -305,26 +389,26 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by any of the provided contract addresses.
-    /// 
+    ///
     /// This method accepts any iterable of values that can be converted to `Address`.
     /// Common input types include string slices, byte arrays, and `Address` objects.
-    /// 
+    ///
     /// # Arguments
     /// * `addresses` - An iterable of contract addresses to filter by
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Self)` - The updated filter on success
     /// * `Err(anyhow::Error)` - If any address fails to convert
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter by a single contract address
     /// let filter = TransactionFilter::any()
     ///     .with_contract_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
-    /// 
+    ///
     /// // Filter by multiple contract addresses
     /// let filter = TransactionFilter::any()
     ///     .with_contract_address_any([
@@ -352,33 +436,33 @@ impl TransactionFilter {
     }
 
     /// Filter transactions by any of the provided transaction hashes.
-    /// 
+    ///
     /// This method accepts any iterable of values that can be converted to `Hash`.
     /// Common input types include string slices, byte arrays, and `Hash` objects.
-    /// 
+    ///
     /// # Arguments
     /// * `hashes` - An iterable of transaction hashes to filter by
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Self)` - The updated filter on success
     /// * `Err(anyhow::Error)` - If any hash fails to convert
-    /// 
+    ///
     /// # Examples
-    /// 
+    ///
     /// ```
     /// use hypersync_net_types::TransactionFilter;
-    /// 
+    ///
     /// // Filter by a single transaction hash
     /// let filter = TransactionFilter::any()
     ///     .with_hash_any(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
-    /// 
+    ///
     /// // Filter by multiple transaction hashes
     /// let filter = TransactionFilter::any()
     ///     .with_hash_any([
     ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
     ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
     ///     ])?;
-    /// 
+    ///
     /// // Using byte arrays
     /// let tx_hash = [
     ///     0x40, 0xd0, 0x08, 0xf2, 0xa1, 0x65, 0x3f, 0x09, 0xb7, 0xb0, 0x28, 0xd3, 0x0c, 0x7f, 0xd1, 0xba,
@@ -402,6 +486,57 @@ impl TransactionFilter {
             );
         }
         self.hash = converted_hashes;
+        Ok(self)
+    }
+
+    /// Filter transactions by any of the provided authorization selections.
+    ///
+    /// This method is used for EIP-7702 transactions that include authorization lists.
+    /// It accepts any iterable of `AuthorizationSelection` objects.
+    ///
+    /// # Arguments
+    /// * `selections` - An iterable of authorization selections to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{TransactionFilter, AuthorizationSelection};
+    ///
+    /// // Filter by a single authorization selection
+    /// let auth_selection = AuthorizationSelection::any()
+    ///     .with_chain_id_any([1, 137])
+    ///     .with_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// let filter = TransactionFilter::any()
+    ///     .with_authorization_selection_any([auth_selection])?;
+    ///
+    /// // Filter by multiple authorization selections
+    /// let mainnet_auth = AuthorizationSelection::any()
+    ///     .with_chain_id_any([1])
+    ///     .with_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// let polygon_auth = AuthorizationSelection::any()
+    ///     .with_chain_id_any([137])
+    ///     .with_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///
+    /// let filter = TransactionFilter::any()
+    ///     .with_authorization_selection_any([mainnet_auth, polygon_auth])?;
+    ///
+    /// // Chain with other transaction filters
+    /// let filter = TransactionFilter::any()
+    ///     .with_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .with_authorization_selection_any([
+    ///         AuthorizationSelection::any()
+    ///             .with_chain_id_any([1])
+    ///             .with_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn with_authorization_selection_any<I>(mut self, selections: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = AuthorizationSelection>,
+    {
+        self.authorization_list = selections.into_iter().collect();
         Ok(self)
     }
 }
