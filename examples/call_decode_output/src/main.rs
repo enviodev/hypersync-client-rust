@@ -1,8 +1,9 @@
 use alloy_json_abi::Function;
 use anyhow::Context;
 use hypersync_client::{
-    net_types::Query, simple_types::Trace, ArrowResponseData, CallDecoder, Client, ClientConfig,
-    FromArrow, StreamConfig,
+    net_types::{FieldSelection, Query, TraceField, TraceFilter},
+    simple_types::Trace,
+    ArrowResponseData, CallDecoder, Client, ClientConfig, FromArrow, StreamConfig,
 };
 use std::sync::Arc;
 
@@ -21,21 +22,17 @@ async fn main() -> anyhow::Result<()> {
         .unwrap(),
     );
 
-    let signature = Function::parse(BALANCE_OF_SIGNATURE)
+    let balance_of_sighash = Function::parse(BALANCE_OF_SIGNATURE)
         .context("parse function signature")?
-        .selector();
+        .selector()
+        .to_string();
 
-    let query: Query = serde_json::from_value(serde_json::json!({
-        "from_block": 16291127, // Aave V3 deployment block
-        "traces": [{
-            "sighash": [format!("{:}", signature)],
-            "to": [DAI_ADDRESS],
-        }],
-        "field_selection": {
-            "trace": ["input", "output"],
-        }
-    }))
-    .unwrap();
+    let query = Query::new()
+        .from_block(16291127) // Aave V3 deployment block
+        .select_fields(FieldSelection::new().trace([TraceField::Input, TraceField::Output]))
+        .match_traces_any([TraceFilter::any()
+            .and_to_address_any([DAI_ADDRESS])?
+            .and_sighash_any([balance_of_sighash])?]);
 
     let decoder = CallDecoder::from_signatures(&[BALANCE_OF_SIGNATURE]).unwrap();
 
