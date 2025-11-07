@@ -100,6 +100,38 @@ impl Query {
         self
     }
 
+    /// Set log filters that the query will match against.
+    ///
+    /// This method accepts any iterable of items that can be converted to `LogSelection`.
+    /// Common input types include `LogFilter` objects and `LogSelection` objects.
+    /// The query will return logs that match any of the provided filters.
+    ///
+    /// # Arguments
+    /// * `logs` - An iterable of log filters/selections to match
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, LogFilter};
+    ///
+    /// // Match logs from specific contracts
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .match_logs_any([
+    ///         LogFilter::any()
+    ///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?, // USDT
+    ///         LogFilter::any()
+    ///             .and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?, // Another contract
+    ///     ]);
+    ///
+    /// // Match Transfer events from any contract
+    /// let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    /// let query = Query::new()
+    ///     .match_logs_any([
+    ///         LogFilter::any().and_topic0_any([transfer_sig])?
+    ///     ]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn match_logs_any<I>(mut self, logs: I) -> Self
     where
         I: IntoIterator,
@@ -110,8 +142,139 @@ impl Query {
         self
     }
 
-    pub fn add_log_selection(mut self, log_selection: LogSelection) -> Self {
-        self.logs.push(log_selection);
+    /// Set block filters that the query will match against.
+    ///
+    /// This method accepts any iterable of items that can be converted to `BlockSelection`.
+    /// Common input types include `BlockFilter` objects and `BlockSelection` objects.
+    /// The query will return blocks that match any of the provided filters.
+    ///
+    /// # Arguments
+    /// * `blocks` - An iterable of block filters/selections to match
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, BlockFilter};
+    ///
+    /// // Match blocks by specific hashes
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .match_blocks_any([
+    ///         BlockFilter::any()
+    ///             .and_hash_any(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?,
+    ///     ]);
+    ///
+    /// // Match blocks by specific miners
+    /// let query = Query::new()
+    ///     .match_blocks_any([
+    ///         BlockFilter::any()
+    ///             .and_miner_address_any([
+    ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // Mining pool 1
+    ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Mining pool 2
+    ///             ])?
+    ///     ]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn match_blocks_any<I>(mut self, blocks: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<BlockSelection>,
+    {
+        let block_selections: Vec<BlockSelection> = blocks.into_iter().map(Into::into).collect();
+        self.blocks = block_selections;
+        self
+    }
+
+    /// Set transaction filters that the query will match against.
+    ///
+    /// This method accepts any iterable of items that can be converted to `TransactionSelection`.
+    /// Common input types include `TransactionFilter` objects and `TransactionSelection` objects.
+    /// The query will return transactions that match any of the provided filters.
+    ///
+    /// # Arguments
+    /// * `transactions` - An iterable of transaction filters/selections to match
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, TransactionFilter};
+    ///
+    /// // Match transactions from specific addresses
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .match_transactions_any([
+    ///         TransactionFilter::any()
+    ///             .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    ///     ]);
+    ///
+    /// // Match transactions by function signature (e.g., transfer calls)
+    /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
+    /// let query = Query::new()
+    ///     .match_transactions_any([
+    ///         TransactionFilter::any().and_sighash_any([transfer_sig])?
+    ///     ]);
+    ///
+    /// // Match failed transactions
+    /// let query = Query::new()
+    ///     .match_transactions_any([
+    ///         TransactionFilter::any().and_status(0) // 0 = failed
+    ///     ]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn match_transactions_any<I>(mut self, transactions: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<TransactionSelection>,
+    {
+        let transaction_selections: Vec<TransactionSelection> =
+            transactions.into_iter().map(Into::into).collect();
+        self.transactions = transaction_selections;
+        self
+    }
+
+    /// Set trace filters that the query will match against.
+    ///
+    /// This method accepts any iterable of items that can be converted to `TraceSelection`.
+    /// Common input types include `TraceFilter` objects and `TraceSelection` objects.
+    /// The query will return traces that match any of the provided filters.
+    ///
+    /// # Arguments
+    /// * `traces` - An iterable of trace filters/selections to match
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, TraceFilter};
+    ///
+    /// // Match traces from specific caller addresses
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .match_traces_any([
+    ///         TraceFilter::any()
+    ///             .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    ///     ]);
+    ///
+    /// // Match contract creation traces
+    /// let query = Query::new()
+    ///     .match_traces_any([
+    ///         TraceFilter::any().and_call_type_any(["create", "suicide"])
+    ///     ]);
+    ///
+    /// // Match traces by function signature
+    /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
+    /// let query = Query::new()
+    ///     .match_traces_any([
+    ///         TraceFilter::any().and_sighash_any([transfer_sig])?
+    ///     ]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn match_traces_any<I>(mut self, traces: I) -> Self
+    where
+        I: IntoIterator,
+        I::Item: Into<TraceSelection>,
+    {
+        let trace_selections: Vec<TraceSelection> = traces.into_iter().map(Into::into).collect();
+        self.traces = trace_selections;
         self
     }
 
