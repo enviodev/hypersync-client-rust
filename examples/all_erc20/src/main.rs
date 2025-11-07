@@ -4,7 +4,7 @@
 use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{
-    net_types::{log::LogField, FieldSelection, LogFilter, LogSelection, Query},
+    net_types::{log::LogField, FieldSelection, LogFilter, Query},
     Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
 };
 use polars_arrow::{

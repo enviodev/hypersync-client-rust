@@ -326,7 +326,7 @@ impl Encoding {
 
 fn to_capnp_message(query: &Query) -> capnp::message::Builder<HeapAllocator> {
     let mut message = capnp::message::Builder::new_default();
-    let mut query_builder = message.init_root::<hypersync_net_types_capnp::query::Builder>();
+    let mut query_builder = message.init_root::<hypersync_net_types_capnp::request::Builder>();
     query_builder
         .build_full_query_from_query(query, false)
         .unwrap();
@@ -348,7 +348,7 @@ fn to_capnp_bytes_packed(message: capnp::message::Builder<HeapAllocator>) -> Vec
 fn from_capnp_bytes(bytes: &[u8]) -> Query {
     let message_reader = capnp::serialize::read_message(bytes, ReaderOptions::new()).unwrap();
     let query = message_reader
-        .get_root::<hypersync_net_types_capnp::query::Reader>()
+        .get_root::<hypersync_net_types_capnp::request::Reader>()
         .unwrap();
     Query::from_reader(query).unwrap()
 }
@@ -357,7 +357,7 @@ fn from_capnp_bytes_packed(bytes: &[u8]) -> Query {
     let message_reader =
         capnp::serialize_packed::read_message(bytes, ReaderOptions::new()).unwrap();
     let query = message_reader
-        .get_root::<hypersync_net_types_capnp::query::Reader>()
+        .get_root::<hypersync_net_types_capnp::request::Reader>()
         .unwrap();
     Query::from_reader(query).unwrap()
 }

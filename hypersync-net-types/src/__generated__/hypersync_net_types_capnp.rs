@@ -8348,7 +8348,7 @@ pub mod block_range {
     }
 }
 
-pub mod query {
+pub mod request {
     #[derive(Copy, Clone)]
     pub struct Owned(());
     impl ::capnp::introspect::Introspect for Owned {
@@ -8461,7 +8461,7 @@ pub mod query {
             !self.reader.get_pointer_field(0).is_null()
         }
         #[inline]
-        pub fn get_body(self) -> crate::hypersync_net_types_capnp::query::body::Reader<'a> {
+        pub fn get_body(self) -> crate::hypersync_net_types_capnp::request::body::Reader<'a> {
             self.reader.into()
         }
         #[inline]
@@ -8587,11 +8587,11 @@ pub mod query {
             !self.builder.is_pointer_field_null(0)
         }
         #[inline]
-        pub fn get_body(self) -> crate::hypersync_net_types_capnp::query::body::Builder<'a> {
+        pub fn get_body(self) -> crate::hypersync_net_types_capnp::request::body::Builder<'a> {
             self.builder.into()
         }
         #[inline]
-        pub fn init_body(mut self) -> crate::hypersync_net_types_capnp::query::body::Builder<'a> {
+        pub fn init_body(mut self) -> crate::hypersync_net_types_capnp::request::body::Builder<'a> {
             self.builder.set_data_field::<u16>(0, 0);
             self.builder.reborrow().get_pointer_field(1).clear();
             self.builder.into()
@@ -8620,28 +8620,29 @@ pub mod query {
         pub fn get_block_range(&self) -> crate::hypersync_net_types_capnp::block_range::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.get_pointer_field(0))
         }
-        pub fn get_body(&self) -> crate::hypersync_net_types_capnp::query::body::Pipeline {
+        pub fn get_body(&self) -> crate::hypersync_net_types_capnp::request::body::Pipeline {
             ::capnp::capability::FromTypelessPipeline::new(self._typeless.noop())
         }
     }
     mod _private {
-        pub static ENCODED_NODE: [::capnp::Word; 58] = [
+        pub static ENCODED_NODE: [::capnp::Word; 59] = [
             ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
             ::capnp::word(84, 0, 180, 54, 227, 78, 133, 190),
             ::capnp::word(26, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(197, 128, 248, 24, 106, 165, 137, 146),
             ::capnp::word(2, 0, 7, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(21, 0, 0, 0, 2, 1, 0, 0),
-            ::capnp::word(33, 0, 0, 0, 7, 0, 0, 0),
+            ::capnp::word(21, 0, 0, 0, 18, 1, 0, 0),
+            ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(29, 0, 0, 0, 175, 0, 0, 0),
+            ::capnp::word(33, 0, 0, 0, 175, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 121, 112, 101, 114, 115, 121, 110),
             ::capnp::word(99, 95, 110, 101, 116, 95, 116, 121),
             ::capnp::word(112, 101, 115, 46, 99, 97, 112, 110),
-            ::capnp::word(112, 58, 81, 117, 101, 114, 121, 0),
+            ::capnp::word(112, 58, 82, 101, 113, 117, 101, 115),
+            ::capnp::word(116, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
             ::capnp::word(12, 0, 0, 0, 3, 0, 4, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
@@ -8688,7 +8689,7 @@ pub mod query {
         pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
             match index {
         0 => <crate::hypersync_net_types_capnp::block_range::Owned as ::capnp::introspect::Introspect>::introspect(),
-        1 => <crate::hypersync_net_types_capnp::query::body::Owned as ::capnp::introspect::Introspect>::introspect(),
+        1 => <crate::hypersync_net_types_capnp::request::body::Owned as ::capnp::introspect::Introspect>::introspect(),
         2 => <bool as ::capnp::introspect::Introspect>::introspect(),
         _ => panic!("invalid field index {}", index),
       }
@@ -9021,11 +9022,11 @@ pub mod query {
             pub static ENCODED_NODE: [::capnp::Word; 48] = [
                 ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
                 ::capnp::word(11, 115, 36, 192, 91, 123, 70, 177),
-                ::capnp::word(32, 0, 0, 0, 1, 0, 1, 0),
+                ::capnp::word(34, 0, 0, 0, 1, 0, 1, 0),
                 ::capnp::word(84, 0, 180, 54, 227, 78, 133, 190),
                 ::capnp::word(2, 0, 7, 0, 1, 0, 2, 0),
                 ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-                ::capnp::word(21, 0, 0, 0, 42, 1, 0, 0),
+                ::capnp::word(21, 0, 0, 0, 58, 1, 0, 0),
                 ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
                 ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
                 ::capnp::word(29, 0, 0, 0, 119, 0, 0, 0),
@@ -9034,8 +9035,8 @@ pub mod query {
                 ::capnp::word(104, 121, 112, 101, 114, 115, 121, 110),
                 ::capnp::word(99, 95, 110, 101, 116, 95, 116, 121),
                 ::capnp::word(112, 101, 115, 46, 99, 97, 112, 110),
-                ::capnp::word(112, 58, 81, 117, 101, 114, 121, 46),
-                ::capnp::word(98, 111, 100, 121, 0, 0, 0, 0),
+                ::capnp::word(112, 58, 82, 101, 113, 117, 101, 115),
+                ::capnp::word(116, 46, 98, 111, 100, 121, 0, 0),
                 ::capnp::word(8, 0, 0, 0, 3, 0, 4, 0),
                 ::capnp::word(0, 0, 255, 255, 1, 0, 0, 0),
                 ::capnp::word(0, 0, 1, 0, 1, 0, 0, 0),
