@@ -46,7 +46,7 @@ impl TraceFilter {
     ///
     /// // Chain with other filter methods
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn any() -> Self {
@@ -73,11 +73,11 @@ impl TraceFilter {
     ///
     /// // Filter by a single caller address
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// // Filter by multiple caller addresses
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any([
+    ///     .and_from_address([
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///     ])?;
@@ -88,10 +88,10 @@ impl TraceFilter {
     ///     0x0b, 0x5e, 0x6a, 0xde, 0xe3, 0x0d, 0x1a, 0x23, 0x45, 0x67
     /// ];
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any([caller_address])?;
+    ///     .and_from_address([caller_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_from_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_from_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -129,22 +129,22 @@ impl TraceFilter {
     ///
     /// // Filter by a single target address
     /// let filter = TraceFilter::any()
-    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple target addresses
     /// let filter = TraceFilter::any()
-    ///     .and_to_address_any([
+    ///     .and_to_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///     ])?;
     ///
     /// // Chain with from address filtering
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
-    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_to_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_to_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -182,17 +182,17 @@ impl TraceFilter {
     ///
     /// // Filter by a single contract address
     /// let filter = TraceFilter::any()
-    ///     .and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// // Filter by multiple contract addresses
     /// let filter = TraceFilter::any()
-    ///     .and_address_any([
+    ///     .and_address([
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -225,19 +225,19 @@ impl TraceFilter {
     ///
     /// // Filter by specific call types
     /// let filter = TraceFilter::any()
-    ///     .and_call_type_any(["call", "delegatecall"]);
+    ///     .and_call_type(["call", "delegatecall"]);
     ///
     /// // Filter by contract creation traces
     /// let filter = TraceFilter::any()
-    ///     .and_call_type_any(["create", "create2"]);
+    ///     .and_call_type(["create", "create2"]);
     ///
     /// // Chain with address filtering
     /// let filter = TraceFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
-    ///     .and_call_type_any(["call"]);
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_call_type(["call"]);
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_call_type_any<I, S>(mut self, call_types: I) -> Self
+    pub fn and_call_type<I, S>(mut self, call_types: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
@@ -261,13 +261,13 @@ impl TraceFilter {
     ///
     /// // Filter by block rewards
     /// let filter = TraceFilter::any()
-    ///     .and_reward_type_any(["block"]);
+    ///     .and_reward_type(["block"]);
     ///
     /// // Filter by both block and uncle rewards
     /// let filter = TraceFilter::any()
-    ///     .and_reward_type_any(["block", "uncle"]);
+    ///     .and_reward_type(["block", "uncle"]);
     /// ```
-    pub fn and_reward_type_any<I, S>(mut self, reward_types: I) -> Self
+    pub fn and_reward_type<I, S>(mut self, reward_types: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
@@ -291,13 +291,13 @@ impl TraceFilter {
     ///
     /// // Filter by call traces
     /// let filter = TraceFilter::any()
-    ///     .and_type_any(["call"]);
+    ///     .and_type(["call"]);
     ///
     /// // Filter by multiple trace types
     /// let filter = TraceFilter::any()
-    ///     .and_type_any(["call", "create", "reward"]);
+    ///     .and_type(["call", "create", "reward"]);
     /// ```
-    pub fn and_type_any<I, S>(mut self, types: I) -> Self
+    pub fn and_type<I, S>(mut self, types: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
@@ -327,11 +327,11 @@ impl TraceFilter {
     /// // Filter by transfer function signature
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
     /// let filter = TraceFilter::any()
-    ///     .and_sighash_any([transfer_sig])?;
+    ///     .and_sighash([transfer_sig])?;
     ///
     /// // Filter by multiple function signatures
     /// let filter = TraceFilter::any()
-    ///     .and_sighash_any([
+    ///     .and_sighash([
     ///         "0xa9059cbb", // transfer(address,uint256)
     ///         "0x095ea7b3", // approve(address,uint256)
     ///     ])?;
@@ -339,10 +339,10 @@ impl TraceFilter {
     /// // Using byte arrays
     /// let transfer_bytes = [0xa9, 0x05, 0x9c, 0xbb];
     /// let filter = TraceFilter::any()
-    ///     .and_sighash_any([transfer_bytes])?;
+    ///     .and_sighash([transfer_bytes])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_sighash_any<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
+    pub fn and_sighash<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = S>,
         S: TryInto<Sighash>,

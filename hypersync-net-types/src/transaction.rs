@@ -34,11 +34,11 @@ impl AuthorizationSelection {
     ///
     /// // Filter by a single chain ID (Ethereum mainnet)
     /// let selection = AuthorizationSelection::any()
-    ///     .and_chain_id_any([1]);
+    ///     .and_chain_id([1]);
     ///
     /// // Filter by multiple chain IDs
     /// let selection = AuthorizationSelection::any()
-    ///     .and_chain_id_any([
+    ///     .and_chain_id([
     ///         1,      // Ethereum mainnet
     ///         137,    // Polygon
     ///         42161,  // Arbitrum One
@@ -46,11 +46,11 @@ impl AuthorizationSelection {
     ///
     /// // Chain with address filter
     /// let selection = AuthorizationSelection::any()
-    ///     .and_chain_id_any([1, 137])
-    ///     .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_chain_id([1, 137])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_chain_id_any<I>(mut self, chain_ids: I) -> Self
+    pub fn and_chain_id<I>(mut self, chain_ids: I) -> Self
     where
         I: IntoIterator<Item = u64>,
     {
@@ -77,11 +77,11 @@ impl AuthorizationSelection {
     ///
     /// // Filter by a single address
     /// let selection = AuthorizationSelection::any()
-    ///     .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple addresses
     /// let selection = AuthorizationSelection::any()
-    ///     .and_address_any([
+    ///     .and_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
     ///     ])?;
@@ -92,10 +92,10 @@ impl AuthorizationSelection {
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
     /// let selection = AuthorizationSelection::any()
-    ///     .and_address_any([auth_address])?;
+    ///     .and_address([auth_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -188,11 +188,11 @@ impl TransactionFilter {
     ///
     /// // Filter by a single sender address
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_from_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple sender addresses
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any([
+    ///     .and_from_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
     ///     ])?;
@@ -203,10 +203,10 @@ impl TransactionFilter {
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any([sender_address])?;
+    ///     .and_from_address([sender_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_from_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_from_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -243,22 +243,22 @@ impl TransactionFilter {
     ///
     /// // Filter by a single recipient address
     /// let filter = TransactionFilter::any()
-    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple recipient addresses (e.g., popular DeFi contracts)
     /// let filter = TransactionFilter::any()
-    ///     .and_to_address_any([
+    ///     .and_to_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
     ///     ])?;
     ///
     /// // Chain with sender filter
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
-    ///     .and_to_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_to_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_to_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -295,11 +295,11 @@ impl TransactionFilter {
     ///
     /// // Filter by a single function signature (transfer)
     /// let filter = TransactionFilter::any()
-    ///     .and_sighash_any(["0xa9059cbb"])?; // transfer(address,uint256)
+    ///     .and_sighash(["0xa9059cbb"])?; // transfer(address,uint256)
     ///
     /// // Filter by multiple function signatures
     /// let filter = TransactionFilter::any()
-    ///     .and_sighash_any([
+    ///     .and_sighash([
     ///         "0xa9059cbb", // transfer(address,uint256)
     ///         "0x23b872dd", // transferFrom(address,address,uint256)
     ///         "0x095ea7b3", // approve(address,uint256)
@@ -308,10 +308,10 @@ impl TransactionFilter {
     /// // Using byte arrays
     /// let transfer_sig = [0xa9, 0x05, 0x9c, 0xbb];
     /// let filter = TransactionFilter::any()
-    ///     .and_sighash_any([transfer_sig])?;
+    ///     .and_sighash([transfer_sig])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_sighash_any<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
+    pub fn and_sighash<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = S>,
         S: TryInto<Sighash>,
@@ -349,7 +349,7 @@ impl TransactionFilter {
     ///
     /// // Chain with other filters
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     .and_from_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     .and_status(1); // Only successful transactions from this address
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -370,17 +370,17 @@ impl TransactionFilter {
     ///
     /// // Filter for legacy transactions only
     /// let filter = TransactionFilter::any()
-    ///     .and_type_any([0]);
+    ///     .and_type([0]);
     ///
     /// // Filter for EIP-1559 transactions only
     /// let filter = TransactionFilter::any()
-    ///     .and_type_any([2]);
+    ///     .and_type([2]);
     ///
     /// // Filter for multiple transaction types
     /// let filter = TransactionFilter::any()
-    ///     .and_type_any([0, 1, 2]); // Legacy, Access List, and EIP-1559
+    ///     .and_type([0, 1, 2]); // Legacy, Access List, and EIP-1559
     /// ```
-    pub fn and_type_any<I>(mut self, types: I) -> Self
+    pub fn and_type<I>(mut self, types: I) -> Self
     where
         I: IntoIterator<Item = u8>,
     {
@@ -407,17 +407,17 @@ impl TransactionFilter {
     ///
     /// // Filter by a single contract address
     /// let filter = TransactionFilter::any()
-    ///     .and_contract_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_contract_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple contract addresses
     /// let filter = TransactionFilter::any()
-    ///     .and_contract_address_any([
+    ///     .and_contract_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_contract_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_contract_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -454,11 +454,11 @@ impl TransactionFilter {
     ///
     /// // Filter by a single transaction hash
     /// let filter = TransactionFilter::any()
-    ///     .and_hash_any(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
+    ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
     ///
     /// // Filter by multiple transaction hashes
     /// let filter = TransactionFilter::any()
-    ///     .and_hash_any([
+    ///     .and_hash([
     ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
     ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
     ///     ])?;
@@ -469,10 +469,10 @@ impl TransactionFilter {
     ///     0x7c, 0x84, 0x90, 0x0f, 0xcf, 0xb0, 0x32, 0x04, 0x0b, 0x3e, 0xb3, 0xd1, 0x6f, 0x84, 0xd2, 0x94
     /// ];
     /// let filter = TransactionFilter::any()
-    ///     .and_hash_any([tx_hash])?;
+    ///     .and_hash([tx_hash])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_hash_any<I, H>(mut self, hashes: I) -> anyhow::Result<Self>
+    pub fn and_hash<I, H>(mut self, hashes: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = H>,
         H: TryInto<Hash>,
@@ -504,35 +504,35 @@ impl TransactionFilter {
     ///
     /// // Filter by a single authorization selection
     /// let auth_selection = AuthorizationSelection::any()
-    ///     .and_chain_id_any([1, 137])
-    ///     .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_chain_id([1, 137])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// let filter = TransactionFilter::any()
-    ///     .and_authorization_selection_any([auth_selection])?;
+    ///     .and_authorization_selection([auth_selection])?;
     ///
     /// // Filter by multiple authorization selections
     /// let mainnet_auth = AuthorizationSelection::any()
-    ///     .and_chain_id_any([1])
-    ///     .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_chain_id([1])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// let polygon_auth = AuthorizationSelection::any()
-    ///     .and_chain_id_any([137])
-    ///     .and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_chain_id([137])
+    ///     .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// let filter = TransactionFilter::any()
-    ///     .and_authorization_selection_any([mainnet_auth, polygon_auth])?;
+    ///     .and_authorization_selection([mainnet_auth, polygon_auth])?;
     ///
     /// // Chain with other transaction filters
     /// let filter = TransactionFilter::any()
-    ///     .and_from_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
-    ///     .and_authorization_selection_any([
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_authorization_selection([
     ///         AuthorizationSelection::any()
-    ///             .and_chain_id_any([1])
-    ///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///             .and_chain_id([1])
+    ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_authorization_selection_any<I>(mut self, selections: I) -> anyhow::Result<Self>
+    pub fn and_authorization_selection<I>(mut self, selections: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = AuthorizationSelection>,
     {

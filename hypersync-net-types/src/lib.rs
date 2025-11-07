@@ -56,7 +56,7 @@ impl<T> Selection<T> {
     /// // Create a selection that includes the filter
     ///
     /// let selection = LogSelection::new(
-    ///     LogFilter::any().and_address_any(["0xdadB0d80178819F2319190D340ce9A924f783711"])?,
+    ///     LogFilter::any().and_address(["0xdadB0d80178819F2319190D340ce9A924f783711"])?,
     /// );
     ///
     /// Ok::<(), anyhow::Error>(())
@@ -83,7 +83,7 @@ impl<T> Selection<T> {
     ///
     /// // Create a selection that excludes only logs from a specific address
     /// let selection = all.and_not(
-    ///     LogFilter::any().and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    ///     LogFilter::any().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
     /// );
     ///
     /// Ok::<(), anyhow::Error>(())

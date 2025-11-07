@@ -30,9 +30,9 @@ async fn main() -> anyhow::Result<()> {
     let query = Query::new()
         .from_block(16291127) // Aave V3 deployment block
         .select_fields(FieldSelection::new().trace([TraceField::Input, TraceField::Output]))
-        .where_traces_any([TraceFilter::any()
-            .and_to_address_any([DAI_ADDRESS])?
-            .and_sighash_any([balance_of_sighash])?]);
+        .where_traces([TraceFilter::any()
+            .and_to_address([DAI_ADDRESS])?
+            .and_sighash([balance_of_sighash])?]);
 
     let decoder = CallDecoder::from_signatures(&[BALANCE_OF_SIGNATURE]).unwrap();
 

@@ -20,12 +20,12 @@ async fn main() -> anyhow::Result<()> {
     let mut query = Query::new()
         // start from tip since we only want new transfers
         .from_block(20519993)
-        .where_transactions_any([
+        .where_transactions([
             // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
             // We want all DAI transfers so no address filter and only a filter for the first topic
             hypersync_client::net_types::TransactionFilter::any()
-                .and_from_address_any([DAI_ADDRESS])?
-                .and_to_address_any([DAI_ADDRESS])?,
+                .and_from_address([DAI_ADDRESS])?
+                .and_to_address([DAI_ADDRESS])?,
         ])
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_fields(
