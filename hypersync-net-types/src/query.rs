@@ -238,6 +238,11 @@ impl Query {
     /// Common input types include `TraceFilter` objects and `TraceSelection` objects.
     /// The query will return traces that match any of the provided filters.
     ///
+    /// # Availability
+    /// **Note**: Trace data is only available on select hypersync instances. Not all blockchain
+    /// networks provide trace data, and it requires additional infrastructure to collect and serve.
+    /// Check your hypersync instance documentation to confirm trace availability for your target network.
+    ///
     /// # Arguments
     /// * `traces` - An iterable of trace filters/selections to match
     ///
@@ -278,8 +283,145 @@ impl Query {
         self
     }
 
+    /// Set the field selection for the query to specify which fields should be returned.
+    ///
+    /// Field selection allows you to optimize query performance and reduce payload size by
+    /// requesting only the fields you need. By default, no fields are selected, which means
+    /// you need to explicitly specify which fields to include in the response.
+    ///
+    /// # Arguments
+    /// * `field_selection` - A `FieldSelection` object specifying which fields to include
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, FieldSelection, block::BlockField, transaction::TransactionField, log::LogField, trace::TraceField};
+    ///
+    /// // Select only essential block and transaction fields
+    /// let field_selection = FieldSelection::new()
+    ///     .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp])
+    ///     .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To]);
+    ///
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_fields(field_selection);
+    ///
+    /// // Select all available fields for comprehensive analysis
+    /// let all_fields = FieldSelection::new()
+    ///     .block(BlockField::all())
+    ///     .transaction(TransactionField::all())
+    ///     .log(LogField::all())
+    ///     .trace(TraceField::all());
+    ///
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_fields(all_fields);
+    ///
+    /// // Mixed approach - all blocks and logs, specific transaction fields
+    /// let mixed_fields = FieldSelection::new()
+    ///     .block(BlockField::all())
+    ///     .transaction([
+    ///         TransactionField::Hash,
+    ///         TransactionField::From,
+    ///         TransactionField::To,
+    ///         TransactionField::Value,
+    ///         TransactionField::GasPrice,
+    ///         TransactionField::GasUsed
+    ///     ])
+    ///     .log(LogField::all());
+    ///
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .select_fields(mixed_fields);
+    /// ```
     pub fn select_fields(mut self, field_selection: FieldSelection) -> Self {
         self.field_selection = field_selection;
+        self
+    }
+
+    /// Set the join mode for the query to control how different data types are related.
+    ///
+    /// Join mode determines how hypersync correlates data between blocks, transactions, logs, and traces.
+    /// This affects which additional related data is included in the response beyond what your filters directly match.
+    ///
+    /// # Arguments
+    /// * `join_mode` - The `JoinMode` to use for the query
+    ///
+    /// # Join Modes:
+    /// - `JoinMode::Default`: Join in order logs → transactions → traces → blocks
+    /// - `JoinMode::JoinAll`: Join everything to everything (comprehensive but larger responses)
+    /// - `JoinMode::JoinNothing`: No joins, return only directly matched data
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, JoinMode, LogFilter};
+    ///
+    /// // Default join mode - get transactions and blocks for matching logs
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .join_mode(JoinMode::Default)
+    ///     .match_logs_any([LogFilter::any()]);
+    ///
+    /// // Join everything - comprehensive data for analysis
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .join_mode(JoinMode::JoinAll)
+    ///     .match_logs_any([LogFilter::any()]);
+    ///
+    /// // No joins - only the exact logs that match the filter
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .join_mode(JoinMode::JoinNothing)
+    ///     .match_logs_any([LogFilter::any()]);
+    /// ```
+    pub fn join_mode(mut self, join_mode: JoinMode) -> Self {
+        self.join_mode = join_mode;
+        self
+    }
+
+    /// Set whether to include all blocks in the requested range, regardless of matches.
+    ///
+    /// By default, hypersync only returns blocks that are related to matched transactions, logs, or traces.
+    /// Setting this to `true` forces the server to return data for all blocks in the range [from_block, to_block),
+    /// even if they don't contain any matching transactions or logs.
+    ///
+    /// # Use Cases:
+    /// - Block-level analytics requiring complete block data
+    /// - Ensuring no blocks are missed in sequential processing
+    /// - Getting block headers for every block in a range
+    ///
+    /// # Performance Note:
+    /// Setting this to `true` can significantly increase response size and processing time,
+    /// especially for large block ranges. Use judiciously.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{Query, LogFilter, FieldSelection, block::BlockField};
+    ///
+    /// // Include all blocks for complete block header data
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .to_block(18_000_100)
+    ///     .include_all_blocks()
+    ///     .select_fields(
+    ///         FieldSelection::new()
+    ///             .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp])
+    ///     );
+    ///
+    /// // Normal mode - only blocks with matching logs
+    /// let query = Query::new()
+    ///     .from_block(18_000_000)
+    ///     .include_all_blocks()
+    ///     .match_logs_any([
+    ///         LogFilter::any()
+    ///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     ]);
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn include_all_blocks(mut self) -> Self {
+        self.include_all_blocks = true;
         self
     }
 
@@ -438,14 +580,18 @@ impl FieldSelection {
     /// let field_selection = FieldSelection::new()
     ///     .block([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
     ///
-    /// // Can also use a vector
+    /// // Select all block fields for comprehensive data
+    /// let field_selection = FieldSelection::new()
+    ///     .block(BlockField::all());
+    ///
+    /// // Can also use a vector for specific fields
     /// let fields = vec![BlockField::Number, BlockField::ParentHash];
     /// let field_selection = FieldSelection::new()
     ///     .block(fields);
     ///
-    /// // Chain with other field selections
+    /// // Chain with other field selections - mix all and specific
     /// let field_selection = FieldSelection::new()
-    ///     .block([BlockField::Number])
+    ///     .block(BlockField::all())
     ///     .transaction([TransactionField::Hash]);
     /// ```
     pub fn block<T: IntoIterator<Item = BlockField>>(mut self, fields: T) -> Self {
@@ -469,6 +615,10 @@ impl FieldSelection {
     /// let field_selection = FieldSelection::new()
     ///     .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To]);
     ///
+    /// // Select all transaction fields for complete transaction data
+    /// let field_selection = FieldSelection::new()
+    ///     .transaction(TransactionField::all());
+    ///
     /// // Select fields related to gas and value
     /// let field_selection = FieldSelection::new()
     ///     .transaction([
@@ -477,10 +627,10 @@ impl FieldSelection {
     ///         TransactionField::Value,
     ///     ]);
     ///
-    /// // Chain with other field selections
+    /// // Chain with other field selections - mix all and specific
     /// let field_selection = FieldSelection::new()
     ///     .block([BlockField::Number])
-    ///     .transaction([TransactionField::Hash]);
+    ///     .transaction(TransactionField::all());
     /// ```
     pub fn transaction<T: IntoIterator<Item = TransactionField>>(mut self, fields: T) -> Self {
         self.transaction.extend(fields);
@@ -503,6 +653,10 @@ impl FieldSelection {
     /// let field_selection = FieldSelection::new()
     ///     .log([LogField::Address, LogField::Data, LogField::Topic0]);
     ///
+    /// // Select all log fields for comprehensive event data
+    /// let field_selection = FieldSelection::new()
+    ///     .log(LogField::all());
+    ///
     /// // Select all topic fields for event analysis
     /// let field_selection = FieldSelection::new()
     ///     .log([
@@ -512,10 +666,10 @@ impl FieldSelection {
     ///         LogField::Topic3,
     ///     ]);
     ///
-    /// // Chain with transaction fields for full context
+    /// // Chain with transaction fields - mix all and specific
     /// let field_selection = FieldSelection::new()
     ///     .transaction([TransactionField::Hash])
-    ///     .log([LogField::Address, LogField::Data]);
+    ///     .log(LogField::all());
     /// ```
     pub fn log<T: IntoIterator<Item = LogField>>(mut self, fields: T) -> Self {
         self.log.extend(fields);
@@ -525,6 +679,11 @@ impl FieldSelection {
     ///
     /// This method allows you to specify which trace fields should be returned in the query response.
     /// Only the selected fields will be included, which can improve performance and reduce payload size.
+    ///
+    /// # Availability
+    /// **Note**: Trace data is only available on select hypersync instances. Not all blockchain
+    /// networks provide trace data, and it requires additional infrastructure to collect and serve.
+    /// Check your hypersync instance documentation to confirm trace availability for your target network.
     ///
     /// # Arguments
     /// * `fields` - An iterable of `TraceField` values to select
@@ -543,6 +702,10 @@ impl FieldSelection {
     /// let field_selection = FieldSelection::new()
     ///     .trace([TraceField::From, TraceField::To, TraceField::Value]);
     ///
+    /// // Select all trace fields for comprehensive trace analysis
+    /// let field_selection = FieldSelection::new()
+    ///     .trace(TraceField::all());
+    ///
     /// // Select trace execution details
     /// let field_selection = FieldSelection::new()
     ///     .trace([
@@ -553,10 +716,10 @@ impl FieldSelection {
     ///         TraceField::GasUsed,
     ///     ]);
     ///
-    /// // Combine with other data types for comprehensive analysis
+    /// // Combine with other data types - mix all and specific
     /// let field_selection = FieldSelection::new()
     ///     .transaction([TransactionField::Hash])
-    ///     .trace([TraceField::From, TraceField::To])
+    ///     .trace(TraceField::all())
     ///     .log([LogField::Address]);
     /// ```
     pub fn trace<T: IntoIterator<Item = TraceField>>(mut self, fields: T) -> Self {
