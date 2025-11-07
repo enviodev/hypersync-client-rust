@@ -24,19 +24,6 @@ pub struct ClientConfig {
     /// Query serialization format to use for HTTP requests.
     #[serde(default)]
     pub serialization_format: SerializationFormat,
-    /// Custom user agent string for HTTP requests.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[doc(hidden)]
-    pub user_agent: Option<String>,
-}
-
-impl ClientConfig {
-    /// Set a custom user agent string for HTTP requests.
-    /// This is intended for internal use by language bindings.
-    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
-        self.user_agent = Some(user_agent.into());
-        self
-    }
 }
 
 /// Determines query serialization format for HTTP requests.
