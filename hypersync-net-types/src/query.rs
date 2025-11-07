@@ -7,110 +7,6 @@ use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-impl query_body::Builder<'_> {
-    pub fn build_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
-        self.reborrow()
-            .set_include_all_blocks(query.include_all_blocks);
-
-        // Set max nums using OptUInt64
-        if let Some(max_num_blocks) = query.max_num_blocks {
-            let mut max_blocks_builder = self.reborrow().init_max_num_blocks();
-            max_blocks_builder.set_value(max_num_blocks as u64);
-        }
-        if let Some(max_num_transactions) = query.max_num_transactions {
-            let mut max_tx_builder = self.reborrow().init_max_num_transactions();
-            max_tx_builder.set_value(max_num_transactions as u64);
-        }
-        if let Some(max_num_logs) = query.max_num_logs {
-            let mut max_logs_builder = self.reborrow().init_max_num_logs();
-            max_logs_builder.set_value(max_num_logs as u64);
-        }
-        if let Some(max_num_traces) = query.max_num_traces {
-            let mut max_traces_builder = self.reborrow().init_max_num_traces();
-            max_traces_builder.set_value(max_num_traces as u64);
-        }
-
-        // Set join mode
-        let join_mode = match query.join_mode {
-            JoinMode::Default => hypersync_net_types_capnp::JoinMode::Default,
-            JoinMode::JoinAll => hypersync_net_types_capnp::JoinMode::JoinAll,
-            JoinMode::JoinNothing => hypersync_net_types_capnp::JoinMode::JoinNothing,
-        };
-        self.reborrow().set_join_mode(join_mode);
-
-        // Set field selection
-        {
-            let mut field_selection = self.reborrow().init_field_selection();
-            query
-                .field_selection
-                .populate_builder(&mut field_selection)?;
-        }
-
-        // Set logs
-        {
-            let mut logs_list = self.reborrow().init_logs(query.logs.len() as u32);
-            for (i, log_selection) in query.logs.iter().enumerate() {
-                let mut log_sel = logs_list.reborrow().get(i as u32);
-                log_selection.populate_builder(&mut log_sel)?;
-            }
-        }
-
-        // Set transactions
-        {
-            let mut tx_list = self
-                .reborrow()
-                .init_transactions(query.transactions.len() as u32);
-            for (i, tx_selection) in query.transactions.iter().enumerate() {
-                let mut tx_sel = tx_list.reborrow().get(i as u32);
-                tx_selection.populate_builder(&mut tx_sel)?;
-            }
-        }
-
-        // Set traces
-        {
-            let mut trace_list = self.reborrow().init_traces(query.traces.len() as u32);
-            for (i, trace_selection) in query.traces.iter().enumerate() {
-                let mut trace_sel = trace_list.reborrow().get(i as u32);
-                trace_selection.populate_builder(&mut trace_sel)?;
-            }
-        }
-
-        // Set blocks
-        {
-            let mut block_list = self.reborrow().init_blocks(query.blocks.len() as u32);
-            for (i, block_selection) in query.blocks.iter().enumerate() {
-                let mut block_sel = block_list.reborrow().get(i as u32);
-                block_selection.populate_builder(&mut block_sel)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-impl CapnpReader<hypersync_net_types_capnp::request::Owned> for Query {
-    fn from_reader(
-        query: hypersync_net_types_capnp::request::Reader,
-    ) -> Result<Self, capnp::Error> {
-        let block_range = query.get_block_range()?;
-        let from_block = block_range.get_from_block();
-        let to_block = if block_range.has_to_block() {
-            Some(block_range.get_to_block()?.get_value())
-        } else {
-            None
-        };
-        let body_reader = match query.get_body().which()? {
-            request::body::Which::Query(query_body_reader) => query_body_reader?,
-            request::body::Which::QueryId(_) => {
-                return Err(capnp::Error::failed(
-                    "QueryId cannot be read from capnp request with QueryBody".to_string(),
-                ));
-            }
-        };
-
-        Query::from_capnp_query_body_reader(&body_reader, from_block, to_block)
-    }
-}
-
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Query {
     /// The block to start the query from
@@ -506,6 +402,109 @@ impl FieldSelection {
     }
 }
 
+impl query_body::Builder<'_> {
+    pub fn build_from_query(&mut self, query: &Query) -> Result<(), capnp::Error> {
+        self.reborrow()
+            .set_include_all_blocks(query.include_all_blocks);
+
+        // Set max nums using OptUInt64
+        if let Some(max_num_blocks) = query.max_num_blocks {
+            let mut max_blocks_builder = self.reborrow().init_max_num_blocks();
+            max_blocks_builder.set_value(max_num_blocks as u64);
+        }
+        if let Some(max_num_transactions) = query.max_num_transactions {
+            let mut max_tx_builder = self.reborrow().init_max_num_transactions();
+            max_tx_builder.set_value(max_num_transactions as u64);
+        }
+        if let Some(max_num_logs) = query.max_num_logs {
+            let mut max_logs_builder = self.reborrow().init_max_num_logs();
+            max_logs_builder.set_value(max_num_logs as u64);
+        }
+        if let Some(max_num_traces) = query.max_num_traces {
+            let mut max_traces_builder = self.reborrow().init_max_num_traces();
+            max_traces_builder.set_value(max_num_traces as u64);
+        }
+
+        // Set join mode
+        let join_mode = match query.join_mode {
+            JoinMode::Default => hypersync_net_types_capnp::JoinMode::Default,
+            JoinMode::JoinAll => hypersync_net_types_capnp::JoinMode::JoinAll,
+            JoinMode::JoinNothing => hypersync_net_types_capnp::JoinMode::JoinNothing,
+        };
+        self.reborrow().set_join_mode(join_mode);
+
+        // Set field selection
+        {
+            let mut field_selection = self.reborrow().init_field_selection();
+            query
+                .field_selection
+                .populate_builder(&mut field_selection)?;
+        }
+
+        // Set logs
+        {
+            let mut logs_list = self.reborrow().init_logs(query.logs.len() as u32);
+            for (i, log_selection) in query.logs.iter().enumerate() {
+                let mut log_sel = logs_list.reborrow().get(i as u32);
+                log_selection.populate_builder(&mut log_sel)?;
+            }
+        }
+
+        // Set transactions
+        {
+            let mut tx_list = self
+                .reborrow()
+                .init_transactions(query.transactions.len() as u32);
+            for (i, tx_selection) in query.transactions.iter().enumerate() {
+                let mut tx_sel = tx_list.reborrow().get(i as u32);
+                tx_selection.populate_builder(&mut tx_sel)?;
+            }
+        }
+
+        // Set traces
+        {
+            let mut trace_list = self.reborrow().init_traces(query.traces.len() as u32);
+            for (i, trace_selection) in query.traces.iter().enumerate() {
+                let mut trace_sel = trace_list.reborrow().get(i as u32);
+                trace_selection.populate_builder(&mut trace_sel)?;
+            }
+        }
+
+        // Set blocks
+        {
+            let mut block_list = self.reborrow().init_blocks(query.blocks.len() as u32);
+            for (i, block_selection) in query.blocks.iter().enumerate() {
+                let mut block_sel = block_list.reborrow().get(i as u32);
+                block_selection.populate_builder(&mut block_sel)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl CapnpReader<hypersync_net_types_capnp::request::Owned> for Query {
+    fn from_reader(
+        query: hypersync_net_types_capnp::request::Reader,
+    ) -> Result<Self, capnp::Error> {
+        let block_range = query.get_block_range()?;
+        let from_block = block_range.get_from_block();
+        let to_block = if block_range.has_to_block() {
+            Some(block_range.get_to_block()?.get_value())
+        } else {
+            None
+        };
+        let body_reader = match query.get_body().which()? {
+            request::body::Which::Query(query_body_reader) => query_body_reader?,
+            request::body::Which::QueryId(_) => {
+                return Err(capnp::Error::failed(
+                    "QueryId cannot be read from capnp request with QueryBody".to_string(),
+                ));
+            }
+        };
+
+        Query::from_capnp_query_body_reader(&body_reader, from_block, to_block)
+    }
+}
 impl CapnpBuilder<hypersync_net_types_capnp::field_selection::Owned> for FieldSelection {
     fn populate_builder(
         &self,
