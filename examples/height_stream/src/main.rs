@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use hypersync_client::{Client, ClientConfig};
+use hypersync_client::{Client, ClientConfig, HeightStreamEvent};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,12 +20,12 @@ async fn main() -> Result<()> {
 
     println!("listening for height updates... (Ctrl+C to quit)");
 
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            Ok(height) => println!("height: {}", height),
-            Err(e) => {
-                eprintln!("stream error - will automatically reconnect: {e:?}");
-                break;
+    while let Some(event) = rx.recv().await {
+        match event {
+            HeightStreamEvent::Connected => println!("✓ Connected to stream"),
+            HeightStreamEvent::Height(height) => println!("height: {}", height),
+            HeightStreamEvent::Reconnecting { delay } => {
+                println!("⟳ Reconnecting in {:?}...", delay)
             }
         }
     }
