@@ -21,8 +21,8 @@ pub struct LogFilter {
 }
 
 impl LogFilter {
-    /// Base filter to match all logs
-    pub fn new() -> Self {
+    /// Base filter to match any logs
+    pub fn any() -> Self {
         Default::default()
     }
 
@@ -44,11 +44,11 @@ impl LogFilter {
     /// use hypersync_net_types::LogFilter;
     ///
     /// // Filter by a single address using string
-    /// let filter = LogFilter::new()
+    /// let filter = LogFilter::any()
     ///     .address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple addresses
-    /// let filter = LogFilter::new()
+    /// let filter = LogFilter::any()
     ///     .address_any([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Another contract
@@ -59,7 +59,7 @@ impl LogFilter {
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
-    /// let filter = LogFilter::new()
+    /// let filter = LogFilter::any()
     ///     .address_any([usdt_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -81,7 +81,7 @@ impl LogFilter {
         Ok(self)
     }
 
-    fn topic_any<I, T>(mut self, topic_idx: usize, topics: I) -> anyhow::Result<Self>
+    fn with_topic_any<I, T>(mut self, topic_idx: usize, topics: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: TryInto<LogArgument>,
@@ -131,12 +131,12 @@ impl LogFilter {
     ///
     /// // Filter by Transfer event signature
     /// let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-    /// let filter = LogFilter::new()
-    ///     .topic0_any([transfer_sig])?;
+    /// let filter = LogFilter::any()
+    ///     .with_topic0_any([transfer_sig])?;
     ///
     /// // Filter by multiple event signatures
-    /// let filter = LogFilter::new()
-    ///     .topic0_any([
+    /// let filter = LogFilter::any()
+    ///     .with_topic0_any([
     ///         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer
     ///         "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925", // Approval
     ///     ])?;
@@ -146,17 +146,17 @@ impl LogFilter {
     ///     0xdd, 0xf2, 0x52, 0xad, 0x1b, 0xe2, 0xc8, 0x9b, 0x69, 0xc2, 0xb0, 0x68, 0xfc, 0x37, 0x8d, 0xaa,
     ///     0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16, 0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef
     /// ];
-    /// let filter = LogFilter::new()
-    ///     .topic0_any([transfer_bytes])?;
+    /// let filter = LogFilter::any()
+    ///     .with_topic0_any([transfer_bytes])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn topic0_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    pub fn with_topic0_any<I, T>(self, topics: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: TryInto<LogArgument>,
         T::Error: std::error::Error + Send + Sync + 'static,
     {
-        self.topic_any(0, topics)
+        self.with_topic_any(0, topics)
     }
     /// Filter logs by any of the provided topic1 values.
     ///
@@ -178,24 +178,24 @@ impl LogFilter {
     ///
     /// // Filter by specific sender address in Transfer events (topic1 = from)
     /// let sender_address = "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7";
-    /// let filter = LogFilter::new()
-    ///     .topic1_any([sender_address])?;
+    /// let filter = LogFilter::any()
+    ///     .with_topic1_any([sender_address])?;
     ///
     /// // Filter by multiple possible senders
-    /// let filter = LogFilter::new()
-    ///     .topic1_any([
+    /// let filter = LogFilter::any()
+    ///     .with_topic1_any([
     ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
     ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn topic1_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    pub fn with_topic1_any<I, T>(self, topics: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: TryInto<LogArgument>,
         T::Error: std::error::Error + Send + Sync + 'static,
     {
-        self.topic_any(1, topics)
+        self.with_topic_any(1, topics)
     }
     /// Filter logs by any of the provided topic2 values.
     ///
@@ -217,24 +217,24 @@ impl LogFilter {
     ///
     /// // Filter by specific recipient address in Transfer events (topic2 = to)
     /// let recipient_address = "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567";
-    /// let filter = LogFilter::new()
-    ///     .topic2_any([recipient_address])?;
+    /// let filter = LogFilter::any()
+    ///     .with_topic2_any([recipient_address])?;
     ///
     /// // Filter by multiple possible recipients
-    /// let filter = LogFilter::new()
-    ///     .topic2_any([
+    /// let filter = LogFilter::any()
+    ///     .with_topic2_any([
     ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn topic2_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    pub fn with_topic2_any<I, T>(self, topics: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: TryInto<LogArgument>,
         T::Error: std::error::Error + Send + Sync + 'static,
     {
-        self.topic_any(2, topics)
+        self.with_topic_any(2, topics)
     }
     /// Filter logs by any of the provided topic3 values.
     ///
@@ -256,24 +256,24 @@ impl LogFilter {
     ///
     /// // Filter by specific token ID in NFT Transfer events (topic3 = tokenId)
     /// let token_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
-    /// let filter = LogFilter::new()
-    ///     .topic3_any([token_id])?;
+    /// let filter = LogFilter::any()
+    ///     .with_topic3_any([token_id])?;
     ///
     /// // Filter by multiple token IDs
-    /// let filter = LogFilter::new()
-    ///     .topic3_any([
+    /// let filter = LogFilter::any()
+    ///     .with_topic3_any([
     ///         "0x0000000000000000000000000000000000000000000000000000000000000001",
     ///         "0x0000000000000000000000000000000000000000000000000000000000000002",
     ///     ])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn topic3_any<I, T>(self, topics: I) -> anyhow::Result<Self>
+    pub fn with_topic3_any<I, T>(self, topics: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: TryInto<LogArgument>,
         T::Error: std::error::Error + Send + Sync + 'static,
     {
-        self.topic_any(3, topics)
+        self.with_topic_any(3, topics)
     }
 }
 
@@ -555,12 +555,12 @@ mod tests {
 
     #[test]
     fn test_log_filter_builder() -> anyhow::Result<()> {
-        let lf = LogFilter::new()
+        let lf = LogFilter::any()
             .address_any([
                 "0xdadB0d80178819F2319190D340ce9A924f783711",
                 "0xdadB0d80178819F2319190D340ce9A924f783712",
             ])?
-            .topic0_any([
+            .with_topic0_any([
                 "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
                 "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
             ])?;
@@ -570,15 +570,16 @@ mod tests {
         assert_eq!(lf.topics[0].len(), 2);
         assert_eq!(lf.address_filter, None);
 
-        let lf =
-            lf.topic0_any(["0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"])?;
+        let lf = lf.with_topic0_any([
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        ])?;
         assert_eq!(
             lf.topics[0].len(),
             1,
             "shoul overwrite previous topic0 selection"
         );
 
-        let lf = lf.topic3_any([
+        let lf = lf.with_topic3_any([
             "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
             "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
         ])?;
