@@ -13,5 +13,4 @@ members = [
   "examples/call_watch",
   "examples/call_decode_output",
   "examples/height_stream",
-  "examples/height_stream_reconnect",
 ]

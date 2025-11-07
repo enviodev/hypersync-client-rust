@@ -9,7 +9,7 @@ async fn main() -> Result<()> {
 
     let client = Arc::new(Client::new(ClientConfig {
         url: Some(
-            "https://arbitrum-sepolia.zone1.hypersync.xyz"
+            "https://arbitrum-sepolia.hypersync.xyz"
                 .parse()
                 .unwrap(),
         ),
