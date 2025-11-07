@@ -7,6 +7,145 @@ use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// A hypersync query that defines what blockchain data to retrieve.
+///
+/// The `Query` struct provides a fluent builder API for constructing complex blockchain queries
+/// using hypersync. It allows you to specify block ranges, filter by logs/transactions/traces/blocks,
+/// select which fields to return, and control query behavior like join modes.
+///
+/// # Core Concepts
+///
+/// - **Block Range**: Define the range of blocks to query with `from_block` and optional `to_block`
+/// - **Filters**: Specify what data to match using `LogFilter`, `TransactionFilter`, `BlockFilter`, and `TraceFilter`
+/// - **Field Selection**: Choose which fields to include in the response to optimize performance
+/// - **Join Modes**: Control how different data types are related and joined
+///
+/// # Performance Tips
+///
+/// - Specify the minimum `FieldSelection` to only request the data you need
+/// - Use specific filters rather than broad queries when possible
+/// - Be mindful of setting `include_all_blocks: true` as it can significantly increase response size
+/// - Traces are only available on select hypersync instances
+///
+/// # Basic Examples
+///
+/// ```
+/// use hypersync_net_types::{
+///     Query, FieldSelection, LogFilter, BlockFilter, TransactionFilter,
+///     block::BlockField, log::LogField, transaction::TransactionField
+/// };
+///
+/// // Simple log query for USDT transfers
+/// let usdt_transfers = Query::new()
+///     .from_block(18_000_000)
+///     .to_block(18_001_000)
+///     .select_fields(
+///         FieldSelection::new()
+///             .block([BlockField::Number, BlockField::Timestamp])
+///             .log([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
+///             .transaction([TransactionField::Hash, TransactionField::From, TransactionField::To])
+///     )
+///     .match_logs_any([
+///         LogFilter::any()
+///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT contract
+///             .and_topic0_any(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
+///     ]);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// # Advanced Examples
+///
+/// ```
+/// use hypersync_net_types::{
+///     Query, FieldSelection, JoinMode, LogFilter, TransactionFilter, Selection,
+///     block::BlockField, log::LogField, transaction::TransactionField
+/// };
+///
+/// // Complex query with multiple different filter combinations and exclusions
+/// let complex_query = Query::new()
+///     .from_block(18_000_000)
+///     .to_block(18_010_000)
+///     .join_mode(JoinMode::JoinAll)
+///     .select_fields(
+///         FieldSelection::new()
+///             .block(BlockField::all())
+///             .transaction(TransactionField::all())
+///             .log(LogField::all())
+///     )
+///     .match_logs_any([
+///         // Transfer events from USDT and USDC contracts (multiple addresses in one filter)
+///         LogFilter::any()
+///             .and_address_any([
+///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
+///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
+///             ])?
+///             .and_topic0_any(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?, // Transfer event
+///         
+///         // Approval events from any ERC20 contract (different topic combination)
+///         LogFilter::any()
+///             .and_topic0_any(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])?, // Approval event
+///             
+///         // Swap events from Uniswap V2 pairs (another distinct filter combination)
+///         LogFilter::any()
+///             .and_topic0_any(["0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"])?, // Swap event
+///     ])
+///     .match_transactions_any([
+///         TransactionFilter::any()
+///             .and_sighash_any([
+///                 "0xa9059cbb", // transfer(address,uint256)
+///                 "0x095ea7b3", // approve(address,uint256)
+///             ])?,
+///         TransactionFilter::any()
+///             .and_status(0), // Failed transactions
+///     ]);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// # Exclusion with `and_not`
+///
+/// ```
+/// use hypersync_net_types::{Query, FieldSelection, LogFilter, Selection, log::LogField};
+///
+/// // Query for ERC20 transfers but exclude specific problematic contracts
+/// let filtered_query = Query::new()
+///     .from_block(18_000_000)
+///     .to_block(18_001_000)
+///     .select_fields(
+///         FieldSelection::new()
+///             .log([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
+///     )
+///     .match_logs_any([
+///         // Include Transfer events from all contracts, but exclude specific problematic contracts
+///         Selection::new(
+///             LogFilter::any()
+///                 .and_topic0_any(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
+///         )
+///         // But exclude specific problematic contracts
+///         .and_not(
+///             LogFilter::any()
+///                 .and_address_any([
+///                     "0x1234567890123456789012345678901234567890", // Problematic contract 1
+///                     "0x0987654321098765432109876543210987654321", // Problematic contract 2
+///                 ])?
+///         ),
+///     ]);
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// # Builder Pattern
+///
+/// The Query struct uses a fluent builder pattern where all methods return `Self`, allowing for easy chaining:
+///
+/// ```
+/// use hypersync_net_types::{Query, FieldSelection, JoinMode, block::BlockField};
+///
+/// let query = Query::new()
+///     .from_block(18_000_000)
+///     .to_block(18_010_000)
+///     .join_mode(JoinMode::Default)
+///     .include_all_blocks()
+///     .select_fields(FieldSelection::new().block(BlockField::all()));
+/// ```
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Query {
     /// The block to start the query from
@@ -114,21 +253,27 @@ impl Query {
     /// ```
     /// use hypersync_net_types::{Query, LogFilter};
     ///
-    /// // Match logs from specific contracts
+    /// // Match logs from multiple contracts (multiple addresses in one filter)
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .match_logs_any([
     ///         LogFilter::any()
-    ///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?, // USDT
-    ///         LogFilter::any()
-    ///             .and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?, // Another contract
+    ///             .and_address_any([
+    ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
+    ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
+    ///             ])?
     ///     ]);
     ///
-    /// // Match Transfer events from any contract
-    /// let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    /// // Multiple different filter combinations (Transfer vs Approval events)
     /// let query = Query::new()
     ///     .match_logs_any([
-    ///         LogFilter::any().and_topic0_any([transfer_sig])?
+    ///         // Transfer events from specific contracts
+    ///         LogFilter::any()
+    ///             .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///             .and_topic0_any(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?, // Transfer
+    ///         // Approval events from any contract
+    ///         LogFilter::any()
+    ///             .and_topic0_any(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])?, // Approval
     ///     ]);
     /// # Ok::<(), anyhow::Error>(())
     /// ```
