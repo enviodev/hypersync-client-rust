@@ -3,7 +3,7 @@ use crate::hypersync_net_types_capnp::{query_body, request};
 use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, LogFilter};
+use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -204,11 +204,12 @@ impl Query {
         self
     }
 
-    pub fn match_log_filter_any<I>(mut self, logs: I) -> Self
+    pub fn match_logs_any<I>(mut self, logs: I) -> Self
     where
-        I: IntoIterator<Item = LogFilter>,
+        I: IntoIterator,
+        I::Item: Into<LogSelection>,
     {
-        let log_selection: Vec<LogSelection> = logs.into_iter().map(From::from).collect();
+        let log_selection: Vec<LogSelection> = logs.into_iter().map(Into::into).collect();
         self.logs = log_selection;
         self
     }

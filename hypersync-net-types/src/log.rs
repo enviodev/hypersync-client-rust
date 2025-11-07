@@ -45,11 +45,11 @@ impl LogFilter {
     ///
     /// // Filter by a single address using string
     /// let filter = LogFilter::any()
-    ///     .address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_address_any(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple addresses
     /// let filter = LogFilter::any()
-    ///     .address_any([
+    ///     .and_address_any([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Another contract
     ///     ])?;
@@ -60,10 +60,10 @@ impl LogFilter {
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
     /// let filter = LogFilter::any()
-    ///     .address_any([usdt_address])?;
+    ///     .and_address_any([usdt_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_address_any<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn test_log_filter_builder() -> anyhow::Result<()> {
         let lf = LogFilter::any()
-            .address_any([
+            .and_address_any([
                 "0xdadB0d80178819F2319190D340ce9A924f783711",
                 "0xdadB0d80178819F2319190D340ce9A924f783712",
             ])?

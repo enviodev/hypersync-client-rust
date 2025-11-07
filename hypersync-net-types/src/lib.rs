@@ -40,6 +40,58 @@ pub struct Selection<T> {
     pub exclude: Option<T>,
 }
 
+impl<T> Selection<T> {
+    /// Create a new selection with the given filter.
+    ///
+    /// # Arguments
+    /// * `filter` - The filter to include in the selection
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{LogSelection, LogFilter};
+    ///
+    /// // Create a selection that includes the filter
+    ///
+    /// let selection = LogSelection::new(
+    ///     LogFilter::any().and_address_any(["0xdadB0d80178819F2319190D340ce9A924f783711"])?,
+    /// );
+    ///
+    /// Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn new(filter: T) -> Self {
+        Self {
+            include: filter,
+            exclude: None,
+        }
+    }
+
+    /// Add a filter to exclude from the selection
+    ///
+    /// # Arguments
+    /// * `filter` - The filter to exclude from the selection
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{LogSelection, LogFilter};
+    ///
+    /// // Create a selection with a filter that matches any log. (or your own filter)
+    /// let all = LogSelection::new(LogFilter::any());
+    ///
+    /// // Create a selection that excludes only logs from a specific address
+    /// let selection = all.and_not(
+    ///     LogFilter::any().and_address_any(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    /// );
+    ///
+    /// Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_not(mut self, filter: T) -> Self {
+        self.exclude = Some(filter);
+        self
+    }
+}
+
 impl<T> From<T> for Selection<T> {
     fn from(include: T) -> Self {
         Self {
