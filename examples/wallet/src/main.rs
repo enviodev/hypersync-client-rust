@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
 
     let query = Query::new()
         .from_block(0)
-        .match_logs_any([
+        .where_logs_any([
             // We want All ERC20 transfers coming to any of our addresses
             LogFilter::any()
                 .and_topic0_any([
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
                 // topic1 is the "from" position
                 .and_topic1_any(address_topic_filter.clone())?,
         ])
-        .match_transactions_any([
+        .where_transactions_any([
             // get all transactions coming from OR going to any of our addresses
             TransactionFilter::any().and_from_address_any(addresses.clone())?,
             TransactionFilter::any().and_to_address_any(addresses.clone())?,

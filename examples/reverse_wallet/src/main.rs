@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
             TransactionField::To,
             TransactionField::Value,
         ]))
-        .match_transactions_any([TransactionFilter::any()
+        .where_transactions_any([TransactionFilter::any()
             .and_from_address_any([address])?
             .and_to_address_any([address])?]);
 
