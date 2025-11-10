@@ -25,11 +25,12 @@ pub struct BlockFilter {
 }
 
 impl BlockFilter {
-    /// Create a block filter that matches any block.
+    /// Create a block filter that matches all blocks.
     ///
     /// This creates an empty filter with no constraints, which will match all blocks.
-    /// You can then use the builder methods to add specific filtering criteria.
-    pub fn any() -> Self {
+    /// You can then use the builder methods to add specific filtering criteria eg.
+    /// `BlockFilter::all().and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
+    pub fn all() -> Self {
         Default::default()
     }
 
@@ -50,10 +51,10 @@ impl BlockFilter {
     /// use hypersync_net_types::BlockFilter;
     ///
     /// // Match blocks from specific miners OR with specific hashes
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_miner_address(["0x1234567890123456789012345678901234567890"])?
     ///     .or(
-    ///         BlockFilter::any()
+    ///         BlockFilter::all()
     ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
     ///     );
     /// # Ok::<(), anyhow::Error>(())
@@ -80,11 +81,11 @@ impl BlockFilter {
     /// use hypersync_net_types::BlockFilter;
     ///
     /// // Filter by a single block hash
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
     ///
     /// // Filter by multiple block hashes
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_hash([
     ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
     ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
@@ -95,7 +96,7 @@ impl BlockFilter {
     ///     0x40, 0xd0, 0x08, 0xf2, 0xa1, 0x65, 0x3f, 0x09, 0xb7, 0xb0, 0x28, 0xd3, 0x0c, 0x7f, 0xd1, 0xba,
     ///     0x7c, 0x84, 0x90, 0x0f, 0xcf, 0xb0, 0x32, 0x04, 0x0b, 0x3e, 0xb3, 0xd1, 0x6f, 0x84, 0xd2, 0x94
     /// ];
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_hash([block_hash])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -134,11 +135,11 @@ impl BlockFilter {
     /// use hypersync_net_types::BlockFilter;
     ///
     /// // Filter by a single miner address
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple miner addresses (e.g., major mining pools)
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_miner_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Pool 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Pool 2
@@ -149,11 +150,11 @@ impl BlockFilter {
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_miner_address([miner_address])?;
     ///
     /// // Chain with other filter methods
-    /// let filter = BlockFilter::any()
+    /// let filter = BlockFilter::all()
     ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
     ///     .and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
