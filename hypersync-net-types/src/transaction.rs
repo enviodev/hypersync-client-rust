@@ -1,4 +1,8 @@
-use crate::{hypersync_net_types_capnp, types::{AnyOf, Sighash}, CapnpBuilder, CapnpReader, Selection};
+use crate::{
+    hypersync_net_types_capnp,
+    types::{AnyOf, Sighash},
+    CapnpBuilder, CapnpReader, Selection,
+};
 use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
@@ -14,11 +18,11 @@ pub struct AuthorizationSelection {
 }
 
 impl AuthorizationSelection {
-    /// Create an authorization selection that matches any authorization.
+    /// Create an authorization selection that matches all authorizations.
     ///
     /// This creates an empty selection with no constraints, which will match all authorizations.
     /// You can then use the builder methods to add specific filtering criteria.
-    pub fn any() -> Self {
+    pub fn all() -> Self {
         Default::default()
     }
 
@@ -33,11 +37,11 @@ impl AuthorizationSelection {
     /// use hypersync_net_types::AuthorizationSelection;
     ///
     /// // Filter by a single chain ID (Ethereum mainnet)
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_chain_id([1]);
     ///
     /// // Filter by multiple chain IDs
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_chain_id([
     ///         1,      // Ethereum mainnet
     ///         137,    // Polygon
@@ -45,7 +49,7 @@ impl AuthorizationSelection {
     ///     ]);
     ///
     /// // Chain with address filter
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_chain_id([1, 137])
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
@@ -76,11 +80,11 @@ impl AuthorizationSelection {
     /// use hypersync_net_types::AuthorizationSelection;
     ///
     /// // Filter by a single address
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple addresses
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
@@ -91,7 +95,7 @@ impl AuthorizationSelection {
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
-    /// let selection = AuthorizationSelection::any()
+    /// let selection = AuthorizationSelection::all()
     ///     .and_address([auth_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -167,11 +171,11 @@ pub struct TransactionFilter {
 }
 
 impl TransactionFilter {
-    /// Create a transaction filter that matches any transaction.
+    /// Create a transaction filter that matches all transactions.
     ///
     /// This creates an empty filter with no constraints, which will match all transactions.
     /// You can then use the builder methods to add specific filtering criteria.
-    pub fn any() -> Self {
+    pub fn all() -> Self {
         Default::default()
     }
 
@@ -192,10 +196,10 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Match transactions from specific senders OR with specific function signatures
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .or(
-    ///         TransactionFilter::any()
+    ///         TransactionFilter::all()
     ///             .and_sighash(["0xa9059cbb"])? // transfer(address,uint256)
     ///     );
     /// # Ok::<(), anyhow::Error>(())
@@ -222,11 +226,11 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter by a single sender address
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple sender addresses
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
@@ -237,7 +241,7 @@ impl TransactionFilter {
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address([sender_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -277,18 +281,18 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter by a single recipient address
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple recipient addresses (e.g., popular DeFi contracts)
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_to_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
     ///     ])?;
     ///
     /// // Chain with sender filter
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
@@ -329,11 +333,11 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter by a single function signature (transfer)
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_sighash(["0xa9059cbb"])?; // transfer(address,uint256)
     ///
     /// // Filter by multiple function signatures
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_sighash([
     ///         "0xa9059cbb", // transfer(address,uint256)
     ///         "0x23b872dd", // transferFrom(address,address,uint256)
@@ -342,7 +346,7 @@ impl TransactionFilter {
     ///
     /// // Using byte arrays
     /// let transfer_sig = [0xa9, 0x05, 0x9c, 0xbb];
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_sighash([transfer_sig])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -375,15 +379,15 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter for successful transactions only
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_status(1);
     ///
     /// // Filter for failed transactions only
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_status(0);
     ///
     /// // Chain with other filters
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     .and_status(1); // Only successful transactions from this address
     /// # Ok::<(), anyhow::Error>(())
@@ -404,15 +408,15 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter for legacy transactions only
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_type([0]);
     ///
     /// // Filter for EIP-1559 transactions only
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_type([2]);
     ///
     /// // Filter for multiple transaction types
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_type([0, 1, 2]); // Legacy, Access List, and EIP-1559
     /// ```
     pub fn and_type<I>(mut self, types: I) -> Self
@@ -441,11 +445,11 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter by a single contract address
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_contract_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple contract addresses
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_contract_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
@@ -488,11 +492,11 @@ impl TransactionFilter {
     /// use hypersync_net_types::TransactionFilter;
     ///
     /// // Filter by a single transaction hash
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
     ///
     /// // Filter by multiple transaction hashes
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_hash([
     ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
     ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
@@ -503,7 +507,7 @@ impl TransactionFilter {
     ///     0x40, 0xd0, 0x08, 0xf2, 0xa1, 0x65, 0x3f, 0x09, 0xb7, 0xb0, 0x28, 0xd3, 0x0c, 0x7f, 0xd1, 0xba,
     ///     0x7c, 0x84, 0x90, 0x0f, 0xcf, 0xb0, 0x32, 0x04, 0x0b, 0x3e, 0xb3, 0xd1, 0x6f, 0x84, 0xd2, 0x94
     /// ];
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_hash([tx_hash])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -538,30 +542,30 @@ impl TransactionFilter {
     /// use hypersync_net_types::{TransactionFilter, AuthorizationSelection};
     ///
     /// // Filter by a single authorization selection
-    /// let auth_selection = AuthorizationSelection::any()
+    /// let auth_selection = AuthorizationSelection::all()
     ///     .and_chain_id([1, 137])
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_authorization_selection([auth_selection])?;
     ///
     /// // Filter by multiple authorization selections
-    /// let mainnet_auth = AuthorizationSelection::any()
+    /// let mainnet_auth = AuthorizationSelection::all()
     ///     .and_chain_id([1])
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
-    /// let polygon_auth = AuthorizationSelection::any()
+    /// let polygon_auth = AuthorizationSelection::all()
     ///     .and_chain_id([137])
     ///     .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_authorization_selection([mainnet_auth, polygon_auth])?;
     ///
     /// // Chain with other transaction filters
-    /// let filter = TransactionFilter::any()
+    /// let filter = TransactionFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .and_authorization_selection([
-    ///         AuthorizationSelection::any()
+    ///         AuthorizationSelection::all()
     ///             .and_chain_id([1])
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     ])?;

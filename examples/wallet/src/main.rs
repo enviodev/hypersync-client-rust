@@ -54,9 +54,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .where_transactions(
             // get all transactions coming from OR going to any of our addresses
-            TransactionFilter::any()
+            TransactionFilter::all()
                 .and_from_address(addresses.clone())?
-                .or(TransactionFilter::any().and_to_address(addresses.clone())?),
+                .or(TransactionFilter::all().and_to_address(addresses.clone())?),
         )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_log_fields([

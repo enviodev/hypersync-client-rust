@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
         .from_block(16291127) // Aave V3 deployment block
         .select_trace_fields([TraceField::Input, TraceField::Output])
         .where_traces(
-            TraceFilter::any()
+            TraceFilter::all()
                 .and_to_address([DAI_ADDRESS])?
                 .and_sighash([balance_of_sighash])?,
         );

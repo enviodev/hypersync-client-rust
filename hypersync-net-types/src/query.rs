@@ -87,12 +87,12 @@ use std::collections::BTreeSet;
 ///         )
 ///     )
 ///     .where_transactions(
-///         TransactionFilter::any()
+///         TransactionFilter::all()
 ///             .and_sighash([
 ///                 "0xa9059cbb", // transfer(address,uint256)
 ///                 "0x095ea7b3", // approve(address,uint256)
 ///             ])?
-///             .or(TransactionFilter::any().and_status(0)) // Failed transactions
+///             .or(TransactionFilter::all().and_status(0)) // Failed transactions
 ///     );
 /// # Ok::<(), anyhow::Error>(())
 /// ```
@@ -349,7 +349,7 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .where_transactions(
-    ///         TransactionFilter::any()
+    ///         TransactionFilter::all()
     ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     );
     ///
@@ -357,9 +357,9 @@ impl Query {
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
     /// let query = Query::new()
     ///     .where_transactions(
-    ///         TransactionFilter::any().and_sighash([transfer_sig])?
+    ///         TransactionFilter::all().and_sighash([transfer_sig])?
     ///         .or(
-    ///             TransactionFilter::any().and_status(0) // Failed transactions
+    ///             TransactionFilter::all().and_status(0) // Failed transactions
     ///         )
     ///     );
     /// # Ok::<(), anyhow::Error>(())
@@ -399,7 +399,7 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .where_traces(
-    ///         TraceFilter::any()
+    ///         TraceFilter::all()
     ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     );
     ///
@@ -407,9 +407,9 @@ impl Query {
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
     /// let query = Query::new()
     ///     .where_traces(
-    ///         TraceFilter::any().and_call_type(["create", "suicide"])
+    ///         TraceFilter::all().and_call_type(["create", "suicide"])
     ///         .or(
-    ///             TraceFilter::any().and_sighash([transfer_sig])?
+    ///             TraceFilter::all().and_sighash([transfer_sig])?
     ///         )
     ///     );
     /// # Ok::<(), anyhow::Error>(())

@@ -1,4 +1,8 @@
-use crate::{hypersync_net_types_capnp, types::{AnyOf, Sighash}, CapnpBuilder, CapnpReader, Selection};
+use crate::{
+    hypersync_net_types_capnp,
+    types::{AnyOf, Sighash},
+    CapnpBuilder, CapnpReader, Selection,
+};
 use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
@@ -48,14 +52,14 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Create a filter that matches any trace
-    /// let filter = TraceFilter::any();
+    /// let filter = TraceFilter::all();
     ///
     /// // Chain with other filter methods
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn any() -> Self {
+    pub fn all() -> Self {
         Default::default()
     }
 
@@ -76,10 +80,10 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Match traces from specific callers OR with specific call types
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .or(
-    ///         TraceFilter::any()
+    ///         TraceFilter::all()
     ///             .and_call_type(["create", "create2"])
     ///     );
     /// # Ok::<(), anyhow::Error>(())
@@ -107,11 +111,11 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by a single caller address
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// // Filter by multiple caller addresses
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address([
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -122,7 +126,7 @@ impl TraceFilter {
     ///     0xa0, 0xb8, 0x6a, 0x33, 0xe6, 0xc1, 0x1c, 0x8c, 0x0c, 0x5c,
     ///     0x0b, 0x5e, 0x6a, 0xde, 0xe3, 0x0d, 0x1a, 0x23, 0x45, 0x67
     /// ];
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address([caller_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -163,18 +167,18 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by a single target address
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple target addresses
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_to_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///     ])?;
     ///
     /// // Chain with from address filtering
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
@@ -216,11 +220,11 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by a single contract address
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// // Filter by multiple contract addresses
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_address([
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -259,15 +263,15 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by specific call types
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_call_type(["call", "delegatecall"]);
     ///
     /// // Filter by contract creation traces
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_call_type(["create", "create2"]);
     ///
     /// // Chain with address filtering
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .and_call_type(["call"]);
     /// # Ok::<(), anyhow::Error>(())
@@ -295,11 +299,11 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by block rewards
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_reward_type(["block"]);
     ///
     /// // Filter by both block and uncle rewards
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_reward_type(["block", "uncle"]);
     /// ```
     pub fn and_reward_type<I, S>(mut self, reward_types: I) -> Self
@@ -325,11 +329,11 @@ impl TraceFilter {
     /// use hypersync_net_types::TraceFilter;
     ///
     /// // Filter by call traces
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_type(["call"]);
     ///
     /// // Filter by multiple trace types
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_type(["call", "create", "reward"]);
     /// ```
     pub fn and_type<I, S>(mut self, types: I) -> Self
@@ -361,11 +365,11 @@ impl TraceFilter {
     ///
     /// // Filter by transfer function signature
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_sighash([transfer_sig])?;
     ///
     /// // Filter by multiple function signatures
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_sighash([
     ///         "0xa9059cbb", // transfer(address,uint256)
     ///         "0x095ea7b3", // approve(address,uint256)
@@ -373,7 +377,7 @@ impl TraceFilter {
     ///
     /// // Using byte arrays
     /// let transfer_bytes = [0xa9, 0x05, 0x9c, 0xbb];
-    /// let filter = TraceFilter::any()
+    /// let filter = TraceFilter::all()
     ///     .and_sighash([transfer_bytes])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```

@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
         .where_transactions(
             // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
             // We want all DAI transfers so no address filter and only a filter for the first topic
-            TransactionFilter::any()
+            TransactionFilter::all()
                 .and_from_address([DAI_ADDRESS])?
                 .and_to_address([DAI_ADDRESS])?,
         )
