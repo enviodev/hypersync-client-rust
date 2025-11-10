@@ -27,8 +27,10 @@ impl From<LogFilter> for AnyOf<LogFilter> {
 }
 
 impl LogFilter {
-    /// Base filter to match any logs
-    pub fn any() -> Self {
+    /// Base filter to match all logs
+    /// Narrow the filter down by chaining additional values for eg.
+    /// `LogFilter::all().and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
+    pub fn all() -> Self {
         Default::default()
     }
 
@@ -49,10 +51,10 @@ impl LogFilter {
     /// use hypersync_net_types::LogFilter;
     ///
     /// // Match logs from specific contracts OR with specific topics
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     .or(
-    ///         LogFilter::any()
+    ///         LogFilter::all()
     ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
     ///     );
     /// # Ok::<(), anyhow::Error>(())
@@ -79,11 +81,11 @@ impl LogFilter {
     /// use hypersync_net_types::LogFilter;
     ///
     /// // Filter by a single address using string
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple addresses
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_address([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Another contract
@@ -94,7 +96,7 @@ impl LogFilter {
     ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_address([usdt_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -166,11 +168,11 @@ impl LogFilter {
     ///
     /// // Filter by Transfer event signature
     /// let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic0([transfer_sig])?;
     ///
     /// // Filter by multiple event signatures
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic0([
     ///         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer
     ///         "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925", // Approval
@@ -181,7 +183,7 @@ impl LogFilter {
     ///     0xdd, 0xf2, 0x52, 0xad, 0x1b, 0xe2, 0xc8, 0x9b, 0x69, 0xc2, 0xb0, 0x68, 0xfc, 0x37, 0x8d, 0xaa,
     ///     0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16, 0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef
     /// ];
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic0([transfer_bytes])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -213,11 +215,11 @@ impl LogFilter {
     ///
     /// // Filter by specific sender address in Transfer events (topic1 = from)
     /// let sender_address = "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7";
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic1([sender_address])?;
     ///
     /// // Filter by multiple possible senders
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic1([
     ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
     ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
@@ -252,11 +254,11 @@ impl LogFilter {
     ///
     /// // Filter by specific recipient address in Transfer events (topic2 = to)
     /// let recipient_address = "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567";
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic2([recipient_address])?;
     ///
     /// // Filter by multiple possible recipients
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic2([
     ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
@@ -291,11 +293,11 @@ impl LogFilter {
     ///
     /// // Filter by specific token ID in NFT Transfer events (topic3 = tokenId)
     /// let token_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic3([token_id])?;
     ///
     /// // Filter by multiple token IDs
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_topic3([
     ///         "0x0000000000000000000000000000000000000000000000000000000000000001",
     ///         "0x0000000000000000000000000000000000000000000000000000000000000002",
@@ -578,7 +580,7 @@ mod tests {
 
     #[test]
     fn test_log_filter_builder() -> anyhow::Result<()> {
-        let lf = LogFilter::any()
+        let lf = LogFilter::all()
             .and_address([
                 "0xdadB0d80178819F2319190D340ce9A924f783711",
                 "0xdadB0d80178819F2319190D340ce9A924f783712",

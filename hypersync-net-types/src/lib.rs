@@ -64,7 +64,7 @@ impl<T> Selection<T> {
     /// // Create a selection that includes the filter
     ///
     /// let selection = LogSelection::new(
-    ///     LogFilter::any().and_address(["0xdadB0d80178819F2319190D340ce9A924f783711"])?,
+    ///     LogFilter::all().and_address(["0xdadB0d80178819F2319190D340ce9A924f783711"])?,
     /// );
     ///
     /// Ok::<(), anyhow::Error>(())
@@ -87,11 +87,11 @@ impl<T> Selection<T> {
     /// use hypersync_net_types::{LogSelection, LogFilter};
     ///
     /// // Create a selection with a filter that matches any log. (or your own filter)
-    /// let all = LogSelection::new(LogFilter::any());
+    /// let all = LogSelection::new(LogFilter::all());
     ///
     /// // Create a selection that excludes only logs from a specific address
     /// let selection = all.and_not(
-    ///     LogFilter::any().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    ///     LogFilter::all().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
     /// );
     ///
     /// Ok::<(), anyhow::Error>(())

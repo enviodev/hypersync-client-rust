@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         .from_block(height)
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
         .where_logs(
-            LogFilter::any()
+            LogFilter::all()
                 .and_address([DAI_ADDRESS])?
                 // we only want transfer events
                 .and_topic0([

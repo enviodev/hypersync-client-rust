@@ -44,7 +44,7 @@ use std::collections::BTreeSet;
 ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
 ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::To])
 ///     .where_logs(
-///         LogFilter::any()
+///         LogFilter::all()
 ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT contract
 ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
 ///     );
@@ -69,7 +69,7 @@ use std::collections::BTreeSet;
 ///     .select_log_fields(LogField::all())
 ///     .where_logs(
 ///         // Transfer events from USDT and USDC contracts (multiple addresses in one filter)
-///         LogFilter::any()
+///         LogFilter::all()
 ///             .and_address([
 ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
 ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
@@ -77,12 +77,12 @@ use std::collections::BTreeSet;
 ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
 ///         .or(
 ///             // Approval events from any ERC20 contract (different topic combination)
-///             LogFilter::any()
+///             LogFilter::all()
 ///                 .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])? // Approval event
 ///         )
 ///         .or(
 ///             // Swap events from Uniswap V2 pairs (another distinct filter combination)
-///             LogFilter::any()
+///             LogFilter::all()
 ///                 .and_topic0(["0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"])? // Swap event
 ///         )
 ///     )
@@ -110,12 +110,12 @@ use std::collections::BTreeSet;
 ///     .where_logs(
 ///         // Include Transfer events from all contracts, but exclude specific problematic contracts
 ///         Selection::new(
-///             LogFilter::any()
+///             LogFilter::all()
 ///                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
 ///         )
 ///         // But exclude specific problematic contracts
 ///         .and_not(
-///             LogFilter::any()
+///             LogFilter::all()
 ///                 .and_address([
 ///                     "0x1234567890123456789012345678901234567890", // Problematic contract 1
 ///                     "0x0987654321098765432109876543210987654321", // Problematic contract 2
@@ -250,7 +250,7 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .where_logs(
-    ///         LogFilter::any()
+    ///         LogFilter::all()
     ///             .and_address([
     ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
     ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
@@ -261,12 +261,12 @@ impl Query {
     /// let query = Query::new()
     ///     .where_logs(
     ///         // Transfer events from specific contracts
-    ///         LogFilter::any()
+    ///         LogFilter::all()
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer
     ///         .or(
     ///             // Approval events from any contract
-    ///             LogFilter::any()
+    ///             LogFilter::all()
     ///                 .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])? // Approval
     ///         )
     ///     );
@@ -635,19 +635,19 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::Default)
-    ///     .where_logs(LogFilter::any());
+    ///     .where_logs(LogFilter::all());
     ///
     /// // Join everything - comprehensive data for analysis
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::JoinAll)
-    ///     .where_logs(LogFilter::any());
+    ///     .where_logs(LogFilter::all());
     ///
     /// // No joins - only the exact logs that match the filter
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::JoinNothing)
-    ///     .where_logs(LogFilter::any());
+    ///     .where_logs(LogFilter::all());
     /// ```
     pub fn join_mode(mut self, join_mode: JoinMode) -> Self {
         self.join_mode = join_mode;
@@ -686,7 +686,7 @@ impl Query {
     ///     .from_block(18_000_000)
     ///     .include_all_blocks()
     ///     .where_logs(
-    ///         LogFilter::any()
+    ///         LogFilter::all()
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
     ///     );
     /// # Ok::<(), anyhow::Error>(())

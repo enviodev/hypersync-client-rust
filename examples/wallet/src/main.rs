@@ -38,13 +38,13 @@ async fn main() -> anyhow::Result<()> {
         .from_block(0)
         .where_logs(
             // We want All ERC20 transfers coming to any of our addresses
-            LogFilter::any()
+            LogFilter::all()
                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
                 // topic2 is the "to" position
                 .and_topic2(address_topic_filter.clone())?
                 .or(
                     // We want All ERC20 transfers coming from any of our addresses
-                    LogFilter::any()
+                    LogFilter::all()
                         .and_topic0([
                             "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
                         ])?

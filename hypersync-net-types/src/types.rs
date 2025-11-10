@@ -18,10 +18,10 @@ pub type Sighash = FixedSizeData<4>;
 /// use hypersync_net_types::{LogFilter, Query};
 ///
 /// // Create filters that match logs from USDT OR USDC contracts
-/// let filter = LogFilter::any()
+/// let filter = LogFilter::all()
 ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT
 ///     .or(
-///         LogFilter::any()
+///         LogFilter::all()
 ///             .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])? // USDC
 ///     );
 ///
@@ -64,7 +64,7 @@ impl<T> AnyOf<T> {
     /// ```
     /// use hypersync_net_types::{LogFilter, types::AnyOf};
     ///
-    /// let filter = LogFilter::any();
+    /// let filter = LogFilter::all();
     /// let any_clause = AnyOf::new(filter);
     /// ```
     pub fn new(clause: T) -> Self {
@@ -86,8 +86,8 @@ impl<T> AnyOf<T> {
     /// use hypersync_net_types::{LogFilter, types::AnyOf};
     ///
     /// let filters = vec![
-    ///     LogFilter::any().and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"]).unwrap(),
-    ///     LogFilter::any().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"]).unwrap(),
+    ///     LogFilter::all().and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"]).unwrap(),
+    ///     LogFilter::all().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"]).unwrap(),
     /// ];
     /// let any_clause = AnyOf::any(filters);
     /// ```
@@ -118,10 +118,10 @@ impl<T> AnyOf<T> {
     /// use hypersync_net_types::LogFilter;
     ///
     /// // Chain multiple filters with OR logic
-    /// let filter = LogFilter::any()
+    /// let filter = LogFilter::all()
     ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT
-    ///     .or(LogFilter::any().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?) // USDC  
-    ///     .or(LogFilter::any().and_address(["0x6b175474e89094c44da98b954eedeac495271d0f"])?); // DAI
+    ///     .or(LogFilter::all().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?) // USDC  
+    ///     .or(LogFilter::all().and_address(["0x6b175474e89094c44da98b954eedeac495271d0f"])?); // DAI
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn or(mut self, clause: T) -> Self {
