@@ -39,7 +39,7 @@ use std::collections::BTreeSet;
 /// // Simple log query for USDT transfers
 /// let usdt_transfers = Query::new()
 ///     .from_block(18_000_000)
-///     .to_block(18_001_000)
+///     .to_block_excl(18_001_000)
 ///     .select_block_fields([BlockField::Number, BlockField::Timestamp])
 ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
 ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::To])
@@ -62,7 +62,7 @@ use std::collections::BTreeSet;
 /// // Complex query with multiple different filter combinations and exclusions
 /// let complex_query = Query::new()
 ///     .from_block(18_000_000)
-///     .to_block(18_010_000)
+///     .to_block_excl(18_010_000)
 ///     .join_mode(JoinMode::JoinAll)
 ///     .select_block_fields(BlockField::all())
 ///     .select_transaction_fields(TransactionField::all())
@@ -105,7 +105,7 @@ use std::collections::BTreeSet;
 /// // Query for ERC20 transfers but exclude specific problematic contracts
 /// let filtered_query = Query::new()
 ///     .from_block(18_000_000)
-///     .to_block(18_001_000)
+///     .to_block_excl(18_001_000)
 ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
 ///     .where_logs(
 ///         // Include Transfer events from all contracts, but exclude specific problematic contracts
@@ -134,7 +134,7 @@ use std::collections::BTreeSet;
 ///
 /// let query = Query::new()
 ///     .from_block(18_000_000)
-///     .to_block(18_010_000)
+///     .to_block_excl(18_010_000)
 ///     .join_mode(JoinMode::Default)
 ///     .include_all_blocks()
 ///     .select_block_fields(BlockField::all());
@@ -222,13 +222,21 @@ impl Query {
         Default::default()
     }
 
-    pub fn from_block(mut self, from_block: u64) -> Self {
-        self.from_block = from_block;
+    /// Set the starting block number the query should execute from.
+    /// This is inclusive, meaning the query will include the given block number.
+    /// If not specified, the query will start from the the genesis block.
+    pub fn from_block(mut self, block_number: u64) -> Self {
+        self.from_block = block_number;
         self
     }
 
-    pub fn to_block(mut self, to_block: u64) -> Self {
-        self.to_block = Some(to_block);
+    /// Set the the ending block number the query should execute to.
+    /// This is exclusive, meaning the query will execute up to but not including the given block number.
+    ///
+    /// eg. Query::new().to_block_lt(100) will return blocks 0 to 99.
+    /// If not specified, the query will end at the tip of the chain.
+    pub fn to_block_excl(mut self, block_number: u64) -> Self {
+        self.to_block = Some(block_number);
         self
     }
 
@@ -326,7 +334,8 @@ impl Query {
         T: Into<BlockSelection>,
     {
         let any_clause: AnyOf<T> = blocks.into();
-        let block_selections: Vec<BlockSelection> = any_clause.into_iter().map(Into::into).collect();
+        let block_selections: Vec<BlockSelection> =
+            any_clause.into_iter().map(Into::into).collect();
         self.blocks = block_selections;
         self
     }
@@ -420,7 +429,8 @@ impl Query {
         T: Into<TraceSelection>,
     {
         let any_clause: AnyOf<T> = traces.into();
-        let trace_selections: Vec<TraceSelection> = any_clause.into_iter().map(Into::into).collect();
+        let trace_selections: Vec<TraceSelection> =
+            any_clause.into_iter().map(Into::into).collect();
         self.traces = trace_selections;
         self
     }
@@ -677,7 +687,7 @@ impl Query {
     /// // Include all blocks for complete block header data
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .to_block(18_000_100)
+    ///     .to_block_excl(18_000_100)
     ///     .include_all_blocks()
     ///     .select_block_fields([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
     ///
