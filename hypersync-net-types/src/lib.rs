@@ -30,6 +30,8 @@ pub use types::Sighash;
 
 use serde::{Deserialize, Serialize};
 
+use crate::types::AnyOf;
+
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Selection<T> {
     /// Filters where matching values should be included in the response
@@ -40,6 +42,12 @@ pub struct Selection<T> {
     /// None means exclude nothing, Some(Default::default()) means exclude everything
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<T>,
+}
+
+impl<T> From<Selection<T>> for AnyOf<Selection<T>> {
+    fn from(selection: Selection<T>) -> AnyOf<Selection<T>> {
+        AnyOf::new(selection)
+    }
 }
 
 impl<T> Selection<T> {

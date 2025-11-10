@@ -36,23 +36,28 @@ async fn main() -> anyhow::Result<()> {
 
     let query = Query::new()
         .from_block(0)
-        .where_logs([
+        .where_logs(
             // We want All ERC20 transfers coming to any of our addresses
             LogFilter::any()
                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
                 // topic2 is the "to" position
-                .and_topic2(address_topic_filter.clone())?,
-            // We want All ERC20 transfers coming from any of our addresses
-            LogFilter::any()
-                .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
-                // topic1 is the "from" position
-                .and_topic1(address_topic_filter.clone())?,
-        ])
-        .where_transactions([
+                .and_topic2(address_topic_filter.clone())?
+                .or(
+                    // We want All ERC20 transfers coming from any of our addresses
+                    LogFilter::any()
+                        .and_topic0([
+                            "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                        ])?
+                        // topic1 is the "from" position
+                        .and_topic1(address_topic_filter.clone())?,
+                ),
+        )
+        .where_transactions(
             // get all transactions coming from OR going to any of our addresses
-            TransactionFilter::any().and_from_address(addresses.clone())?,
-            TransactionFilter::any().and_to_address(addresses.clone())?,
-        ])
+            TransactionFilter::any()
+                .and_from_address(addresses.clone())?
+                .or(TransactionFilter::any().and_to_address(addresses.clone())?),
+        )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_log_fields([
             LogField::Address,

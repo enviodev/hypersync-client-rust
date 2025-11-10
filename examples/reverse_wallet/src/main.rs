@@ -26,9 +26,11 @@ async fn main() -> anyhow::Result<()> {
             TransactionField::To,
             TransactionField::Value,
         ])
-        .where_transactions([TransactionFilter::any()
-            .and_from_address([address])?
-            .and_to_address([address])?]);
+        .where_transactions(
+            TransactionFilter::any()
+                .and_from_address([address])?
+                .and_to_address([address])?,
+        );
 
     println!("Starting the stream");
 

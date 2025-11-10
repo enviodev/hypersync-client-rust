@@ -1,10 +1,16 @@
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::AnyOf, CapnpBuilder, CapnpReader, Selection};
 use anyhow::Context;
 use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub type BlockSelection = Selection<BlockFilter>;
+
+impl From<BlockFilter> for AnyOf<BlockFilter> {
+    fn from(filter: BlockFilter) -> Self {
+        Self::new(filter)
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct BlockFilter {
@@ -25,6 +31,35 @@ impl BlockFilter {
     /// You can then use the builder methods to add specific filtering criteria.
     pub fn any() -> Self {
         Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches blocks satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple block filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `BlockFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<BlockFilter>` that matches blocks satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::BlockFilter;
+    ///
+    /// // Match blocks from specific miners OR with specific hashes
+    /// let filter = BlockFilter::any()
+    ///     .and_miner_address(["0x1234567890123456789012345678901234567890"])?
+    ///     .or(
+    ///         BlockFilter::any()
+    ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
     }
 
     /// Filter blocks by any of the provided block hashes.
@@ -414,7 +449,7 @@ mod tests {
             miner: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
         };
         let query = Query::new()
-            .where_blocks([block_filter])
+            .where_blocks(block_filter)
             .select_block_fields(BlockField::all());
 
         test_query_serde(query, "block selection with rest defaults");

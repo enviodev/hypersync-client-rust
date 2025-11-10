@@ -2,7 +2,7 @@
 // WARNING: This example doesn't account for rollbacks
 
 use hypersync_client::{
-    net_types::{Query, TransactionField},
+    net_types::{Query, TransactionField, TransactionFilter},
     CallDecoder, Client, ClientConfig,
 };
 use tokio::time::{sleep, Duration};
@@ -20,13 +20,13 @@ async fn main() -> anyhow::Result<()> {
     let mut query = Query::new()
         // start from tip since we only want new transfers
         .from_block(20519993)
-        .where_transactions([
+        .where_transactions(
             // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
             // We want all DAI transfers so no address filter and only a filter for the first topic
-            hypersync_client::net_types::TransactionFilter::any()
+            TransactionFilter::any()
                 .and_from_address([DAI_ADDRESS])?
                 .and_to_address([DAI_ADDRESS])?,
-        ])
+        )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_transaction_fields([TransactionField::Hash, TransactionField::Input]);
 

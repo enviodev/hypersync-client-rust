@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::{AnyOf, Sighash}, CapnpBuilder, CapnpReader, Selection};
 use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
@@ -116,6 +116,12 @@ impl AuthorizationSelection {
 
 pub type TransactionSelection = Selection<TransactionFilter>;
 
+impl From<TransactionFilter> for AnyOf<TransactionFilter> {
+    fn from(filter: TransactionFilter) -> Self {
+        Self::new(filter)
+    }
+}
+
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TransactionFilter {
     /// Address the transaction should originate from. If transaction.from matches any of these, the transaction
@@ -167,6 +173,35 @@ impl TransactionFilter {
     /// You can then use the builder methods to add specific filtering criteria.
     pub fn any() -> Self {
         Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches transactions satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple transaction filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `TransactionFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<TransactionFilter>` that matches transactions satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Match transactions from specific senders OR with specific function signatures
+    /// let filter = TransactionFilter::any()
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .or(
+    ///         TransactionFilter::any()
+    ///             .and_sighash(["0xa9059cbb"])? // transfer(address,uint256)
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
     }
 
     /// Filter transactions by any of the provided sender addresses.
@@ -1205,7 +1240,7 @@ mod tests {
     fn test_transaction_filter_serde_with_defaults() {
         let transaction_filter = TransactionSelection::default();
         let query = Query::new()
-            .where_transactions([transaction_filter])
+            .where_transactions(transaction_filter)
             .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with defaults");
@@ -1226,7 +1261,7 @@ mod tests {
             authorization_list: Vec::default(),
         };
         let query = Query::new()
-            .where_transactions([transaction_filter])
+            .where_transactions(transaction_filter)
             .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with explicit defaults");
@@ -1254,7 +1289,7 @@ mod tests {
             authorization_list: Vec::default(),
         };
         let query = Query::new()
-            .where_transactions([transaction_filter])
+            .where_transactions(transaction_filter)
             .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with full values");
@@ -1282,7 +1317,7 @@ mod tests {
             authorization_list: vec![auth_selection],
         };
         let query = Query::new()
-            .where_transactions([transaction_filter])
+            .where_transactions(transaction_filter)
             .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "authorization selection with rest defaults");

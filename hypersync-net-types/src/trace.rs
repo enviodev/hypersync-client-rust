@@ -1,9 +1,15 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::{AnyOf, Sighash}, CapnpBuilder, CapnpReader, Selection};
 use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper};
 use serde::{Deserialize, Serialize};
 
 pub type TraceSelection = Selection<TraceFilter>;
+
+impl From<TraceFilter> for AnyOf<TraceFilter> {
+    fn from(filter: TraceFilter) -> Self {
+        Self::new(filter)
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TraceFilter {
@@ -51,6 +57,35 @@ impl TraceFilter {
     /// ```
     pub fn any() -> Self {
         Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches traces satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple trace filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `TraceFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<TraceFilter>` that matches traces satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TraceFilter;
+    ///
+    /// // Match traces from specific callers OR with specific call types
+    /// let filter = TraceFilter::any()
+    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .or(
+    ///         TraceFilter::any()
+    ///             .and_call_type(["create", "create2"])
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
     }
 
     /// Filter traces by any of the provided "from" addresses.
@@ -773,7 +808,7 @@ mod tests {
     fn test_trace_filter_serde_with_defaults() {
         let trace_filter = TraceSelection::default();
         let query = Query::new()
-            .where_traces([trace_filter])
+            .where_traces(trace_filter)
             .select_trace_fields(TraceField::all());
 
         test_query_serde(query, "trace selection with defaults");
@@ -796,7 +831,7 @@ mod tests {
             sighash: vec![Sighash::from([0x12, 0x34, 0x56, 0x78])],
         };
         let query = Query::new()
-            .where_traces([trace_filter])
+            .where_traces(trace_filter)
             .select_trace_fields(TraceField::all());
 
         test_query_serde(query, "trace selection with full values");

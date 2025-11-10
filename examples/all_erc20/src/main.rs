@@ -30,9 +30,13 @@ async fn main() -> anyhow::Result<()> {
         // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).
         .from_block(10123123)
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
-        .where_logs([LogFilter::any()
-            // We want All ERC20 transfers so no address filter and only a filter for the first topic
-            .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?])
+        .where_logs(
+            LogFilter::any()
+                // We want All ERC20 transfers so no address filter and only a filter for the first topic
+                .and_topic0([
+                    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                ])?,
+        )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_log_fields([
             LogField::Data,

@@ -3,6 +3,7 @@ use crate::hypersync_net_types_capnp::{query_body, request};
 use crate::log::{LogField, LogSelection};
 use crate::trace::{TraceField, TraceSelection};
 use crate::transaction::{TransactionField, TransactionSelection};
+use crate::types::AnyOf;
 use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -42,11 +43,11 @@ use std::collections::BTreeSet;
 ///     .select_block_fields([BlockField::Number, BlockField::Timestamp])
 ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
 ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::To])
-///     .where_logs([
+///     .where_logs(
 ///         LogFilter::any()
 ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])? // USDT contract
 ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
-///     ]);
+///     );
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 ///
@@ -66,32 +67,33 @@ use std::collections::BTreeSet;
 ///     .select_block_fields(BlockField::all())
 ///     .select_transaction_fields(TransactionField::all())
 ///     .select_log_fields(LogField::all())
-///     .where_logs([
+///     .where_logs(
 ///         // Transfer events from USDT and USDC contracts (multiple addresses in one filter)
 ///         LogFilter::any()
 ///             .and_address([
 ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
 ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
 ///             ])?
-///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?, // Transfer event
-///         
-///         // Approval events from any ERC20 contract (different topic combination)
-///         LogFilter::any()
-///             .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])?, // Approval event
-///             
-///         // Swap events from Uniswap V2 pairs (another distinct filter combination)
-///         LogFilter::any()
-///             .and_topic0(["0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"])?, // Swap event
-///     ])
-///     .where_transactions([
+///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
+///         .or(
+///             // Approval events from any ERC20 contract (different topic combination)
+///             LogFilter::any()
+///                 .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])? // Approval event
+///         )
+///         .or(
+///             // Swap events from Uniswap V2 pairs (another distinct filter combination)
+///             LogFilter::any()
+///                 .and_topic0(["0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"])? // Swap event
+///         )
+///     )
+///     .where_transactions(
 ///         TransactionFilter::any()
 ///             .and_sighash([
 ///                 "0xa9059cbb", // transfer(address,uint256)
 ///                 "0x095ea7b3", // approve(address,uint256)
-///             ])?,
-///         TransactionFilter::any()
-///             .and_status(0), // Failed transactions
-///     ]);
+///             ])?
+///             .or(TransactionFilter::any().and_status(0)) // Failed transactions
+///     );
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 ///
@@ -105,7 +107,7 @@ use std::collections::BTreeSet;
 ///     .from_block(18_000_000)
 ///     .to_block(18_001_000)
 ///     .select_log_fields([LogField::Address, LogField::Data, LogField::Topic0, LogField::Topic1, LogField::Topic2])
-///     .where_logs([
+///     .where_logs(
 ///         // Include Transfer events from all contracts, but exclude specific problematic contracts
 ///         Selection::new(
 ///             LogFilter::any()
@@ -118,8 +120,8 @@ use std::collections::BTreeSet;
 ///                     "0x1234567890123456789012345678901234567890", // Problematic contract 1
 ///                     "0x0987654321098765432109876543210987654321", // Problematic contract 2
 ///                 ])?
-///         ),
-///     ]);
+///         )
+///     );
 /// # Ok::<(), anyhow::Error>(())
 /// ```
 ///
@@ -244,36 +246,39 @@ impl Query {
     /// ```
     /// use hypersync_net_types::{Query, LogFilter};
     ///
-    /// // Match logs from multiple contracts (multiple addresses in one filter)
+    /// // Single filter for logs from multiple contracts
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .where_logs([
+    ///     .where_logs(
     ///         LogFilter::any()
     ///             .and_address([
     ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
     ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // USDC
     ///             ])?
-    ///     ]);
+    ///     );
     ///
-    /// // Multiple different filter combinations (Transfer vs Approval events)
+    /// // Multiple different filter combinations using .or()
     /// let query = Query::new()
-    ///     .where_logs([
+    ///     .where_logs(
     ///         // Transfer events from specific contracts
     ///         LogFilter::any()
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
-    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?, // Transfer
-    ///         // Approval events from any contract
-    ///         LogFilter::any()
-    ///             .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])?, // Approval
-    ///     ]);
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer
+    ///         .or(
+    ///             // Approval events from any contract
+    ///             LogFilter::any()
+    ///                 .and_topic0(["0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925"])? // Approval
+    ///         )
+    ///     );
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn where_logs<I>(mut self, logs: I) -> Self
+    pub fn where_logs<I, T>(mut self, logs: I) -> Self
     where
-        I: IntoIterator,
-        I::Item: Into<LogSelection>,
+        I: Into<AnyOf<T>>,
+        T: Into<LogSelection>,
     {
-        let log_selection: Vec<LogSelection> = logs.into_iter().map(Into::into).collect();
+        let any_clause: AnyOf<T> = logs.into();
+        let log_selection: Vec<LogSelection> = any_clause.into_iter().map(Into::into).collect();
         self.logs = log_selection;
         self
     }
@@ -292,31 +297,36 @@ impl Query {
     /// ```
     /// use hypersync_net_types::{Query, BlockFilter};
     ///
-    /// // Match blocks by specific hashes
+    /// // Single filter for blocks by specific hashes
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .where_blocks([
+    ///     .where_blocks(
     ///         BlockFilter::any()
-    ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?,
-    ///     ]);
+    ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
+    ///     );
     ///
-    /// // Match blocks by specific miners
+    /// // Multiple filter combinations using .or()
     /// let query = Query::new()
-    ///     .where_blocks([
+    ///     .where_blocks(
     ///         BlockFilter::any()
-    ///             .and_miner_address([
-    ///                 "0xdac17f958d2ee523a2206206994597c13d831ec7", // Mining pool 1
-    ///                 "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Mining pool 2
-    ///             ])?
-    ///     ]);
+    ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
+    ///         .or(
+    ///             BlockFilter::any()
+    ///                 .and_miner_address([
+    ///                     "0xdac17f958d2ee523a2206206994597c13d831ec7", // Mining pool 1
+    ///                     "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Mining pool 2
+    ///                 ])?
+    ///         )
+    ///     );
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn where_blocks<I>(mut self, blocks: I) -> Self
+    pub fn where_blocks<I, T>(mut self, blocks: I) -> Self
     where
-        I: IntoIterator,
-        I::Item: Into<BlockSelection>,
+        I: Into<AnyOf<T>>,
+        T: Into<BlockSelection>,
     {
-        let block_selections: Vec<BlockSelection> = blocks.into_iter().map(Into::into).collect();
+        let any_clause: AnyOf<T> = blocks.into();
+        let block_selections: Vec<BlockSelection> = any_clause.into_iter().map(Into::into).collect();
         self.blocks = block_selections;
         self
     }
@@ -335,35 +345,33 @@ impl Query {
     /// ```
     /// use hypersync_net_types::{Query, TransactionFilter};
     ///
-    /// // Match transactions from specific addresses
+    /// // Single filter for transactions from specific addresses
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .where_transactions([
+    ///     .where_transactions(
     ///         TransactionFilter::any()
-    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
-    ///     ]);
+    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     );
     ///
-    /// // Match transactions by function signature (e.g., transfer calls)
+    /// // Multiple filter combinations using .or()
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
     /// let query = Query::new()
-    ///     .where_transactions([
+    ///     .where_transactions(
     ///         TransactionFilter::any().and_sighash([transfer_sig])?
-    ///     ]);
-    ///
-    /// // Match failed transactions
-    /// let query = Query::new()
-    ///     .where_transactions([
-    ///         TransactionFilter::any().and_status(0) // 0 = failed
-    ///     ]);
+    ///         .or(
+    ///             TransactionFilter::any().and_status(0) // Failed transactions
+    ///         )
+    ///     );
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn where_transactions<I>(mut self, transactions: I) -> Self
+    pub fn where_transactions<I, T>(mut self, transactions: I) -> Self
     where
-        I: IntoIterator,
-        I::Item: Into<TransactionSelection>,
+        I: Into<AnyOf<T>>,
+        T: Into<TransactionSelection>,
     {
+        let any_clause: AnyOf<T> = transactions.into();
         let transaction_selections: Vec<TransactionSelection> =
-            transactions.into_iter().map(Into::into).collect();
+            any_clause.into_iter().map(Into::into).collect();
         self.transactions = transaction_selections;
         self
     }
@@ -387,34 +395,32 @@ impl Query {
     /// ```
     /// use hypersync_net_types::{Query, TraceFilter};
     ///
-    /// // Match traces from specific caller addresses
+    /// // Single filter for traces from specific caller addresses
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .where_traces([
+    ///     .where_traces(
     ///         TraceFilter::any()
-    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
-    ///     ]);
+    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     );
     ///
-    /// // Match contract creation traces
-    /// let query = Query::new()
-    ///     .where_traces([
-    ///         TraceFilter::any().and_call_type(["create", "suicide"])
-    ///     ]);
-    ///
-    /// // Match traces by function signature
+    /// // Multiple filter combinations using .or()
     /// let transfer_sig = "0xa9059cbb"; // transfer(address,uint256)
     /// let query = Query::new()
-    ///     .where_traces([
-    ///         TraceFilter::any().and_sighash([transfer_sig])?
-    ///     ]);
+    ///     .where_traces(
+    ///         TraceFilter::any().and_call_type(["create", "suicide"])
+    ///         .or(
+    ///             TraceFilter::any().and_sighash([transfer_sig])?
+    ///         )
+    ///     );
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn where_traces<I>(mut self, traces: I) -> Self
+    pub fn where_traces<I, T>(mut self, traces: I) -> Self
     where
-        I: IntoIterator,
-        I::Item: Into<TraceSelection>,
+        I: Into<AnyOf<T>>,
+        T: Into<TraceSelection>,
     {
-        let trace_selections: Vec<TraceSelection> = traces.into_iter().map(Into::into).collect();
+        let any_clause: AnyOf<T> = traces.into();
+        let trace_selections: Vec<TraceSelection> = any_clause.into_iter().map(Into::into).collect();
         self.traces = trace_selections;
         self
     }
@@ -629,19 +635,19 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::Default)
-    ///     .where_logs([LogFilter::any()]);
+    ///     .where_logs(LogFilter::any());
     ///
     /// // Join everything - comprehensive data for analysis
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::JoinAll)
-    ///     .where_logs([LogFilter::any()]);
+    ///     .where_logs(LogFilter::any());
     ///
     /// // No joins - only the exact logs that match the filter
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .join_mode(JoinMode::JoinNothing)
-    ///     .where_logs([LogFilter::any()]);
+    ///     .where_logs(LogFilter::any());
     /// ```
     pub fn join_mode(mut self, join_mode: JoinMode) -> Self {
         self.join_mode = join_mode;
@@ -679,10 +685,10 @@ impl Query {
     /// let query = Query::new()
     ///     .from_block(18_000_000)
     ///     .include_all_blocks()
-    ///     .where_logs([
+    ///     .where_logs(
     ///         LogFilter::any()
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
-    ///     ]);
+    ///     );
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn include_all_blocks(mut self) -> Self {

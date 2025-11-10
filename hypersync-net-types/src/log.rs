@@ -1,4 +1,4 @@
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::AnyOf, CapnpBuilder, CapnpReader, Selection};
 use anyhow::Context;
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
@@ -20,10 +20,45 @@ pub struct LogFilter {
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
 }
 
+impl From<LogFilter> for AnyOf<LogFilter> {
+    fn from(filter: LogFilter) -> Self {
+        Self::new(filter)
+    }
+}
+
 impl LogFilter {
     /// Base filter to match any logs
     pub fn any() -> Self {
         Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches logs satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple log filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `LogFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<LogFilter>` that matches logs satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Match logs from specific contracts OR with specific topics
+    /// let filter = LogFilter::any()
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     .or(
+    ///         LogFilter::any()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
     }
 
     /// Filter logs by any of the provided contract addresses.
@@ -508,7 +543,7 @@ mod tests {
     fn test_log_selection_serde_with_defaults() {
         let log_selection = LogSelection::default();
         let query = Query::new()
-            .where_logs([log_selection])
+            .where_logs(log_selection)
             .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with defaults");
@@ -535,7 +570,7 @@ mod tests {
             },
         };
         let query = Query::new()
-            .where_logs([log_selection])
+            .where_logs(log_selection)
             .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with full values");
@@ -558,9 +593,8 @@ mod tests {
         assert_eq!(lf.topics[0].len(), 2);
         assert_eq!(lf.address_filter, None);
 
-        let lf = lf.and_topic0([
-            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-        ])?;
+        let lf =
+            lf.and_topic0(["0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"])?;
         assert_eq!(
             lf.topics[0].len(),
             1,
