@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .where_transactions(
             TransactionFilter::all()
                 .and_from([address])?
-                .or(TransactionFilter::all().and_to([address])?)
+                .or(TransactionFilter::all().and_to([address])?),
         );
 
     println!("Starting the stream");

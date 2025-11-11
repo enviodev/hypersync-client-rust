@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
             // We want all DAI transfers so no address filter and only a filter for the first topic
             TransactionFilter::all()
                 .and_from([DAI_ADDRESS])?
-                .and_to([DAI_ADDRESS])?
+                .and_to([DAI_ADDRESS])?,
         )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
         .select_transaction_fields([TransactionField::Hash, TransactionField::Input]);
