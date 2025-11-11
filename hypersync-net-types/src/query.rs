@@ -698,7 +698,6 @@ impl Query {
     /// // Normal mode - only blocks with matching logs
     /// let query = Query::new()
     ///     .from_block(18_000_000)
-    ///     .include_all_blocks()
     ///     .where_logs(
     ///         LogFilter::all()
     ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
