@@ -233,7 +233,11 @@ impl Query {
     /// Set the the ending block number the query should execute to.
     /// This is exclusive, meaning the query will execute up to but not including the given block number.
     ///
-    /// eg. Query::new().to_block_lt(100) will return blocks 0 to 99.
+    /// eg. the following will return blocks 0 to 99.
+    ///```
+    /// use hypersync_net_types::Query;
+    /// Query::new().to_block_excl(100);
+    /// ```
     /// If not specified, the query will end at the tip of the chain.
     pub fn to_block_excl(mut self, block_number: u64) -> Self {
         self.to_block = Some(block_number);
