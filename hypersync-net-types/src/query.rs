@@ -320,7 +320,7 @@ impl Query {
     ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
     ///         .or(
     ///             BlockFilter::all()
-    ///                 .and_miner_address([
+    ///                 .and_miner([
     ///                     "0xdac17f958d2ee523a2206206994597c13d831ec7", // Mining pool 1
     ///                     "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Mining pool 2
     ///                 ])?
@@ -359,7 +359,7 @@ impl Query {
     ///     .from_block(18_000_000)
     ///     .where_transactions(
     ///         TransactionFilter::all()
-    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///             .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     );
     ///
     /// // Multiple filter combinations using .or()
@@ -409,7 +409,7 @@ impl Query {
     ///     .from_block(18_000_000)
     ///     .where_traces(
     ///         TraceFilter::all()
-    ///             .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///             .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     );
     ///
     /// // Multiple filter combinations using .or()

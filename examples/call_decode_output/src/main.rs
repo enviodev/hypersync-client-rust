@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
         .select_trace_fields([TraceField::Input, TraceField::Output])
         .where_traces(
             TraceFilter::all()
-                .and_to_address([DAI_ADDRESS])?
+                .and_to([DAI_ADDRESS])?
                 .and_sighash([balance_of_sighash])?,
         );
 

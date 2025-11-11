@@ -56,7 +56,7 @@ impl TraceFilter {
     ///
     /// // Chain with other filter methods
     /// let filter = TraceFilter::all()
-    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn all() -> Self {
@@ -81,7 +81,7 @@ impl TraceFilter {
     ///
     /// // Match traces from specific callers OR with specific call types
     /// let filter = TraceFilter::all()
-    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .or(
     ///         TraceFilter::all()
     ///             .and_call_type(["create", "create2"])
@@ -112,11 +112,11 @@ impl TraceFilter {
     ///
     /// // Filter by a single caller address
     /// let filter = TraceFilter::all()
-    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
     ///
     /// // Filter by multiple caller addresses
     /// let filter = TraceFilter::all()
-    ///     .and_from_address([
+    ///     .and_from([
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///     ])?;
@@ -127,10 +127,10 @@ impl TraceFilter {
     ///     0x0b, 0x5e, 0x6a, 0xde, 0xe3, 0x0d, 0x1a, 0x23, 0x45, 0x67
     /// ];
     /// let filter = TraceFilter::all()
-    ///     .and_from_address([caller_address])?;
+    ///     .and_from([caller_address])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_from_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_from<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -168,22 +168,22 @@ impl TraceFilter {
     ///
     /// // Filter by a single target address
     /// let filter = TraceFilter::all()
-    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_to(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple target addresses
     /// let filter = TraceFilter::all()
-    ///     .and_to_address([
+    ///     .and_to([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7",
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
     ///     ])?;
     ///
     /// // Chain with from address filtering
     /// let filter = TraceFilter::all()
-    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
-    ///     .and_to_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_to(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_to_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_to<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
@@ -272,7 +272,7 @@ impl TraceFilter {
     ///
     /// // Chain with address filtering
     /// let filter = TraceFilter::all()
-    ///     .and_from_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
     ///     .and_call_type(["call"]);
     /// # Ok::<(), anyhow::Error>(())
     /// ```

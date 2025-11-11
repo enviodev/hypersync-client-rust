@@ -29,7 +29,7 @@ impl BlockFilter {
     ///
     /// This creates an empty filter with no constraints, which will match all blocks.
     /// You can then use the builder methods to add specific filtering criteria eg.
-    /// `BlockFilter::all().and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
+    /// `BlockFilter::all().and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
     pub fn all() -> Self {
         Default::default()
     }
@@ -52,7 +52,7 @@ impl BlockFilter {
     ///
     /// // Match blocks from specific miners OR with specific hashes
     /// let filter = BlockFilter::all()
-    ///     .and_miner_address(["0x1234567890123456789012345678901234567890"])?
+    ///     .and_miner(["0x1234567890123456789012345678901234567890"])?
     ///     .or(
     ///         BlockFilter::all()
     ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
@@ -136,11 +136,11 @@ impl BlockFilter {
     ///
     /// // Filter by a single miner address
     /// let filter = BlockFilter::all()
-    ///     .and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     ///
     /// // Filter by multiple miner addresses (e.g., major mining pools)
     /// let filter = BlockFilter::all()
-    ///     .and_miner_address([
+    ///     .and_miner([
     ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Pool 1
     ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Pool 2
     ///     ])?;
@@ -151,15 +151,15 @@ impl BlockFilter {
     ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
     /// ];
     /// let filter = BlockFilter::all()
-    ///     .and_miner_address([miner_address])?;
+    ///     .and_miner([miner_address])?;
     ///
     /// // Chain with other filter methods
     /// let filter = BlockFilter::all()
     ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
-    ///     .and_miner_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///     .and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    pub fn and_miner_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    pub fn and_miner<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
     where
         I: IntoIterator<Item = A>,
         A: TryInto<Address>,
