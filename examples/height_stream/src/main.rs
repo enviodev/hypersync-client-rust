@@ -8,11 +8,7 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let client = Arc::new(Client::new(ClientConfig {
-        url: Some(
-            "https://arbitrum-sepolia.hypersync.xyz"
-                .parse()
-                .unwrap(),
-        ),
+        url: Some("https://arbitrum-sepolia.hypersync.xyz".parse().unwrap()),
         ..Default::default()
     })?);
 

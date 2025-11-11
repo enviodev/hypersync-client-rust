@@ -916,4 +916,3 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
 
     Ok(())
 }
-
