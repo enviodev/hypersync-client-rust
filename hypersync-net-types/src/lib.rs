@@ -100,6 +100,38 @@ impl<T> Selection<T> {
         self.exclude = Some(filter);
         self
     }
+
+    /// Combine this selection with another selection using logical OR.
+    ///
+    /// This creates an `AnyOf` type that will match if either this selection
+    /// or the provided selection matches.
+    ///
+    /// # Arguments
+    /// * `selection` - Another selection to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<Self>` that represents the logical OR of both selections
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{LogSelection, LogFilter};
+    ///
+    /// // Create two different selections
+    /// let selection1 = LogSelection::new(LogFilter::all())
+    ///     .and_not(LogFilter::all().and_address(["0xdadB0d80178819F2319190D340ce9A924f783711"])?);
+    /// let selection2 = LogSelection::new(
+    ///     LogFilter::all().and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?,
+    /// );
+    ///
+    /// // Combine them with OR - matches logs from either address
+    /// let combined = selection1.or(selection2);
+    ///
+    /// Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, selection: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(selection)
+    }
 }
 
 impl<T> From<T> for Selection<T> {
