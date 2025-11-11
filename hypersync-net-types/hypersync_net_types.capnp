@@ -236,7 +236,11 @@ struct BlockRange {
 }
 
 
-struct Query {
+# Renamed from "Query" to "Request" to avoid naming confusion
+# declared the explicit id to keep it backwards compatible with its previous name
+# the id comes from running `capnp compile -ocapnp hypersync_net_types.capnp`
+# (which is by default a hash of its name with the parent scope id)
+struct Request @0xbe854ee336b40054 {
     blockRange @0 :BlockRange;
     body :union { 
         query @1 :QueryBody; 

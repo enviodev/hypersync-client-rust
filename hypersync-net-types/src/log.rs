@@ -1,4 +1,5 @@
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::AnyOf, CapnpBuilder, CapnpReader, Selection};
+use anyhow::Context;
 use arrayvec::ArrayVec;
 use hypersync_format::{Address, FilterWrapper, LogArgument};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,300 @@ pub struct LogFilter {
     ///  topic specified in nth element of topics, the log will be returned. Empty means match all.
     #[serde(default, skip_serializing_if = "ArrayVec::is_empty")]
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
+}
+
+impl From<LogFilter> for AnyOf<LogFilter> {
+    fn from(filter: LogFilter) -> Self {
+        Self::new(filter)
+    }
+}
+
+impl LogFilter {
+    /// Base filter to match all logs
+    /// Narrow the filter down by chaining additional values for eg.
+    /// `LogFilter::all().and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
+    pub fn all() -> Self {
+        Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches logs satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple log filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `LogFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<LogFilter>` that matches logs satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Match logs from specific contracts OR with specific topics
+    /// let filter = LogFilter::all()
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     .or(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])? // Transfer event
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
+    }
+
+    /// Filter logs by any of the provided contract addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Filter by a single address using string
+    /// let filter = LogFilter::all()
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple addresses
+    /// let filter = LogFilter::all()
+    ///     .and_address([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Another contract
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let usdt_address = [
+    ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
+    /// ];
+    /// let filter = LogFilter::all()
+    ///     .and_address([usdt_address])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid address at position {idx}"))?,
+            );
+        }
+        self.address = converted_addresses;
+        Ok(self)
+    }
+
+    fn and_topic<I, T>(mut self, topic_idx: usize, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        if topic_idx > 3 {
+            anyhow::bail!("topic index should not be greater than 3");
+        }
+
+        if self.topics.len() <= topic_idx {
+            for _ in 0..=(topic_idx - self.topics.len()) {
+                self.topics.push(Vec::new());
+            }
+        }
+        let topic_selection = self
+            .topics
+            .get_mut(topic_idx)
+            .expect("topic should exist from previous check");
+        topic_selection.clear();
+        for (idx, topic) in topics.into_iter().enumerate() {
+            topic_selection.push(
+                topic
+                    .try_into()
+                    .with_context(|| format!("invalid topic at position {idx}"))?,
+            );
+        }
+        Ok(self)
+    }
+
+    /// Filter logs by any of the provided topic0 values.
+    ///
+    /// Topic0 typically contains the event signature hash for Ethereum logs.
+    /// This method accepts any iterable of values that can be converted to `LogArgument`.
+    /// Common input types include string slices, byte arrays, and `LogArgument` objects.
+    ///
+    /// # Arguments
+    /// * `topics` - An iterable of topic0 values to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any topic fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Filter by Transfer event signature
+    /// let transfer_sig = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    /// let filter = LogFilter::all()
+    ///     .and_topic0([transfer_sig])?;
+    ///
+    /// // Filter by multiple event signatures
+    /// let filter = LogFilter::all()
+    ///     .and_topic0([
+    ///         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", // Transfer
+    ///         "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925", // Approval
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let transfer_bytes = [
+    ///     0xdd, 0xf2, 0x52, 0xad, 0x1b, 0xe2, 0xc8, 0x9b, 0x69, 0xc2, 0xb0, 0x68, 0xfc, 0x37, 0x8d, 0xaa,
+    ///     0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16, 0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef
+    /// ];
+    /// let filter = LogFilter::all()
+    ///     .and_topic0([transfer_bytes])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_topic0<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.and_topic(0, topics)
+    }
+    /// Filter logs by any of the provided topic1 values.
+    ///
+    /// Topic1 typically contains the first indexed parameter of an Ethereum event.
+    /// This method accepts any iterable of values that can be converted to `LogArgument`.
+    /// Common input types include string slices, byte arrays, and `LogArgument` objects.
+    ///
+    /// # Arguments
+    /// * `topics` - An iterable of topic1 values to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any topic fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Filter by specific sender address in Transfer events (topic1 = from)
+    /// let sender_address = "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7";
+    /// let filter = LogFilter::all()
+    ///     .and_topic1([sender_address])?;
+    ///
+    /// // Filter by multiple possible senders
+    /// let filter = LogFilter::all()
+    ///     .and_topic1([
+    ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
+    ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_topic1<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.and_topic(1, topics)
+    }
+    /// Filter logs by any of the provided topic2 values.
+    ///
+    /// Topic2 typically contains the second indexed parameter of an Ethereum event.
+    /// This method accepts any iterable of values that can be converted to `LogArgument`.
+    /// Common input types include string slices, byte arrays, and `LogArgument` objects.
+    ///
+    /// # Arguments
+    /// * `topics` - An iterable of topic2 values to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any topic fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Filter by specific recipient address in Transfer events (topic2 = to)
+    /// let recipient_address = "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567";
+    /// let filter = LogFilter::all()
+    ///     .and_topic2([recipient_address])?;
+    ///
+    /// // Filter by multiple possible recipients
+    /// let filter = LogFilter::all()
+    ///     .and_topic2([
+    ///         "0x000000000000000000000000a0b86a33e6c11c8c0c5c0b5e6adee30d1a234567",
+    ///         "0x000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7",
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_topic2<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.and_topic(2, topics)
+    }
+    /// Filter logs by any of the provided topic3 values.
+    ///
+    /// Topic3 typically contains the third indexed parameter of an Ethereum event.
+    /// This method accepts any iterable of values that can be converted to `LogArgument`.
+    /// Common input types include string slices, byte arrays, and `LogArgument` objects.
+    ///
+    /// # Arguments
+    /// * `topics` - An iterable of topic3 values to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any topic fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::LogFilter;
+    ///
+    /// // Filter by specific token ID in NFT Transfer events (topic3 = tokenId)
+    /// let token_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
+    /// let filter = LogFilter::all()
+    ///     .and_topic3([token_id])?;
+    ///
+    /// // Filter by multiple token IDs
+    /// let filter = LogFilter::all()
+    ///     .and_topic3([
+    ///         "0x0000000000000000000000000000000000000000000000000000000000000001",
+    ///         "0x0000000000000000000000000000000000000000000000000000000000000002",
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_topic3<I, T>(self, topics: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: TryInto<LogArgument>,
+        T::Error: std::error::Error + Send + Sync + 'static,
+    {
+        self.and_topic(3, topics)
+    }
 }
 
 impl CapnpBuilder<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
@@ -220,7 +515,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -249,15 +544,9 @@ mod tests {
     #[test]
     fn test_log_selection_serde_with_defaults() {
         let log_selection = LogSelection::default();
-        let field_selection = FieldSelection {
-            log: LogField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            logs: vec![log_selection],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_logs(log_selection)
+            .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with defaults");
     }
@@ -282,16 +571,56 @@ mod tests {
                 topics
             },
         };
-        let field_selection = FieldSelection {
-            log: LogField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            logs: vec![log_selection.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_logs(log_selection)
+            .select_log_fields(LogField::all());
 
         test_query_serde(query, "log selection with full values");
+    }
+
+    #[test]
+    fn test_log_filter_builder() -> anyhow::Result<()> {
+        let lf = LogFilter::all()
+            .and_address([
+                "0xdadB0d80178819F2319190D340ce9A924f783711",
+                "0xdadB0d80178819F2319190D340ce9A924f783712",
+            ])?
+            .and_topic0([
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            ])?;
+
+        assert_eq!(lf.address.len(), 2);
+        assert_eq!(lf.topics.len(), 1);
+        assert_eq!(lf.topics[0].len(), 2);
+        assert_eq!(lf.address_filter, None);
+
+        let lf =
+            lf.and_topic0(["0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"])?;
+        assert_eq!(
+            lf.topics[0].len(),
+            1,
+            "shoul overwrite previous topic0 selection"
+        );
+
+        let lf = lf.and_topic3([
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+        ])?;
+
+        assert_eq!(lf.topics[3].len(), 2, "should have correctly added topic3");
+        assert_eq!(
+            lf.topics[2].len(),
+            0,
+            "should have added empty topics before the first non-empty topic"
+        );
+        assert_eq!(
+            lf.topics[1].len(),
+            0,
+            "should have added empty topics before the first non-empty topic"
+        );
+        assert_eq!(lf.topics[0].len(), 1, "topic0 should not have been changed");
+
+        Ok(())
     }
 }

@@ -1,13 +1,16 @@
 // Example of watching for new DAI transfers
 // WARNING: This example doesn't account for rollbacks
 
-use hypersync_client::{net_types::Query, Client, ClientConfig, Decoder};
+use hypersync_client::{
+    net_types::{LogField, LogFilter, Query},
+    Client, ClientConfig, Decoder,
+};
 use tokio::time::{sleep, Duration};
 
 const DAI_ADDRESS: &str = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
@@ -18,31 +21,25 @@ async fn main() {
     println!("server height is {height}");
 
     // The query to run
-    let mut query: Query = serde_json::from_value(serde_json::json!( {
+    let mut query = Query::new()
         // start from tip since we only want new transfers
-        "from_block": height,
+        .from_block(height)
         // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
-        "logs": [
-            {
-                "address": [DAI_ADDRESS],
-                // We only want transfer events
-                "topics": [
-                    ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"],
-                ]
-            }
-        ],
-        // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        "field_selection": {
-            "log": [
-                "data",
-                "topic0",
-                "topic1",
-                "topic2",
-                "topic3",
-            ],
-        }
-    }))
-    .unwrap();
+        .where_logs(
+            LogFilter::all()
+                .and_address([DAI_ADDRESS])?
+                // we only want transfer events
+                .and_topic0([
+                    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                ])?,
+        )
+        .select_log_fields([
+            LogField::Data,
+            LogField::Topic0,
+            LogField::Topic1,
+            LogField::Topic2,
+            LogField::Topic3,
+        ]);
 
     let decoder = Decoder::from_signatures(&[
         "Transfer(address indexed from, address indexed to, uint amount)",

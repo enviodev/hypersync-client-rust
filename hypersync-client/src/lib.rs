@@ -445,10 +445,10 @@ impl Client {
         if should_cache {
             let query_with_id = {
                 let mut message = capnp::message::Builder::new_default();
-                let mut query_builder =
-                    message.init_root::<hypersync_net_types_capnp::query::Builder>();
+                let mut request_builder =
+                    message.init_root::<hypersync_net_types_capnp::request::Builder>();
 
-                query_builder.build_query_id_from_query(query)?;
+                request_builder.build_query_id_from_query(query)?;
                 let mut query_with_id = Vec::new();
                 capnp::serialize_packed::write_message(&mut query_with_id, &message)?;
                 query_with_id
@@ -456,7 +456,6 @@ impl Client {
 
             let mut req = self.http_client.request(Method::POST, url.clone());
             req = req.header("content-type", "application/x-capnp");
-            req = req.header("x-hypersync-cache-queries", "true");
             if let Some(bearer_token) = &self.bearer_token {
                 req = req.bearer_auth(bearer_token);
             }
@@ -505,7 +504,7 @@ impl Client {
         let full_query_bytes = {
             let mut message = capnp::message::Builder::new_default();
             let mut query_builder =
-                message.init_root::<hypersync_net_types_capnp::query::Builder>();
+                message.init_root::<hypersync_net_types_capnp::request::Builder>();
 
             query_builder.build_full_query_from_query(query, should_cache)?;
             let mut bytes = Vec::new();

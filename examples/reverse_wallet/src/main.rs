@@ -3,10 +3,13 @@
 
 use std::sync::Arc;
 
-use hypersync_client::{net_types::Query, Client, ClientConfig, StreamConfig};
+use hypersync_client::{
+    net_types::{Query, TransactionField, TransactionFilter},
+    Client, ClientConfig, StreamConfig,
+};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
@@ -14,27 +17,20 @@ async fn main() {
 
     let address = "0x5a830d7a5149b2f1a2e72d15cd51b84379ee81e5";
 
-    let query: Query = serde_json::from_value(serde_json::json!( {
-        "from_block": 0,
-        "transactions": [
-            {
-                "from": [address]
-            },
-            {
-                "to": [address]
-            },
-        ],
-        "field_selection": {
-            "transaction": [
-                "block_number",
-                "hash",
-                "from",
-                "to",
-                "value",
-            ]
-        }
-    }))
-    .unwrap();
+    let query = Query::new()
+        .from_block(0)
+        .select_transaction_fields([
+            TransactionField::BlockNumber,
+            TransactionField::Hash,
+            TransactionField::From,
+            TransactionField::To,
+            TransactionField::Value,
+        ])
+        .where_transactions(
+            TransactionFilter::all()
+                .and_from([address])?
+                .or(TransactionFilter::all().and_to([address])?),
+        );
 
     println!("Starting the stream");
 
@@ -88,4 +84,5 @@ async fn main() {
     regular_order_transactions.reverse();
 
     pretty_assertions::assert_eq!(reversed_order_transactions, regular_order_transactions);
+    Ok(())
 }

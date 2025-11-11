@@ -1,9 +1,16 @@
-use crate::{hypersync_net_types_capnp, CapnpBuilder, CapnpReader, Selection};
+use crate::{hypersync_net_types_capnp, types::AnyOf, CapnpBuilder, CapnpReader, Selection};
+use anyhow::Context;
 use hypersync_format::{Address, Hash};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub type BlockSelection = Selection<BlockFilter>;
+
+impl From<BlockFilter> for AnyOf<BlockFilter> {
+    fn from(filter: BlockFilter) -> Self {
+        Self::new(filter)
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct BlockFilter {
@@ -15,6 +22,160 @@ pub struct BlockFilter {
     /// Empty means match all.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub miner: Vec<Address>,
+}
+
+impl BlockFilter {
+    /// Create a block filter that matches all blocks.
+    ///
+    /// This creates an empty filter with no constraints, which will match all blocks.
+    /// You can then use the builder methods to add specific filtering criteria eg.
+    /// `BlockFilter::all().and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])`
+    pub fn all() -> Self {
+        Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches blocks satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple block filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `BlockFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<BlockFilter>` that matches blocks satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::BlockFilter;
+    ///
+    /// // Match blocks from specific miners OR with specific hashes
+    /// let filter = BlockFilter::all()
+    ///     .and_miner(["0x1234567890123456789012345678901234567890"])?
+    ///     .or(
+    ///         BlockFilter::all()
+    ///             .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
+    }
+
+    /// Filter blocks by any of the provided block hashes.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Hash`.
+    /// Common input types include string slices, byte arrays, and `Hash` objects.
+    ///
+    /// # Arguments
+    /// * `hashes` - An iterable of block hashes to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any hash fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::BlockFilter;
+    ///
+    /// // Filter by a single block hash
+    /// let filter = BlockFilter::all()
+    ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
+    ///
+    /// // Filter by multiple block hashes
+    /// let filter = BlockFilter::all()
+    ///     .and_hash([
+    ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
+    ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let block_hash = [
+    ///     0x40, 0xd0, 0x08, 0xf2, 0xa1, 0x65, 0x3f, 0x09, 0xb7, 0xb0, 0x28, 0xd3, 0x0c, 0x7f, 0xd1, 0xba,
+    ///     0x7c, 0x84, 0x90, 0x0f, 0xcf, 0xb0, 0x32, 0x04, 0x0b, 0x3e, 0xb3, 0xd1, 0x6f, 0x84, 0xd2, 0x94
+    /// ];
+    /// let filter = BlockFilter::all()
+    ///     .and_hash([block_hash])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_hash<I, A>(mut self, hashes: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Hash>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_hashes: Vec<Hash> = Vec::new();
+        for (idx, hash) in hashes.into_iter().enumerate() {
+            converted_hashes.push(
+                hash.try_into()
+                    .with_context(|| format!("invalid block hash value at position {idx}"))?,
+            );
+        }
+        self.hash = converted_hashes;
+        Ok(self)
+    }
+
+    /// Filter blocks by any of the provided miner addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of miner addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::BlockFilter;
+    ///
+    /// // Filter by a single miner address
+    /// let filter = BlockFilter::all()
+    ///     .and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple miner addresses (e.g., major mining pools)
+    /// let filter = BlockFilter::all()
+    ///     .and_miner([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Pool 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Pool 2
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let miner_address = [
+    ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
+    /// ];
+    /// let filter = BlockFilter::all()
+    ///     .and_miner([miner_address])?;
+    ///
+    /// // Chain with other filter methods
+    /// let filter = BlockFilter::all()
+    ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?
+    ///     .and_miner(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_miner<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid miner address value at position {idx}"))?,
+            );
+        }
+        self.miner = converted_addresses;
+        Ok(self)
+    }
 }
 
 impl CapnpReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
@@ -253,7 +414,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -288,15 +449,9 @@ mod tests {
             .unwrap()],
             miner: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
         };
-        let field_selection = FieldSelection {
-            block: BlockField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            blocks: vec![block_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_blocks(block_filter)
+            .select_block_fields(BlockField::all());
 
         test_query_serde(query, "block selection with rest defaults");
     }

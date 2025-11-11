@@ -1,4 +1,9 @@
-use crate::{hypersync_net_types_capnp, types::Sighash, CapnpBuilder, CapnpReader, Selection};
+use crate::{
+    hypersync_net_types_capnp,
+    types::{AnyOf, Sighash},
+    CapnpBuilder, CapnpReader, Selection,
+};
+use anyhow::Context;
 use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +16,115 @@ pub struct AuthorizationSelection {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub address: Vec<Address>,
 }
+
+impl AuthorizationSelection {
+    /// Create an authorization selection that matches all authorizations.
+    ///
+    /// This creates an empty selection with no constraints, which will match all authorizations.
+    /// You can then use the builder methods to add specific filtering criteria.
+    pub fn all() -> Self {
+        Default::default()
+    }
+
+    /// Filter authorizations by any of the provided chain IDs.
+    ///
+    /// # Arguments
+    /// * `chain_ids` - An iterable of chain IDs to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::AuthorizationSelection;
+    ///
+    /// // Filter by a single chain ID (Ethereum mainnet)
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_chain_id([1]);
+    ///
+    /// // Filter by multiple chain IDs
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_chain_id([
+    ///         1,      // Ethereum mainnet
+    ///         137,    // Polygon
+    ///         42161,  // Arbitrum One
+    ///     ]);
+    ///
+    /// // Chain with address filter
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_chain_id([1, 137])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_chain_id<I>(mut self, chain_ids: I) -> Self
+    where
+        I: IntoIterator<Item = u64>,
+    {
+        self.chain_id = chain_ids.into_iter().collect();
+        self
+    }
+
+    /// Filter authorizations by any of the provided addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated selection on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::AuthorizationSelection;
+    ///
+    /// // Filter by a single address
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple addresses
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_address([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let auth_address = [
+    ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
+    /// ];
+    /// let selection = AuthorizationSelection::all()
+    ///     .and_address([auth_address])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid authorization address at position {idx}"))?,
+            );
+        }
+        self.address = converted_addresses;
+        Ok(self)
+    }
+}
+
 pub type TransactionSelection = Selection<TransactionFilter>;
+
+impl From<TransactionFilter> for AnyOf<TransactionFilter> {
+    fn from(filter: TransactionFilter) -> Self {
+        Self::new(filter)
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TransactionFilter {
@@ -55,6 +168,416 @@ pub struct TransactionFilter {
     /// List of authorizations from eip-7702 transactions, the query will return transactions that match any of these selections
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub authorization_list: Vec<AuthorizationSelection>,
+}
+
+impl TransactionFilter {
+    /// Create a transaction filter that matches all transactions.
+    ///
+    /// This creates an empty filter with no constraints, which will match all transactions.
+    /// You can then use the builder methods to add specific filtering criteria.
+    pub fn all() -> Self {
+        Default::default()
+    }
+
+    /// Combine this filter with another using logical OR.
+    ///
+    /// Creates an `AnyOf` that matches transactions satisfying either this filter or the other filter.
+    /// This allows for fluent chaining of multiple transaction filters with OR semantics.
+    ///
+    /// # Arguments
+    /// * `other` - Another `TransactionFilter` to combine with this one
+    ///
+    /// # Returns
+    /// An `AnyOf<TransactionFilter>` that matches transactions satisfying either filter
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Match transactions from specific senders OR with specific function signatures
+    /// let filter = TransactionFilter::all()
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .or(
+    ///         TransactionFilter::all()
+    ///             .and_sighash(["0xa9059cbb"])? // transfer(address,uint256)
+    ///     );
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn or(self, other: Self) -> AnyOf<Self> {
+        AnyOf::new(self).or(other)
+    }
+
+    /// Filter transactions by any of the provided sender addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of sender addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter by a single sender address
+    /// let filter = TransactionFilter::all()
+    ///     .and_from(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple sender addresses
+    /// let filter = TransactionFilter::all()
+    ///     .and_from([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Address 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Address 2
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let sender_address = [
+    ///     0xda, 0xc1, 0x7f, 0x95, 0x8d, 0x2e, 0xe5, 0x23, 0xa2, 0x20,
+    ///     0x62, 0x06, 0x99, 0x45, 0x97, 0xc1, 0x3d, 0x83, 0x1e, 0xc7
+    /// ];
+    /// let filter = TransactionFilter::all()
+    ///     .and_from([sender_address])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_from<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid from address at position {idx}"))?,
+            );
+        }
+        self.from = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter transactions by any of the provided recipient addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of recipient addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter by a single recipient address
+    /// let filter = TransactionFilter::all()
+    ///     .and_to(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple recipient addresses (e.g., popular DeFi contracts)
+    /// let filter = TransactionFilter::all()
+    ///     .and_to([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
+    ///     ])?;
+    ///
+    /// // Chain with sender filter
+    /// let filter = TransactionFilter::all()
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_to(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_to<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid to address at position {idx}"))?,
+            );
+        }
+        self.to = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter transactions by any of the provided function signatures (first 4 bytes of input).
+    ///
+    /// This method accepts any iterable of values that can be converted to `Sighash`.
+    /// Common input types include string slices, byte arrays, and `Sighash` objects.
+    ///
+    /// # Arguments
+    /// * `sighashes` - An iterable of function signatures to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any sighash fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter by a single function signature (transfer)
+    /// let filter = TransactionFilter::all()
+    ///     .and_sighash(["0xa9059cbb"])?; // transfer(address,uint256)
+    ///
+    /// // Filter by multiple function signatures
+    /// let filter = TransactionFilter::all()
+    ///     .and_sighash([
+    ///         "0xa9059cbb", // transfer(address,uint256)
+    ///         "0x23b872dd", // transferFrom(address,address,uint256)
+    ///         "0x095ea7b3", // approve(address,uint256)
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let transfer_sig = [0xa9, 0x05, 0x9c, 0xbb];
+    /// let filter = TransactionFilter::all()
+    ///     .and_sighash([transfer_sig])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_sighash<I, S>(mut self, sighashes: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: TryInto<Sighash>,
+        S::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_sighashes: Vec<Sighash> = Vec::new();
+        for (idx, sighash) in sighashes.into_iter().enumerate() {
+            converted_sighashes.push(
+                sighash
+                    .try_into()
+                    .with_context(|| format!("invalid sighash at position {idx}"))?,
+            );
+        }
+        self.sighash = converted_sighashes;
+        Ok(self)
+    }
+
+    /// Filter transactions by status (success or failure).
+    ///
+    /// # Arguments
+    /// * `status` - The transaction status to filter by (typically 0 for failure, 1 for success)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter for successful transactions only
+    /// let filter = TransactionFilter::all()
+    ///     .and_status(1);
+    ///
+    /// // Filter for failed transactions only
+    /// let filter = TransactionFilter::all()
+    ///     .and_status(0);
+    ///
+    /// // Chain with other filters
+    /// let filter = TransactionFilter::all()
+    ///     .and_from(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     .and_status(1); // Only successful transactions from this address
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_status(mut self, status: u8) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    /// Filter transactions by any of the provided transaction types.
+    ///
+    /// # Arguments
+    /// * `types` - An iterable of transaction types to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter for legacy transactions only
+    /// let filter = TransactionFilter::all()
+    ///     .and_type([0]);
+    ///
+    /// // Filter for EIP-1559 transactions only
+    /// let filter = TransactionFilter::all()
+    ///     .and_type([2]);
+    ///
+    /// // Filter for multiple transaction types
+    /// let filter = TransactionFilter::all()
+    ///     .and_type([0, 1, 2]); // Legacy, Access List, and EIP-1559
+    /// ```
+    pub fn and_type<I>(mut self, types: I) -> Self
+    where
+        I: IntoIterator<Item = u8>,
+    {
+        self.type_ = types.into_iter().collect();
+        self
+    }
+
+    /// Filter transactions by any of the provided contract addresses.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Address`.
+    /// Common input types include string slices, byte arrays, and `Address` objects.
+    ///
+    /// # Arguments
+    /// * `addresses` - An iterable of contract addresses to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any address fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter by a single contract address
+    /// let filter = TransactionFilter::all()
+    ///     .and_contract_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// // Filter by multiple contract addresses
+    /// let filter = TransactionFilter::all()
+    ///     .and_contract_address([
+    ///         "0xdac17f958d2ee523a2206206994597c13d831ec7", // Contract 1
+    ///         "0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567", // Contract 2
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_contract_address<I, A>(mut self, addresses: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = A>,
+        A: TryInto<Address>,
+        A::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_addresses: Vec<Address> = Vec::new();
+        for (idx, address) in addresses.into_iter().enumerate() {
+            converted_addresses.push(
+                address
+                    .try_into()
+                    .with_context(|| format!("invalid contract address at position {idx}"))?,
+            );
+        }
+        self.contract_address = converted_addresses;
+        Ok(self)
+    }
+
+    /// Filter transactions by any of the provided transaction hashes.
+    ///
+    /// This method accepts any iterable of values that can be converted to `Hash`.
+    /// Common input types include string slices, byte arrays, and `Hash` objects.
+    ///
+    /// # Arguments
+    /// * `hashes` - An iterable of transaction hashes to filter by
+    ///
+    /// # Returns
+    /// * `Ok(Self)` - The updated filter on success
+    /// * `Err(anyhow::Error)` - If any hash fails to convert
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::TransactionFilter;
+    ///
+    /// // Filter by a single transaction hash
+    /// let filter = TransactionFilter::all()
+    ///     .and_hash(["0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294"])?;
+    ///
+    /// // Filter by multiple transaction hashes
+    /// let filter = TransactionFilter::all()
+    ///     .and_hash([
+    ///         "0x40d008f2a1653f09b7b028d30c7fd1ba7c84900fcfb032040b3eb3d16f84d294",
+    ///         "0x88e96d4537bea4d9c05d12549907b32561d3bf31f45aae734cdc119f13406cb6",
+    ///     ])?;
+    ///
+    /// // Using byte arrays
+    /// let tx_hash = [
+    ///     0x40, 0xd0, 0x08, 0xf2, 0xa1, 0x65, 0x3f, 0x09, 0xb7, 0xb0, 0x28, 0xd3, 0x0c, 0x7f, 0xd1, 0xba,
+    ///     0x7c, 0x84, 0x90, 0x0f, 0xcf, 0xb0, 0x32, 0x04, 0x0b, 0x3e, 0xb3, 0xd1, 0x6f, 0x84, 0xd2, 0x94
+    /// ];
+    /// let filter = TransactionFilter::all()
+    ///     .and_hash([tx_hash])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_hash<I, H>(mut self, hashes: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = H>,
+        H: TryInto<Hash>,
+        H::Error: std::error::Error + Send + Sync + 'static,
+    {
+        let mut converted_hashes: Vec<Hash> = Vec::new();
+        for (idx, hash) in hashes.into_iter().enumerate() {
+            converted_hashes.push(
+                hash.try_into()
+                    .with_context(|| format!("invalid transaction hash at position {idx}"))?,
+            );
+        }
+        self.hash = converted_hashes;
+        Ok(self)
+    }
+
+    /// Filter transactions by any of the provided authorization selections.
+    ///
+    /// This method is used for EIP-7702 transactions that include authorization lists.
+    /// It accepts any iterable of `AuthorizationSelection` objects.
+    ///
+    /// # Arguments
+    /// * `selections` - An iterable of authorization selections to filter by
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::{TransactionFilter, AuthorizationSelection};
+    ///
+    /// // Filter by a single authorization selection
+    /// let auth_selection = AuthorizationSelection::all()
+    ///     .and_chain_id([1, 137])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// let filter = TransactionFilter::all()
+    ///     .and_authorization_list([auth_selection])?;
+    ///
+    /// // Filter by multiple authorization selections
+    /// let mainnet_auth = AuthorizationSelection::all()
+    ///     .and_chain_id([1])
+    ///     .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?;
+    ///
+    /// let polygon_auth = AuthorizationSelection::all()
+    ///     .and_chain_id([137])
+    ///     .and_address(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?;
+    ///
+    /// let filter = TransactionFilter::all()
+    ///     .and_authorization_list([mainnet_auth, polygon_auth])?;
+    ///
+    /// // Chain with other transaction filters
+    /// let filter = TransactionFilter::all()
+    ///     .and_from(["0xa0b86a33e6c11c8c0c5c0b5e6adee30d1a234567"])?
+    ///     .and_authorization_list([
+    ///         AuthorizationSelection::all()
+    ///             .and_chain_id([1])
+    ///             .and_address(["0xdac17f958d2ee523a2206206994597c13d831ec7"])?
+    ///     ])?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    pub fn and_authorization_list<I>(mut self, selections: I) -> anyhow::Result<Self>
+    where
+        I: IntoIterator<Item = AuthorizationSelection>,
+    {
+        self.authorization_list = selections.into_iter().collect();
+        Ok(self)
+    }
 }
 
 impl CapnpBuilder<hypersync_net_types_capnp::authorization_selection::Owned>
@@ -691,7 +1214,7 @@ mod tests {
     use hypersync_format::Hex;
 
     use super::*;
-    use crate::{query::tests::test_query_serde, FieldSelection, Query};
+    use crate::{query::tests::test_query_serde, Query};
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -720,15 +1243,9 @@ mod tests {
     #[test]
     fn test_transaction_filter_serde_with_defaults() {
         let transaction_filter = TransactionSelection::default();
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions(transaction_filter)
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with defaults");
     }
@@ -747,15 +1264,9 @@ mod tests {
             hash: Vec::default(),
             authorization_list: Vec::default(),
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions(transaction_filter)
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with explicit defaults");
     }
@@ -781,15 +1292,9 @@ mod tests {
             .unwrap()],
             authorization_list: Vec::default(),
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions(transaction_filter)
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "transaction selection with full values");
     }
@@ -815,15 +1320,9 @@ mod tests {
             hash: Vec::default(),
             authorization_list: vec![auth_selection],
         };
-        let field_selection = FieldSelection {
-            transaction: TransactionField::all(),
-            ..Default::default()
-        };
-        let query = Query {
-            transactions: vec![transaction_filter.into()],
-            field_selection,
-            ..Default::default()
-        };
+        let query = Query::new()
+            .where_transactions(transaction_filter)
+            .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "authorization selection with rest defaults");
     }

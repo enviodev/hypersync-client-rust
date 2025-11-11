@@ -1,53 +1,46 @@
 // Example of watching for new DAI transfers
 // WARNING: This example doesn't account for rollbacks
 
-use hypersync_client::{net_types::Query, CallDecoder, Client, ClientConfig};
+use hypersync_client::{
+    net_types::{Query, TransactionField, TransactionFilter},
+    CallDecoder, Client, ClientConfig,
+};
 use tokio::time::{sleep, Duration};
 
 const DAI_ADDRESS: &str = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
     let client = Client::new(ClientConfig::default()).unwrap();
 
     // The query to run
-    let mut query: Query = serde_json::from_value(serde_json::json!( {
+    let mut query = Query::new()
         // start from tip since we only want new transfers
-        "from_block": 20519993,
-        // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
-        "transactions": [
-            {
-                "from": [DAI_ADDRESS],
-            },
-            {
-                "to": [DAI_ADDRESS],
-            },
-        ],
+        .from_block(20519993)
+        .where_transactions(
+            // The logs we want. We will also automatically get transactions and blocks relating to these logs (the query implicitly joins them).
+            // We want all DAI transfers so no address filter and only a filter for the first topic
+            TransactionFilter::all()
+                .and_from([DAI_ADDRESS])?
+                .and_to([DAI_ADDRESS])?,
+        )
         // Select the fields we are interested in, notice topics are selected as topic0,1,2,3
-        "field_selection": {
-            "transaction": [
-                "hash",
-                "input",
-            ],
-        }
-    }))
-    .unwrap();
+        .select_transaction_fields([TransactionField::Hash, TransactionField::Input]);
 
     let decoder = CallDecoder::from_signatures(&[
         "transfer(address dst, uint256 wad)",
         "transferFrom(address src, address dst, uint256 wad)",
-    ])
-    .unwrap();
+    ])?;
 
     loop {
-        let res = client.get(&query).await.unwrap();
+        let res = client.get(&query).await?;
 
         for batch in res.data.transactions {
             for tx in batch {
-                if let Some(decoded_call) = decoder.decode_input(&tx.input.unwrap()).unwrap() {
+                if let Some(decoded_call) = decoder.decode_input(&tx.input.unwrap())? {
                     if decoded_call.len() == 2 {
                         println!(
                             "Found DAU transfer {:?}. to: {}, amount: {:?}",
