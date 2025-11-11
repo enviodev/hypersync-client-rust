@@ -163,9 +163,9 @@ pub struct Query {
     /// List of block selections, the query will return blocks that match any of these selections
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<BlockSelection>,
-    /// Weather to include all blocks regardless of if they are related to a returned transaction or log. Normally
-    ///  the server will return only the blocks that are related to the transaction or logs in the response. But if this
-    ///  is set to true, the server will return data for all blocks in the requested range [from_block, to_block).
+    /// Whether to include all blocks regardless of if they are related to a returned transaction or log. Normally
+    /// the server will return only the blocks that are related to the transaction or logs in the response. But if this
+    /// is set to true, the server will return data for all blocks in the requested range [from_block, to_block).
     #[serde(default, skip_serializing_if = "is_default")]
     pub include_all_blocks: bool,
     /// Field selection. The user can select which fields they are interested in, requesting less fields will improve
