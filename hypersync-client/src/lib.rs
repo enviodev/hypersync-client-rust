@@ -6,8 +6,9 @@ use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
-use reqwest::header;
-use reqwest::Method;
+use reqwest::{header, Method};
+use reqwest_eventsource::retry::ExponentialBackoff;
+use reqwest_eventsource::Event;
 
 mod column_mapping;
 mod config;
@@ -694,12 +695,11 @@ impl Client {
     }
 }
 
-const INITIAL_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
-const MAX_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
-const MAX_CONNECTION_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(200);
+const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
 /// Timeout for detecting dead connections. Server sends keepalive pings every 5s,
 /// so we timeout after 15s (3x the ping interval).
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const READ_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Events emitted by the height stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -757,142 +757,161 @@ impl Client {
         let client = self.clone();
 
         tokio::spawn(async move {
-            let mut reconnect_delay = INITIAL_RECONNECT_DELAY;
+            let mut consecutive_failures = 0u32;
 
             loop {
+                // Build the GET /height/sse request
                 let mut url = client.url.clone();
                 url.path_segments_mut()
-                    .expect("base URL cannot be a cannot-be-a-base URL")
+                    .expect("valid base URL")
                     .extend(&["height", "sse"]);
 
-                let mut req = client.http_client.request(Method::GET, url);
-                if let Some(bearer_token) = &client.bearer_token {
-                    req = req.bearer_auth(bearer_token);
+                let mut req = client
+                    .http_client
+                    .get(url)
+                    .header(header::ACCEPT, "text/event-stream");
+
+                if let Some(bearer) = &client.bearer_token {
+                    req = req.bearer_auth(bearer);
                 }
-                req = req
-                    .header(header::ACCEPT, "text/event-stream")
-                    .timeout(MAX_CONNECTION_AGE);
 
-                match req.send().await {
-                    Ok(res) => {
-                        let status = res.status();
-                        if !status.is_success() {
-                            log::warn!("HTTP error: status code {}", status);
-                            if tx
-                                .send(HeightStreamEvent::Reconnecting {
-                                    delay: reconnect_delay,
-                                })
-                                .await
-                                .is_err()
-                            {
-                                return;
-                            }
-                            tokio::time::sleep(reconnect_delay).await;
-                            reconnect_delay =
-                                std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
-                            continue;
+                // Configure exponential backoff for library-level retries
+                let retry_policy = ExponentialBackoff::new(
+                    INITIAL_RECONNECT_DELAY,
+                    2.0,
+                    Some(MAX_RECONNECT_DELAY),
+                    None, // unlimited retries
+                );
+
+                // Turn the request into an EventSource stream with retries
+                let mut es = match reqwest_eventsource::EventSource::new(req) {
+                    Ok(es) => {
+                        let mut es = es;
+                        es.set_retry_policy(Box::new(retry_policy));
+                        es
+                    }
+                    Err(err) => {
+                        log::error!("Failed to create EventSource: {:?}", err);
+
+                        let delay = if consecutive_failures == 0 {
+                            Duration::from_millis(0) // immediate retry on first failure
+                        } else {
+                            // Exponential backoff: 200ms, 400ms, 800ms, ... up to 30s
+                            INITIAL_RECONNECT_DELAY
+                                .checked_mul(1 << (consecutive_failures - 1).min(7))
+                                .unwrap_or(MAX_RECONNECT_DELAY)
+                                .min(MAX_RECONNECT_DELAY)
+                        };
+
+                        if delay > Duration::from_millis(0) {
+                            let _ = tx.send(HeightStreamEvent::Reconnecting { delay }).await;
+                            tokio::time::sleep(delay).await;
                         }
+                        consecutive_failures += 1;
+                        continue;
+                    }
+                };
 
-                        log::info!("Connected to height SSE stream");
-                        if tx.send(HeightStreamEvent::Connected).await.is_err() {
-                            return;
+                let mut connection_successful = false;
+
+                loop {
+                    // Wrap the stream in a timeout to detect dead connections
+                    let next_event = tokio::time::timeout(READ_TIMEOUT, es.next()).await;
+
+                    match next_event {
+                        Err(_) => {
+                            // Timeout - no data received (including pings) for READ_TIMEOUT
+                            log::warn!(
+                                "No data received for {:?}, connection appears dead",
+                                READ_TIMEOUT
+                            );
+                            es.close();
+                            break; // Break inner loop to reconnect
                         }
-                        reconnect_delay = INITIAL_RECONNECT_DELAY;
-
-                        let mut byte_stream = res.bytes_stream();
-                        let mut buf = String::new();
-                        let mut connection_active = true;
-
-                        while connection_active {
-                            let next_chunk =
-                                tokio::time::timeout(READ_TIMEOUT, byte_stream.next()).await;
-
-                            match next_chunk {
-                                Err(_) => {
-                                    log::warn!(
-                                        "No data received for {:?}, connection appears dead",
-                                        READ_TIMEOUT
-                                    );
-                                    connection_active = false;
-                                }
-                                Ok(Some(Ok(bytes))) => {
-                                    log::trace!("Received {} bytes from SSE stream", bytes.len());
-
-                                    let chunk_str = String::from_utf8_lossy(&bytes);
-                                    buf.push_str(&chunk_str);
-
-                                    // Process complete SSE messages (delimited by \n\n)
-                                    while let Some(idx) = buf.find("\n\n") {
-                                        let event_block = buf[..idx].to_string();
-                                        buf.drain(..idx + 2);
-
-                                        let mut event_name: Option<&str> = None;
-                                        let mut data_lines: Vec<&str> = Vec::new();
-
-                                        for line in event_block.lines() {
-                                            if line.is_empty() || line.starts_with(':') {
-                                                continue;
-                                            }
-                                            if let Some(rest) = line.strip_prefix("event:") {
-                                                event_name = Some(rest.trim());
-                                            } else if let Some(rest) = line.strip_prefix("data:") {
-                                                data_lines.push(rest.trim());
-                                            }
-                                        }
-
-                                        match event_name.unwrap_or("") {
-                                            "height" => {
-                                                let data = data_lines.join("\n");
-                                                if let Ok(h) = data.trim().parse::<u64>() {
-                                                    log::debug!("Height update: {}", h);
-                                                    if tx
-                                                        .send(HeightStreamEvent::Height(h))
-                                                        .await
-                                                        .is_err()
-                                                    {
-                                                        log::info!("Receiver dropped, exiting");
-                                                        return;
-                                                    }
-                                                } else {
-                                                    log::warn!("Failed to parse height: {}", data);
-                                                    connection_active = false;
-                                                }
-                                            }
-                                            "ping" => {
-                                                log::trace!("Received keepalive ping");
-                                            }
-                                            _ => {}
-                                        }
+                        Ok(Some(ev)) => {
+                            match ev {
+                                Ok(Event::Open) => {
+                                    // Successfully connected
+                                    log::info!("Connected to height SSE stream");
+                                    connection_successful = true;
+                                    consecutive_failures = 0; // Reset failure count on successful connection
+                                    if tx.send(HeightStreamEvent::Connected).await.is_err() {
+                                        return; // Receiver dropped, exit task
                                     }
                                 }
-                                Ok(Some(Err(e))) => {
-                                    log::warn!("SSE stream error: {:?}", e);
-                                    connection_active = false;
+                                Ok(Event::Message(msg)) => {
+                                    let evt = msg.event.as_str();
+                                    match evt {
+                                        // our server emits "height" events with data as integer text
+                                        "height" | "" => {
+                                            if let Ok(h) = msg.data.trim().parse::<u64>() {
+                                                log::debug!("Height update: {}", h);
+                                                if tx
+                                                    .send(HeightStreamEvent::Height(h))
+                                                    .await
+                                                    .is_err()
+                                                {
+                                                    return; // Receiver dropped, exit task
+                                                }
+                                            } else {
+                                                // malformed => close and reconnect
+                                                log::warn!("Failed to parse height: {}", msg.data);
+                                                es.close();
+                                                break; // Break inner loop to reconnect
+                                            }
+                                        }
+                                        // server keepalives detect connection liveness via timeout
+                                        "ping" => {
+                                            log::trace!("Received keepalive ping");
+                                        }
+                                        _ => { /* ignore unknown event types */ }
+                                    }
                                 }
-                                Ok(None) => {
-                                    log::info!("SSE stream closed by server, will reconnect");
-                                    connection_active = false;
+                                Err(err) => {
+                                    // Stream error - library may or may not retry depending on error type
+                                    log::warn!("SSE stream error: {:?}", err);
+                                    es.close();
+                                    break; // Break inner loop to reconnect
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to connect to height stream: {:?}", e);
+                        Ok(None) => {
+                            // Stream ended normally
+                            log::info!("SSE stream closed");
+                            break; // Break inner loop to reconnect
+                        }
                     }
                 }
 
-                log::info!("Reconnecting in {:?}...", reconnect_delay);
-                if tx
-                    .send(HeightStreamEvent::Reconnecting {
-                        delay: reconnect_delay,
-                    })
-                    .await
-                    .is_err()
-                {
-                    return;
+                // Connection closed, calculate backoff delay
+                let delay = if !connection_successful || consecutive_failures == 0 {
+                    // Immediate retry if we never connected, or first failure after success
+                    Duration::from_millis(0)
+                } else {
+                    // Exponential backoff: 200ms, 400ms, 800ms, ... up to 30s
+                    INITIAL_RECONNECT_DELAY
+                        .checked_mul(1 << (consecutive_failures - 1).min(7))
+                        .unwrap_or(MAX_RECONNECT_DELAY)
+                        .min(MAX_RECONNECT_DELAY)
+                };
+
+                if delay > Duration::from_millis(0) {
+                    log::info!("Reconnecting in {:?}...", delay);
+                    if tx
+                        .send(HeightStreamEvent::Reconnecting { delay })
+                        .await
+                        .is_err()
+                    {
+                        return; // Receiver dropped, exit task
+                    }
+                    tokio::time::sleep(delay).await;
                 }
-                tokio::time::sleep(reconnect_delay).await;
-                reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_RECONNECT_DELAY);
+
+                if connection_successful {
+                    consecutive_failures = 0; // Reset after successful connection that then failed
+                } else {
+                    consecutive_failures += 1;
+                }
             }
         });
 
