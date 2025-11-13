@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 //! Hypersync client library for interacting with hypersync server.
-use std::{num::NonZeroU64, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
@@ -56,7 +56,7 @@ pub struct Client {
     /// HyperSync server URL.
     url: Url,
     /// HyperSync server bearer token.
-    bearer_token: Option<String>,
+    bearer_token: String,
     /// Number of retries to attempt before returning error.
     max_num_retries: usize,
     /// Milliseconds that would be used for retry backoff increasing.
@@ -71,10 +71,17 @@ pub struct Client {
 
 impl Client {
     /// Creates a new client with the given configuration.
+    /// # Errors
+    /// This method fails if the config is invalid.
     pub fn new(cfg: ClientConfig) -> Result<Self> {
         // hscr stands for hypersync client rust
+        cfg.validate().context("invalid ClientConfig")?;
         let user_agent = format!("hscr/{}", env!("CARGO_PKG_VERSION"));
         Self::new_internal(cfg, user_agent)
+    }
+
+    pub fn builder() -> ClientBuilder {
+        ClientBuilder::new()
     }
 
     #[doc(hidden)]
@@ -86,27 +93,23 @@ impl Client {
 
     /// Internal constructor that takes both config and user agent.
     fn new_internal(cfg: ClientConfig, user_agent: String) -> Result<Self> {
-        let timeout = cfg
-            .http_req_timeout_millis
-            .unwrap_or(NonZeroU64::new(30_000).unwrap());
-
         let http_client = reqwest::Client::builder()
             .no_gzip()
-            .timeout(Duration::from_millis(timeout.get()))
+            .timeout(Duration::from_millis(cfg.http_req_timeout_millis))
             .user_agent(user_agent)
             .build()
             .unwrap();
 
+        let url = Url::parse(&cfg.url).context("url is malformed")?;
+
         Ok(Self {
             http_client,
-            url: cfg
-                .url
-                .unwrap_or("https://eth.hypersync.xyz".parse().context("parse url")?),
+            url,
             bearer_token: cfg.bearer_token,
-            max_num_retries: cfg.max_num_retries.unwrap_or(12),
-            retry_backoff_ms: cfg.retry_backoff_ms.unwrap_or(500),
-            retry_base_ms: cfg.retry_base_ms.unwrap_or(200),
-            retry_ceiling_ms: cfg.retry_ceiling_ms.unwrap_or(5_000),
+            max_num_retries: cfg.max_num_retries,
+            retry_backoff_ms: cfg.retry_backoff_ms,
+            retry_base_ms: cfg.retry_base_ms,
+            retry_ceiling_ms: cfg.retry_ceiling_ms,
             serialization_format: cfg.serialization_format,
         })
     }
@@ -273,11 +276,10 @@ impl Client {
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("chain_id");
         std::mem::drop(segments);
-        let mut req = self.http_client.request(Method::GET, url);
-
-        if let Some(bearer_token) = &self.bearer_token {
-            req = req.bearer_auth(bearer_token);
-        }
+        let req = self
+            .http_client
+            .request(Method::GET, url)
+            .bearer_auth(&self.bearer_token);
 
         let res = req.send().await.context("execute http req")?;
 
@@ -297,11 +299,10 @@ impl Client {
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("height");
         std::mem::drop(segments);
-        let mut req = self.http_client.request(Method::GET, url);
-
-        if let Some(bearer_token) = &self.bearer_token {
-            req = req.bearer_auth(bearer_token);
-        }
+        let mut req = self
+            .http_client
+            .request(Method::GET, url)
+            .bearer_auth(&self.bearer_token);
 
         if let Some(http_timeout_override) = http_timeout_override {
             req = req.timeout(http_timeout_override);
@@ -412,11 +413,10 @@ impl Client {
         segments.push("query");
         segments.push("arrow-ipc");
         std::mem::drop(segments);
-        let mut req = self.http_client.request(Method::POST, url);
-
-        if let Some(bearer_token) = &self.bearer_token {
-            req = req.bearer_auth(bearer_token);
-        }
+        let req = self
+            .http_client
+            .request(Method::POST, url)
+            .bearer_auth(&self.bearer_token);
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -472,11 +472,11 @@ impl Client {
                 query_with_id
             };
 
-            let mut req = self.http_client.request(Method::POST, url.clone());
+            let mut req = self
+                .http_client
+                .request(Method::POST, url.clone())
+                .bearer_auth(&self.bearer_token);
             req = req.header("content-type", "application/x-capnp");
-            if let Some(bearer_token) = &self.bearer_token {
-                req = req.bearer_auth(bearer_token);
-            }
 
             let res = req
                 .body(query_with_id)
@@ -530,11 +530,11 @@ impl Client {
             bytes
         };
 
-        let mut req = self.http_client.request(Method::POST, url);
+        let mut req = self
+            .http_client
+            .request(Method::POST, url)
+            .bearer_auth(&self.bearer_token);
         req = req.header("content-type", "application/x-capnp");
-        if let Some(bearer_token) = &self.bearer_token {
-            req = req.bearer_auth(bearer_token);
-        }
 
         let res = req
             .header("content-type", "application/x-capnp")
@@ -695,6 +695,63 @@ impl Client {
     }
 }
 
+pub struct ClientBuilder(ClientConfig);
+
+impl ClientBuilder {
+    pub fn new() -> Self {
+        Self(ClientConfig::default())
+    }
+
+    pub fn chain_id(mut self, chain_id: u64) -> Self {
+        self.0.url = format!("https://{chain_id}.hypersync.xyz");
+        self
+    }
+
+    pub fn url<S: ToString>(mut self, url: S) -> Self {
+        self.0.url = url.to_string();
+        self
+    }
+
+    pub fn bearer_token<S: ToString>(mut self, bearer_token: S) -> Self {
+        self.0.bearer_token = bearer_token.to_string();
+        self
+    }
+
+    pub fn http_req_timeout_millis(mut self, http_req_timeout_millis: u64) -> Self {
+        self.0.http_req_timeout_millis = http_req_timeout_millis;
+        self
+    }
+
+    pub fn max_num_retries(mut self, max_num_retries: usize) -> Self {
+        self.0.max_num_retries = max_num_retries;
+        self
+    }
+
+    pub fn retry_backoff_ms(mut self, retry_backoff_ms: u64) -> Self {
+        self.0.retry_backoff_ms = retry_backoff_ms;
+        self
+    }
+
+    pub fn retry_base_ms(mut self, retry_base_ms: u64) -> Self {
+        self.0.retry_base_ms = retry_base_ms;
+        self
+    }
+
+    pub fn retry_ceiling_ms(mut self, retry_ceiling_ms: u64) -> Self {
+        self.0.retry_ceiling_ms = retry_ceiling_ms;
+        self
+    }
+
+    pub fn serialization_format(mut self, serialization_format: SerializationFormat) -> Self {
+        self.0.serialization_format = serialization_format;
+        self
+    }
+
+    pub fn build(self) -> Result<Client> {
+        Client::new(self.0)
+    }
+}
+
 /// 200ms
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(200);
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
@@ -731,14 +788,11 @@ impl Client {
             .context("invalid base URL")?
             .extend(&["height", "sse"]);
 
-        let mut req = self
+        let req = self
             .http_client
             .get(url)
-            .header(header::ACCEPT, "text/event-stream");
-
-        if let Some(bearer) = &self.bearer_token {
-            req = req.bearer_auth(bearer);
-        }
+            .header(header::ACCEPT, "text/event-stream")
+            .bearer_auth(&self.bearer_token);
 
         // Configure exponential backoff for library-level retries
         let retry_policy = ExponentialBackoff::new(
@@ -968,7 +1022,8 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(16);
         let handle = tokio::spawn(async move {
             let client = Arc::new(Client::new(ClientConfig {
-                url: Some("https://monad-testnet.hypersync.xyz".parse()?),
+                url: "https://monad-testnet.hypersync.xyz".parse()?,
+                bearer_token: "00000000-0000-0000-0000-000000000000".to_string(),
                 ..Default::default()
             })?);
             let mut es = client.get_es_stream().context("get es stream")?;
