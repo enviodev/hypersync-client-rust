@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
         ..Default::default()
     })?);
 
-    let mut rx = client.clone().stream_height().await?;
+    let mut rx = client.clone().stream_height();
 
     println!("listening for height updates... (Ctrl+C to quit)");
 
