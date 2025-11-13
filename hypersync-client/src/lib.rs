@@ -891,7 +891,7 @@ impl Client {
     ///     ..Default::default()
     /// })?);
     ///
-    /// let mut rx = client.stream_height().await?;
+    /// let mut rx = client.stream_height();
     ///
     /// while let Some(event) = rx.recv().await {
     ///     match event {
