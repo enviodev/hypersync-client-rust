@@ -14,43 +14,23 @@ pub struct ClientConfig {
     #[serde(default)]
     pub bearer_token: String,
     /// Milliseconds to wait for a response before timing out.
-    #[serde(default = "default_http_req_timeout_millis")]
+    #[serde(default = "ClientConfig::default_http_req_timeout_millis")]
     pub http_req_timeout_millis: u64,
     /// Number of retries to attempt before returning error.
-    #[serde(default = "default_max_num_retries")]
+    #[serde(default = "ClientConfig::default_max_num_retries")]
     pub max_num_retries: usize,
     /// Milliseconds that would be used for retry backoff increasing.
-    #[serde(default = "default_retry_backoff_ms")]
+    #[serde(default = "ClientConfig::default_retry_backoff_ms")]
     pub retry_backoff_ms: u64,
     /// Initial wait time for request backoff.
-    #[serde(default = "default_retry_base_ms")]
+    #[serde(default = "ClientConfig::default_retry_base_ms")]
     pub retry_base_ms: u64,
     /// Ceiling time for request backoff.
-    #[serde(default = "default_retry_ceiling_ms")]
+    #[serde(default = "ClientConfig::default_retry_ceiling_ms")]
     pub retry_ceiling_ms: u64,
     /// Query serialization format to use for HTTP requests.
     #[serde(default)]
     pub serialization_format: SerializationFormat,
-}
-
-const fn default_http_req_timeout_millis() -> u64 {
-    30_000
-}
-
-const fn default_max_num_retries() -> usize {
-    12
-}
-
-const fn default_retry_backoff_ms() -> u64 {
-    500
-}
-
-const fn default_retry_base_ms() -> u64 {
-    200
-}
-
-const fn default_retry_ceiling_ms() -> u64 {
-    5_000
 }
 
 impl Default for ClientConfig {
@@ -58,17 +38,41 @@ impl Default for ClientConfig {
         Self {
             url: String::default(),
             bearer_token: String::default(),
-            http_req_timeout_millis: default_http_req_timeout_millis(),
-            max_num_retries: default_max_num_retries(),
-            retry_backoff_ms: default_retry_backoff_ms(),
-            retry_base_ms: default_retry_base_ms(),
-            retry_ceiling_ms: default_retry_ceiling_ms(),
+            http_req_timeout_millis: Self::default_http_req_timeout_millis(),
+            max_num_retries: Self::default_max_num_retries(),
+            retry_backoff_ms: Self::default_retry_backoff_ms(),
+            retry_base_ms: Self::default_retry_base_ms(),
+            retry_ceiling_ms: Self::default_retry_ceiling_ms(),
             serialization_format: SerializationFormat::Json,
         }
     }
 }
 
 impl ClientConfig {
+    /// Default HTTP request timeout in milliseconds
+    pub const fn default_http_req_timeout_millis() -> u64 {
+        30_000
+    }
+
+    /// Default maximum number of retries
+    pub const fn default_max_num_retries() -> usize {
+        12
+    }
+
+    /// Default retry backoff in milliseconds
+    pub const fn default_retry_backoff_ms() -> u64 {
+        500
+    }
+
+    /// Default retry base time in milliseconds
+    pub const fn default_retry_base_ms() -> u64 {
+        200
+    }
+
+    /// Default retry ceiling time in milliseconds
+    pub const fn default_retry_ceiling_ms() -> u64 {
+        5_000
+    }
     /// Validates the config
     pub fn validate(&self) -> Result<()> {
         if self.url.is_empty() {
@@ -123,16 +127,16 @@ pub struct StreamConfig {
     #[serde(default)]
     pub hex_output: HexOutput,
     /// Initial batch size. Size would be adjusted based on response size during execution.
-    #[serde(default = "default_batch_size")]
+    #[serde(default = "StreamConfig::default_batch_size")]
     pub batch_size: u64,
     /// Maximum batch size that could be used during dynamic adjustment.
-    #[serde(default = "default_max_batch_size")]
+    #[serde(default = "StreamConfig::default_max_batch_size")]
     pub max_batch_size: u64,
     /// Minimum batch size that could be used during dynamic adjustment.
-    #[serde(default = "default_min_batch_size")]
+    #[serde(default = "StreamConfig::default_min_batch_size")]
     pub min_batch_size: u64,
     /// Number of async threads that would be spawned to execute different block ranges of queries.
-    #[serde(default = "default_concurrency")]
+    #[serde(default = "StreamConfig::default_concurrency")]
     pub concurrency: usize,
     /// Max number of blocks to fetch in a single request.
     #[serde(default)]
@@ -147,13 +151,13 @@ pub struct StreamConfig {
     #[serde(default)]
     pub max_num_traces: Option<usize>,
     /// Size of a response in bytes from which step size will be lowered
-    #[serde(default = "default_response_bytes_ceiling")]
+    #[serde(default = "StreamConfig::default_response_bytes_ceiling")]
     pub response_bytes_ceiling: u64,
     /// Size of a response in bytes from which step size will be increased
-    #[serde(default = "default_response_bytes_floor")]
+    #[serde(default = "StreamConfig::default_response_bytes_floor")]
     pub response_bytes_floor: u64,
     /// Stream data in reverse order
-    #[serde(default = "default_reverse")]
+    #[serde(default = "StreamConfig::default_reverse")]
     pub reverse: bool,
 }
 
@@ -169,52 +173,61 @@ pub enum HexOutput {
     NonPrefixed,
 }
 
-const fn default_concurrency() -> usize {
-    10
-}
-
-const fn default_batch_size() -> u64 {
-    1000
-}
-
-const fn default_max_batch_size() -> u64 {
-    200_000
-}
-
-const fn default_min_batch_size() -> u64 {
-    200
-}
-
-const fn default_response_bytes_ceiling() -> u64 {
-    500_000
-}
-
-const fn default_response_bytes_floor() -> u64 {
-    250_000
-}
-
-const fn default_reverse() -> bool {
-    false
-}
-
 impl Default for StreamConfig {
     fn default() -> Self {
         Self {
             column_mapping: None,
             event_signature: None,
             hex_output: HexOutput::default(),
-            batch_size: default_batch_size(),
-            max_batch_size: default_max_batch_size(),
-            min_batch_size: default_min_batch_size(),
-            concurrency: default_concurrency(),
+            batch_size: Self::default_batch_size(),
+            max_batch_size: Self::default_max_batch_size(),
+            min_batch_size: Self::default_min_batch_size(),
+            concurrency: Self::default_concurrency(),
             max_num_blocks: None,
             max_num_transactions: None,
             max_num_logs: None,
             max_num_traces: None,
-            response_bytes_ceiling: default_response_bytes_ceiling(),
-            response_bytes_floor: default_response_bytes_floor(),
-            reverse: default_reverse(),
+            response_bytes_ceiling: Self::default_response_bytes_ceiling(),
+            response_bytes_floor: Self::default_response_bytes_floor(),
+            reverse: Self::default_reverse(),
         }
+    }
+}
+
+impl StreamConfig {
+    /// Default concurrency for stream processing
+    pub const fn default_concurrency() -> usize {
+        10
+    }
+
+    /// Default initial batch size
+    pub const fn default_batch_size() -> u64 {
+        1000
+    }
+
+    /// Default maximum batch size
+    pub const fn default_max_batch_size() -> u64 {
+        200_000
+    }
+
+    /// Default minimum batch size
+    pub const fn default_min_batch_size() -> u64 {
+        200
+    }
+
+    /// Default response bytes ceiling for dynamic batch adjustment
+    pub const fn default_response_bytes_ceiling() -> u64 {
+        500_000
+    }
+
+    /// Default response bytes floor for dynamic batch adjustment
+    pub const fn default_response_bytes_floor() -> u64 {
+        250_000
+    }
+
+    /// Default reverse streaming setting
+    pub const fn default_reverse() -> bool {
+        false
     }
 }
 
