@@ -1,7 +1,7 @@
 // Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
 // It has no practical use but it is meant to show how to use the client
 
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use hypersync_client::{
     net_types::{LogField, LogFilter, Query},
@@ -48,9 +48,6 @@ async fn main() -> anyhow::Result<()> {
         ]);
 
     println!("Starting the stream");
-
-    // Put the client inside Arc so we can use it for streaming
-    let client = Arc::new(client);
 
     // Stream arrow data so we can average the erc20 transfer amounts in memory
     //

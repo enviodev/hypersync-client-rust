@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Result;
 use hypersync_client::{Client, HeightStreamEvent};
 
@@ -7,14 +5,12 @@ use hypersync_client::{Client, HeightStreamEvent};
 async fn main() -> Result<()> {
     env_logger::init();
 
-    let client = Arc::new(
-        Client::builder()
-            .url("https://arbitrum-sepolia.hypersync.xyz")
-            .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
-            .build()?,
-    );
+    let client = Client::builder()
+        .url("https://arbitrum-sepolia.hypersync.xyz")
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .build()?;
 
-    let mut rx = client.clone().stream_height();
+    let mut rx = client.stream_height();
 
     println!("listening for height updates... (Ctrl+C to quit)");
 

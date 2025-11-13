@@ -48,9 +48,9 @@ use crate::simple_types::InternalEventJoinStrategy;
 
 type ArrowChunk = Chunk<Box<dyn Array>>;
 
-/// Internal client to handle http requests and retries.
-#[derive(Clone, Debug)]
-pub struct Client {
+/// Internal client state to handle http requests and retries.
+#[derive(Debug)]
+struct ClientInner {
     /// Initialized reqwest instance for client url.
     http_client: reqwest::Client,
     /// HyperSync server URL.
@@ -67,6 +67,12 @@ pub struct Client {
     retry_ceiling_ms: u64,
     /// Query serialization format to use for HTTP requests.
     serialization_format: SerializationFormat,
+}
+
+/// Client to handle http requests and retries.
+#[derive(Clone, Debug)]
+pub struct Client {
+    inner: Arc<ClientInner>,
 }
 
 impl Client {
@@ -115,14 +121,16 @@ impl Client {
         let url = Url::parse(&cfg.url).context("url is malformed")?;
 
         Ok(Self {
-            http_client,
-            url,
-            bearer_token: cfg.bearer_token,
-            max_num_retries: cfg.max_num_retries,
-            retry_backoff_ms: cfg.retry_backoff_ms,
-            retry_base_ms: cfg.retry_base_ms,
-            retry_ceiling_ms: cfg.retry_ceiling_ms,
-            serialization_format: cfg.serialization_format,
+            inner: Arc::new(ClientInner {
+                http_client,
+                url,
+                bearer_token: cfg.bearer_token,
+                max_num_retries: cfg.max_num_retries,
+                retry_backoff_ms: cfg.retry_backoff_ms,
+                retry_base_ms: cfg.retry_base_ms,
+                retry_ceiling_ms: cfg.retry_ceiling_ms,
+                serialization_format: cfg.serialization_format,
+            }),
         })
     }
 
@@ -135,7 +143,7 @@ impl Client {
     /// Each query runs until it reaches query.to, server height, any max_num_* query param,
     /// or execution timed out by server.
     pub async fn collect(
-        self: Arc<Self>,
+        &self,
         query: Query,
         config: StreamConfig,
     ) -> Result<QueryResponse> {
@@ -183,7 +191,7 @@ impl Client {
 
     /// Retrieves events through a stream using the provided query and stream configuration.
     pub async fn collect_events(
-        self: Arc<Self>,
+        &self,
         mut query: Query,
         config: StreamConfig,
     ) -> Result<EventResponse> {
@@ -225,7 +233,7 @@ impl Client {
     /// Retrieves blocks, transactions, traces, and logs in Arrow format through a stream using
     /// the provided query and stream configuration.
     pub async fn collect_arrow(
-        self: Arc<Self>,
+        &self,
         query: Query,
         config: StreamConfig,
     ) -> Result<ArrowResponse> {
@@ -274,7 +282,7 @@ impl Client {
     /// Writes parquet file getting data through a stream using the provided path, query,
     /// and stream configuration.
     pub async fn collect_parquet(
-        self: Arc<Self>,
+        &self,
         path: &str,
         query: Query,
         config: StreamConfig,
@@ -284,14 +292,15 @@ impl Client {
 
     /// Internal implementation of getting chain_id from server
     async fn get_chain_id_impl(&self) -> Result<u64> {
-        let mut url = self.url.clone();
+        let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("chain_id");
         std::mem::drop(segments);
         let req = self
+            .inner
             .http_client
             .request(Method::GET, url)
-            .bearer_auth(&self.bearer_token);
+            .bearer_auth(&self.inner.bearer_token);
 
         let res = req.send().await.context("execute http req")?;
 
@@ -307,14 +316,15 @@ impl Client {
 
     /// Internal implementation of getting height from server
     async fn get_height_impl(&self, http_timeout_override: Option<Duration>) -> Result<u64> {
-        let mut url = self.url.clone();
+        let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("height");
         std::mem::drop(segments);
         let mut req = self
+            .inner
             .http_client
             .request(Method::GET, url)
-            .bearer_auth(&self.bearer_token);
+            .bearer_auth(&self.inner.bearer_token);
 
         if let Some(http_timeout_override) = http_timeout_override {
             req = req.timeout(http_timeout_override);
@@ -334,11 +344,11 @@ impl Client {
 
     /// Get the chain_id from the server with retries.
     pub async fn get_chain_id(&self) -> Result<u64> {
-        let mut base = self.retry_base_ms;
+        let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for _ in 0..self.inner.max_num_retries + 1 {
             match self.get_chain_id_impl().await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
@@ -352,12 +362,12 @@ impl Client {
             let base_ms = Duration::from_millis(base);
             let jitter = Duration::from_millis(fastrange_rs::fastrange_64(
                 rand::random(),
-                self.retry_backoff_ms,
+                self.inner.retry_backoff_ms,
             ));
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.retry_backoff_ms, self.retry_ceiling_ms);
+            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
         }
 
         Err(err)
@@ -365,11 +375,11 @@ impl Client {
 
     /// Get the height of from server with retries.
     pub async fn get_height(&self) -> Result<u64> {
-        let mut base = self.retry_base_ms;
+        let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for _ in 0..self.inner.max_num_retries + 1 {
             match self.get_height_impl(None).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
@@ -383,12 +393,12 @@ impl Client {
             let base_ms = Duration::from_millis(base);
             let jitter = Duration::from_millis(fastrange_rs::fastrange_64(
                 rand::random(),
-                self.retry_backoff_ms,
+                self.inner.retry_backoff_ms,
             ));
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.retry_backoff_ms, self.retry_ceiling_ms);
+            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
         }
 
         Err(err)
@@ -420,15 +430,16 @@ impl Client {
 
     /// Executes query once and returns the result in (Arrow, size) format using JSON serialization.
     async fn get_arrow_impl_json(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
-        let mut url = self.url.clone();
+        let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
         segments.push("arrow-ipc");
         std::mem::drop(segments);
         let req = self
+            .inner
             .http_client
             .request(Method::POST, url)
-            .bearer_auth(&self.bearer_token);
+            .bearer_auth(&self.inner.bearer_token);
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -454,7 +465,7 @@ impl Client {
 
     fn should_cache_queries(&self) -> bool {
         matches!(
-            self.serialization_format,
+            self.inner.serialization_format,
             SerializationFormat::CapnProto {
                 should_cache_queries: true
             }
@@ -463,7 +474,7 @@ impl Client {
 
     /// Executes query once and returns the result in (Arrow, size) format using Cap'n Proto serialization.
     async fn get_arrow_impl_capnp(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
-        let mut url = self.url.clone();
+        let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
         segments.push("arrow-ipc");
@@ -485,9 +496,10 @@ impl Client {
             };
 
             let mut req = self
+                .inner
                 .http_client
                 .request(Method::POST, url.clone())
-                .bearer_auth(&self.bearer_token);
+                .bearer_auth(&self.inner.bearer_token);
             req = req.header("content-type", "application/x-capnp");
 
             let res = req
@@ -543,9 +555,10 @@ impl Client {
         };
 
         let mut req = self
+            .inner
             .http_client
             .request(Method::POST, url)
-            .bearer_auth(&self.bearer_token);
+            .bearer_auth(&self.inner.bearer_token);
         req = req.header("content-type", "application/x-capnp");
 
         let res = req
@@ -577,7 +590,7 @@ impl Client {
 
     /// Executes query once and returns the result in (Arrow, size) format.
     async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
-        match self.serialization_format {
+        match self.inner.serialization_format {
             SerializationFormat::Json => self.get_arrow_impl_json(query).await,
             SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(query).await,
         }
@@ -590,11 +603,11 @@ impl Client {
 
     /// Internal implementation for get_arrow.
     async fn get_arrow_with_size(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
-        let mut base = self.retry_base_ms;
+        let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
-        for _ in 0..self.max_num_retries + 1 {
+        for _ in 0..self.inner.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
                 Ok(res) => return Ok(res),
                 Err(e) => {
@@ -608,12 +621,12 @@ impl Client {
             let base_ms = Duration::from_millis(base);
             let jitter = Duration::from_millis(fastrange_rs::fastrange_64(
                 rand::random(),
-                self.retry_backoff_ms,
+                self.inner.retry_backoff_ms,
             ));
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.retry_backoff_ms, self.retry_ceiling_ms);
+            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
         }
 
         Err(err)
@@ -621,7 +634,7 @@ impl Client {
 
     /// Spawns task to execute query and return data via a channel.
     pub async fn stream(
-        self: Arc<Self>,
+        &self,
         query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
@@ -655,7 +668,7 @@ impl Client {
     /// Add block, transaction and log fields selection to the query and spawns task to execute it,
     /// returning data via a channel.
     pub async fn stream_events(
-        self: Arc<Self>,
+        &self,
         mut query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
@@ -694,7 +707,7 @@ impl Client {
 
     /// Spawns task to execute query and return data via a channel in Arrow format.
     pub async fn stream_arrow(
-        self: Arc<Self>,
+        &self,
         query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
@@ -703,7 +716,7 @@ impl Client {
 
     /// Getter for url field.
     pub fn url(&self) -> &Url {
-        &self.url
+        &self.inner.url
     }
 }
 
@@ -988,19 +1001,20 @@ enum InternalStreamEvent {
 }
 
 impl Client {
-    fn get_es_stream(self: Arc<Self>) -> Result<EventSource> {
+    fn get_es_stream(&self) -> Result<EventSource> {
         // Build the GET /height/sse request
-        let mut url = self.url.clone();
+        let mut url = self.inner.url.clone();
         url.path_segments_mut()
             .ok()
             .context("invalid base URL")?
             .extend(&["height", "sse"]);
 
         let req = self
+            .inner
             .http_client
             .get(url)
             .header(header::ACCEPT, "text/event-stream")
-            .bearer_auth(&self.bearer_token);
+            .bearer_auth(&self.inner.bearer_token);
 
         // Configure exponential backoff for library-level retries
         let retry_policy = ExponentialBackoff::new(
@@ -1082,7 +1096,7 @@ impl Client {
     }
 
     async fn stream_height_events_with_retry(
-        self: Arc<Self>,
+        &self,
         tx: &mpsc::Sender<HeightStreamEvent>,
     ) -> Result<()> {
         let mut consecutive_failures = 0u32;
@@ -1090,7 +1104,7 @@ impl Client {
         loop {
             // should always be able to creat a new es stream
             // something is wrong with the req builder otherwise
-            let mut es = self.clone().get_es_stream().context("get es stream")?;
+            let mut es = self.get_es_stream().context("get es stream")?;
 
             match Self::stream_height_events(&mut es, tx).await {
                 Ok(received_an_event) => {
@@ -1145,15 +1159,12 @@ impl Client {
     ///
     /// # Example
     /// ```
-    /// # use std::sync::Arc;
     /// # use hypersync_client::{Client, HeightStreamEvent};
     /// # async fn example() -> anyhow::Result<()> {
-    /// let client = Arc::new(
-    ///     Client::builder()
-    ///         .url("https://eth.hypersync.xyz")
-    ///         .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
-    ///         .build()?
-    /// );
+    /// let client = Client::builder()
+    ///     .url("https://eth.hypersync.xyz")
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()?;
     ///
     /// let mut rx = client.stream_height();
     ///
@@ -1169,11 +1180,12 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn stream_height(self: Arc<Self>) -> mpsc::Receiver<HeightStreamEvent> {
+    pub fn stream_height(&self) -> mpsc::Receiver<HeightStreamEvent> {
         let (tx, rx) = mpsc::channel(16);
+        let client = self.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = self.stream_height_events_with_retry(&tx).await {
+            if let Err(e) = client.stream_height_events_with_retry(&tx).await {
                 log::error!("Stream height failed unexpectedly: {e:?}");
             }
         });
@@ -1231,12 +1243,10 @@ mod tests {
     async fn test_stream_height_events() -> anyhow::Result<()> {
         let (tx, mut rx) = mpsc::channel(16);
         let handle = tokio::spawn(async move {
-            let client = Arc::new(
-                Client::builder()
-                    .url("https://monad-testnet.hypersync.xyz")
-                    .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
-                    .build()?,
-            );
+            let client = Client::builder()
+                .url("https://monad-testnet.hypersync.xyz")
+                .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+                .build()?;
             let mut es = client.get_es_stream().context("get es stream")?;
             Client::stream_height_events(&mut es, &tx).await
         });

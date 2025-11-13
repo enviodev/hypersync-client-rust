@@ -1,7 +1,5 @@
 // Example of getting all transactions and erc20 transfers of a multi-address wallet on arbitrum
 
-use std::sync::Arc;
-
 use hypersync_client::{
     format::Hex,
     net_types::{LogField, LogFilter, Query, TransactionField, TransactionFilter},
@@ -73,7 +71,6 @@ async fn main() -> anyhow::Result<()> {
             TransactionField::Value,
         ]);
 
-    let client = Arc::new(client);
 
     println!("Starting the stream");
 

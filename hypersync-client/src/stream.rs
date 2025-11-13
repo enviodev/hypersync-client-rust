@@ -26,7 +26,7 @@ use crate::{
 };
 
 pub async fn stream_arrow(
-    client: Arc<crate::Client>,
+    client: &crate::Client,
     query: Query,
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
@@ -47,6 +47,7 @@ pub async fn stream_arrow(
         None => client.get_height().await.context("get height")?,
     };
 
+    let client = client.clone();
     tokio::spawn(async move {
         let mut query = query;
 
@@ -83,7 +84,7 @@ pub async fn stream_arrow(
                 query.from_block = start;
                 query.to_block = Some(end);
                 let client = client.clone();
-                async move { (generation, req_idx, run_query_to_end(client, query).await) }
+                async move { (generation, req_idx, run_query_to_end(&client, query).await) }
             })
             .peekable();
 
@@ -417,7 +418,7 @@ fn reverse_array(array: &dyn Array) -> Result<Box<dyn Array>> {
 }
 
 async fn run_query_to_end(
-    client: Arc<crate::Client>,
+    client: &crate::Client,
     query: Query,
 ) -> Result<(Vec<ArrowResponse>, u64)> {
     let mut resps = Vec::new();

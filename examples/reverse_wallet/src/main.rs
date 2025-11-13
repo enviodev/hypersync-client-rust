@@ -1,8 +1,6 @@
 // Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
 // It has no practical use but it is meant to show how to use the client
 
-use std::sync::Arc;
-
 use hypersync_client::{
     net_types::{Query, TransactionField, TransactionFilter},
     Client, StreamConfig,
@@ -38,14 +36,10 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Starting the stream");
 
-    // Put the client inside Arc so we can use it for streaming
-    let client = Arc::new(client);
-
     // Stream arrow data in reverse order
     //
     // This will parallelize internal requests so we don't have to worry about pipelining/parallelizing make request -> handle response -> handle data loop
     let mut receiver = client
-        .clone()
         .stream(
             query.clone(),
             StreamConfig {
