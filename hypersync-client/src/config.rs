@@ -112,7 +112,7 @@ pub enum SerializationFormat {
 }
 
 /// Config for hypersync event streaming.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamConfig {
     /// Column mapping for stream function output.
     /// It lets you map columns you want into the DataTypes you want.
@@ -123,31 +123,42 @@ pub struct StreamConfig {
     #[serde(default)]
     pub hex_output: HexOutput,
     /// Initial batch size. Size would be adjusted based on response size during execution.
-    pub batch_size: Option<u64>,
+    #[serde(default = "default_batch_size")]
+    pub batch_size: u64,
     /// Maximum batch size that could be used during dynamic adjustment.
-    pub max_batch_size: Option<u64>,
+    #[serde(default = "default_max_batch_size")]
+    pub max_batch_size: u64,
     /// Minimum batch size that could be used during dynamic adjustment.
-    pub min_batch_size: Option<u64>,
+    #[serde(default = "default_min_batch_size")]
+    pub min_batch_size: u64,
     /// Number of async threads that would be spawned to execute different block ranges of queries.
-    pub concurrency: Option<usize>,
+    #[serde(default = "default_concurrency")]
+    pub concurrency: usize,
     /// Max number of blocks to fetch in a single request.
+    #[serde(default)]
     pub max_num_blocks: Option<usize>,
     /// Max number of transactions to fetch in a single request.
+    #[serde(default)]
     pub max_num_transactions: Option<usize>,
     /// Max number of logs to fetch in a single request.
+    #[serde(default)]
     pub max_num_logs: Option<usize>,
     /// Max number of traces to fetch in a single request.
+    #[serde(default)]
     pub max_num_traces: Option<usize>,
     /// Size of a response in bytes from which step size will be lowered
-    pub response_bytes_ceiling: Option<u64>,
+    #[serde(default = "default_response_bytes_ceiling")]
+    pub response_bytes_ceiling: u64,
     /// Size of a response in bytes from which step size will be increased
-    pub response_bytes_floor: Option<u64>,
+    #[serde(default = "default_response_bytes_floor")]
+    pub response_bytes_floor: u64,
     /// Stream data in reverse order
-    pub reverse: Option<bool>,
+    #[serde(default = "default_reverse")]
+    pub reverse: bool,
 }
 
 /// Determines format of Binary column
-#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum HexOutput {
     /// Binary column won't be formatted as hex
     #[default]
@@ -156,6 +167,55 @@ pub enum HexOutput {
     Prefixed,
     /// Binary column would be formatted as non prefixed hex i.e. deadbeef
     NonPrefixed,
+}
+
+const fn default_concurrency() -> usize {
+    10
+}
+
+const fn default_batch_size() -> u64 {
+    1000
+}
+
+const fn default_max_batch_size() -> u64 {
+    200_000
+}
+
+const fn default_min_batch_size() -> u64 {
+    200
+}
+
+const fn default_response_bytes_ceiling() -> u64 {
+    500_000
+}
+
+const fn default_response_bytes_floor() -> u64 {
+    250_000
+}
+
+const fn default_reverse() -> bool {
+    false
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self {
+            column_mapping: None,
+            event_signature: None,
+            hex_output: HexOutput::default(),
+            batch_size: default_batch_size(),
+            max_batch_size: default_max_batch_size(),
+            min_batch_size: default_min_batch_size(),
+            concurrency: default_concurrency(),
+            max_num_blocks: None,
+            max_num_transactions: None,
+            max_num_logs: None,
+            max_num_traces: None,
+            response_bytes_ceiling: default_response_bytes_ceiling(),
+            response_bytes_floor: default_response_bytes_floor(),
+            reverse: default_reverse(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +261,48 @@ mod tests {
             cfg.validate().is_err(),
             "http_req_timeout_millis must be greater than 0"
         );
+    }
+
+    #[test]
+    fn test_stream_config_defaults() {
+        let default_config = StreamConfig::default();
+        
+        // Check that all defaults are applied correctly
+        assert_eq!(default_config.concurrency, 10);
+        assert_eq!(default_config.batch_size, 1000);
+        assert_eq!(default_config.max_batch_size, 200_000);
+        assert_eq!(default_config.min_batch_size, 200);
+        assert_eq!(default_config.response_bytes_ceiling, 500_000);
+        assert_eq!(default_config.response_bytes_floor, 250_000);
+        assert_eq!(default_config.reverse, false);
+        assert_eq!(default_config.hex_output, HexOutput::NoEncode);
+        assert!(default_config.column_mapping.is_none());
+        assert!(default_config.event_signature.is_none());
+        assert!(default_config.max_num_blocks.is_none());
+        assert!(default_config.max_num_transactions.is_none());
+        assert!(default_config.max_num_logs.is_none());
+        assert!(default_config.max_num_traces.is_none());
+    }
+
+    #[test]  
+    fn test_stream_config_serde() {
+        // Test serialization of default config
+        let default_config = StreamConfig::default();
+        let json = serde_json::to_string(&default_config).unwrap();
+        let deserialized: StreamConfig = serde_json::from_str(&json).unwrap();
+        
+        // Verify round-trip works
+        assert_eq!(deserialized.concurrency, default_config.concurrency);
+        assert_eq!(deserialized.batch_size, default_config.batch_size);
+        assert_eq!(deserialized.reverse, default_config.reverse);
+        
+        // Test partial JSON (missing some fields should use defaults)
+        let partial_json = r#"{"reverse": true, "batch_size": 500}"#;
+        let partial_config: StreamConfig = serde_json::from_str(partial_json).unwrap();
+        
+        assert_eq!(partial_config.reverse, true);
+        assert_eq!(partial_config.batch_size, 500);
+        assert_eq!(partial_config.concurrency, 10); // should use default
+        assert_eq!(partial_config.max_batch_size, 200_000); // should use default
     }
 }

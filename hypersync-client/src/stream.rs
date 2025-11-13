@@ -30,13 +30,13 @@ pub async fn stream_arrow(
     query: Query,
     config: StreamConfig,
 ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
-    let concurrency = config.concurrency.unwrap_or(10);
-    let batch_size = config.batch_size.unwrap_or(1000);
-    let max_batch_size = config.max_batch_size.unwrap_or(200_000);
-    let min_batch_size = config.min_batch_size.unwrap_or(200);
-    let response_size_ceiling = config.response_bytes_ceiling.unwrap_or(500_000);
-    let response_size_floor = config.response_bytes_floor.unwrap_or(250_000);
-    let reverse = config.reverse.unwrap_or_default();
+    let concurrency = config.concurrency;
+    let batch_size = config.batch_size;
+    let max_batch_size = config.max_batch_size;
+    let min_batch_size = config.min_batch_size;
+    let response_size_ceiling = config.response_bytes_ceiling;
+    let response_size_floor = config.response_bytes_floor;
+    let reverse = config.reverse;
 
     let step = Arc::new(AtomicU64::new(batch_size));
 

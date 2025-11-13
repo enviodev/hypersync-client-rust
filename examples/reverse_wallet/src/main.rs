@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
         .stream(
             query.clone(),
             StreamConfig {
-                reverse: Some(true),
+                reverse: true,
                 ..Default::default()
             },
         )

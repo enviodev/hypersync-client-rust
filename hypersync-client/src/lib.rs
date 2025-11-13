@@ -628,7 +628,7 @@ impl Client {
         check_simple_stream_params(&config)?;
 
         let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
-            mpsc::channel(config.concurrency.unwrap_or(10));
+            mpsc::channel(config.concurrency);
 
         let mut inner_rx = self
             .stream_arrow(query, config)
@@ -666,7 +666,7 @@ impl Client {
         event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
 
         let (tx, rx): (_, mpsc::Receiver<Result<EventResponse>>) =
-            mpsc::channel(config.concurrency.unwrap_or(10));
+            mpsc::channel(config.concurrency);
 
         let mut inner_rx = self
             .stream_arrow(query, config)
