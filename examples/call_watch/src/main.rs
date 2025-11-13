@@ -3,7 +3,7 @@
 
 use hypersync_client::{
     net_types::{Query, TransactionField, TransactionFilter},
-    CallDecoder, Client, ClientConfig,
+    CallDecoder, Client,
 };
 use tokio::time::{sleep, Duration};
 
@@ -14,7 +14,11 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .chain_id(1)
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .build()
+        .unwrap();
 
     // The query to run
     let mut query = Query::new()

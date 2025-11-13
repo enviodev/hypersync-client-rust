@@ -3,7 +3,7 @@ use anyhow::Context;
 use hypersync_client::{
     net_types::{Query, TraceField, TraceFilter},
     simple_types::Trace,
-    ArrowResponseData, CallDecoder, Client, ClientConfig, FromArrow, StreamConfig,
+    ArrowResponseData, CallDecoder, Client, FromArrow, StreamConfig,
 };
 use std::sync::Arc;
 
@@ -15,11 +15,12 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init()?;
 
     let client = Arc::new(
-        Client::new(ClientConfig {
-            max_num_retries: Some(10),
-            ..ClientConfig::default()
-        })
-        .unwrap(),
+        Client::builder()
+            .chain_id(1)
+            .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+            .max_num_retries(10)
+            .build()
+            .unwrap(),
     );
 
     let balance_of_sighash = Function::parse(BALANCE_OF_SIGNATURE)

@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Instant};
 
 use hypersync_client::{
     net_types::{LogField, LogFilter, Query},
-    Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
+    Client, ColumnMapping, DataType, SerializationFormat, StreamConfig,
 };
 use polars_arrow::{
     array::{Array, Float64Array},
@@ -18,13 +18,14 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig {
-        serialization_format: SerializationFormat::CapnProto {
+    let client = Client::builder()
+        .chain_id(1)
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .serialization_format(SerializationFormat::CapnProto {
             should_cache_queries: true,
-        },
-        ..Default::default()
-    })
-    .unwrap();
+        })
+        .build()
+        .unwrap();
 
     let query = Query::new()
         // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).

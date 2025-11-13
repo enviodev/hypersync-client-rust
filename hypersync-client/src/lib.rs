@@ -80,6 +80,18 @@ impl Client {
         Self::new_internal(cfg, user_agent)
     }
 
+    /// Creates a new client builder.
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn builder() -> ClientBuilder {
         ClientBuilder::new()
     }
@@ -695,59 +707,255 @@ impl Client {
     }
 }
 
+/// Builder for creating a hypersync client with configuration options.
+///
+/// This builder provides a fluent API for configuring client settings like URL,
+/// authentication, timeouts, and retry behavior.
+///
+/// # Example
+/// ```
+/// use hypersync_client::{Client, SerializationFormat};
+///
+/// let client = Client::builder()
+///     .chain_id(1)
+///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+///     .http_req_timeout_millis(30000)
+///     .max_num_retries(3)
+///     .build()
+///     .unwrap();
+/// ```
 pub struct ClientBuilder(ClientConfig);
 
 impl ClientBuilder {
+    /// Creates a new ClientBuilder with default configuration.
     pub fn new() -> Self {
         Self(ClientConfig::default())
     }
 
+    /// Sets the chain ID and automatically configures the URL for the hypersync endpoint.
+    ///
+    /// This is a convenience method that sets the URL to `https://{chain_id}.hypersync.xyz`.
+    ///
+    /// # Arguments
+    /// * `chain_id` - The blockchain chain ID (e.g., 1 for Ethereum mainnet)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1) // Ethereum mainnet
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn chain_id(mut self, chain_id: u64) -> Self {
         self.0.url = format!("https://{chain_id}.hypersync.xyz");
         self
     }
 
+    /// Sets a custom URL for the hypersync server.
+    ///
+    /// Use this method when you need to connect to a custom hypersync endpoint
+    /// instead of the default public endpoints.
+    ///
+    /// # Arguments
+    /// * `url` - The hypersync server URL
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .url("https://my-custom-hypersync.example.com")
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn url<S: ToString>(mut self, url: S) -> Self {
         self.0.url = url.to_string();
         self
     }
 
+    /// Sets the bearer token for authentication.
+    ///
+    /// Required for accessing authenticated hypersync endpoints.
+    ///
+    /// # Arguments
+    /// * `bearer_token` - The authentication token
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn bearer_token<S: ToString>(mut self, bearer_token: S) -> Self {
         self.0.bearer_token = bearer_token.to_string();
         self
     }
 
+    /// Sets the HTTP request timeout in milliseconds.
+    ///
+    /// # Arguments
+    /// * `http_req_timeout_millis` - Timeout in milliseconds (default: 30000)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .http_req_timeout_millis(60000) // 60 second timeout
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn http_req_timeout_millis(mut self, http_req_timeout_millis: u64) -> Self {
         self.0.http_req_timeout_millis = http_req_timeout_millis;
         self
     }
 
+    /// Sets the maximum number of retries for failed requests.
+    ///
+    /// # Arguments
+    /// * `max_num_retries` - Maximum number of retries (default: 10)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .max_num_retries(5)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn max_num_retries(mut self, max_num_retries: usize) -> Self {
         self.0.max_num_retries = max_num_retries;
         self
     }
 
+    /// Sets the backoff increment for retry delays.
+    ///
+    /// This value is added to the base delay on each retry attempt.
+    ///
+    /// # Arguments
+    /// * `retry_backoff_ms` - Backoff increment in milliseconds (default: 500)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .retry_backoff_ms(1000) // 1 second backoff increment
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn retry_backoff_ms(mut self, retry_backoff_ms: u64) -> Self {
         self.0.retry_backoff_ms = retry_backoff_ms;
         self
     }
 
+    /// Sets the initial delay for retry attempts.
+    ///
+    /// # Arguments
+    /// * `retry_base_ms` - Initial retry delay in milliseconds (default: 500)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .retry_base_ms(1000) // Start with 1 second delay
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn retry_base_ms(mut self, retry_base_ms: u64) -> Self {
         self.0.retry_base_ms = retry_base_ms;
         self
     }
 
+    /// Sets the maximum delay for retry attempts.
+    ///
+    /// The retry delay will not exceed this value, even with backoff increments.
+    ///
+    /// # Arguments
+    /// * `retry_ceiling_ms` - Maximum retry delay in milliseconds (default: 10000)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .retry_ceiling_ms(30000) // Cap at 30 seconds
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn retry_ceiling_ms(mut self, retry_ceiling_ms: u64) -> Self {
         self.0.retry_ceiling_ms = retry_ceiling_ms;
         self
     }
 
+    /// Sets the serialization format for client-server communication.
+    ///
+    /// # Arguments
+    /// * `serialization_format` - The format to use (JSON or CapnProto)
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::{Client, SerializationFormat};
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .serialization_format(SerializationFormat::Json)
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn serialization_format(mut self, serialization_format: SerializationFormat) -> Self {
         self.0.serialization_format = serialization_format;
         self
     }
 
+    /// Builds the client with the configured settings.
+    ///
+    /// # Returns
+    /// * `Result<Client>` - The configured client or an error if configuration is invalid
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The URL is malformed
+    /// * Required configuration is missing
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn build(self) -> Result<Client> {
+        if self.0.url.is_empty() {
+            anyhow::bail!(
+                "endpoint needs to be set, try using builder.chain_id(1) or\
+                builder.url(\"https://eth.hypersync.xyz\") to set the endpoint"
+            )
+        }
         Client::new(self.0)
     }
 }
@@ -936,14 +1144,16 @@ impl Client {
     /// lifecycle and sends events through this channel.
     ///
     /// # Example
-    /// ```no_run
+    /// ```
     /// # use std::sync::Arc;
-    /// # use hypersync_client::{Client, ClientConfig, HeightStreamEvent};
+    /// # use hypersync_client::{Client, HeightStreamEvent};
     /// # async fn example() -> anyhow::Result<()> {
-    /// let client = Arc::new(Client::new(ClientConfig {
-    ///     url: Some("https://eth.hypersync.xyz".parse()?),
-    ///     ..Default::default()
-    /// })?);
+    /// let client = Arc::new(
+    ///     Client::builder()
+    ///         .url("https://eth.hypersync.xyz")
+    ///         .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///         .build()?
+    /// );
     ///
     /// let mut rx = client.stream_height();
     ///
@@ -1021,11 +1231,12 @@ mod tests {
     async fn test_stream_height_events() -> anyhow::Result<()> {
         let (tx, mut rx) = mpsc::channel(16);
         let handle = tokio::spawn(async move {
-            let client = Arc::new(Client::new(ClientConfig {
-                url: "https://monad-testnet.hypersync.xyz".parse()?,
-                bearer_token: "00000000-0000-0000-0000-000000000000".to_string(),
-                ..Default::default()
-            })?);
+            let client = Arc::new(
+                Client::builder()
+                    .url("https://monad-testnet.hypersync.xyz")
+                    .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+                    .build()?,
+            );
             let mut es = client.get_es_stream().context("get es stream")?;
             Client::stream_height_events(&mut es, &tx).await
         });

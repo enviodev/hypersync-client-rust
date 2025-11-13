@@ -5,7 +5,7 @@ use std::sync::Arc;
 use hypersync_client::{
     format::Hex,
     net_types::{LogField, LogFilter, Query, TransactionField, TransactionFilter},
-    Client, ClientConfig, Decoder, StreamConfig,
+    Client, Decoder, StreamConfig,
 };
 
 // Convert address (20 bytes) to hash (32 bytes) so it can be used as a topic filter.
@@ -18,11 +18,11 @@ fn address_to_topic(address: &str) -> String {
 async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
-    let client = Client::new(ClientConfig {
-        url: Some("https://eth.hypersync.xyz".parse().unwrap()),
-        ..Default::default()
-    })
-    .unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .build()
+        .unwrap();
 
     let addresses = vec![
         "0xD1a923D70510814EaE7695A76326201cA06d080F",

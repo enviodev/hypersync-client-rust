@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use hypersync_client::{
     net_types::{Query, TransactionField, TransactionFilter},
-    Client, ClientConfig, StreamConfig,
+    Client, StreamConfig,
 };
 
 #[tokio::main]
@@ -13,7 +13,11 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .chain_id(1)
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .build()
+        .unwrap();
 
     let address = "0x5a830d7a5149b2f1a2e72d15cd51b84379ee81e5";
 

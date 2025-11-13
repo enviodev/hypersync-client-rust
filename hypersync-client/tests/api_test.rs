@@ -169,11 +169,11 @@ fn parse_nameless_abi() {
 async fn test_get_events_without_join_fields() {
     env_logger::try_init().ok();
 
-    let client = Client::new(ClientConfig {
-        url: Some("https://base.hypersync.xyz".parse().unwrap()),
-        ..Default::default()
-    })
-    .unwrap();
+    let client = Client::builder()
+        .url("https://base.hypersync.xyz")
+        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let query: Query = serde_json::from_value(serde_json::json!({
         "from_block": 6589327,
@@ -200,11 +200,10 @@ async fn test_get_events_without_join_fields() {
 async fn test_stream_decode_with_invalid_log() {
     env_logger::try_init().ok();
 
-    let client = Client::new(ClientConfig {
-        url: Some("https://base.hypersync.xyz".parse().unwrap()),
-        ..Default::default()
-    })
-    .unwrap();
+    let client = Client::builder()
+        .url("https://base.hypersync.xyz")
+        .build()
+        .unwrap();
     let client = Arc::new(client);
 
     let query: Query = serde_json::from_value(serde_json::json!({
@@ -496,11 +495,10 @@ async fn test_small_bloom_filter_query() {
 #[ignore]
 async fn test_decode_string_param_into_arrow() {
     let client = Arc::new(
-        Client::new(ClientConfig {
-            url: Some("https://mev-commit.hypersync.xyz".parse().unwrap()),
-            ..Default::default()
-        })
-        .unwrap(),
+        Client::builder()
+            .url("https://mev-commit.hypersync.xyz")
+            .build()
+            .unwrap(),
     );
 
     let query: Query = serde_json::from_value(serde_json::json!({
@@ -536,15 +534,13 @@ async fn test_decode_string_param_into_arrow() {
 #[ignore]
 async fn test_api_capnp_client() {
     let client = Arc::new(
-        Client::new(ClientConfig {
-            url: Some("http://localhost:1131".parse().unwrap()),
-            serialization_format: SerializationFormat::CapnProto {
+        Client::builder()
+            .url("http://localhost:1131")
+            .serialization_format(SerializationFormat::CapnProto {
                 should_cache_queries: true,
-            },
-
-            ..Default::default()
-        })
-        .unwrap(),
+            })
+            .build()
+            .unwrap(),
     );
 
     let field_selection = FieldSelection {

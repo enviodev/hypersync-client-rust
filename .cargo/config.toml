@@ -1,0 +1,4 @@
+[env]
+# Set a dummy bearer token for doctests and unit tests
+HYPERSYNC_API_TOKEN = "00000000-0000-0000-0000-000000000000"
+
