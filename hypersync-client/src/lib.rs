@@ -230,6 +230,16 @@ impl Client {
     /// Each query runs until it reaches query.to, server height, any max_num_* query param,
     /// or execution timed out by server.
     ///
+    /// # ⚠️ Important Warning
+    /// 
+    /// This method will continue executing until the query has run to completion from beginning 
+    /// to the end of the block range defined in the query. For heavy queries with large block 
+    /// ranges or high data volumes, consider:
+    /// 
+    /// - Use [`stream()`](Self::stream) to interact with each streamed chunk individually
+    /// - Use [`get()`](Self::get) which returns a `next_block` that can be paginated for the next query
+    /// - Break large queries into smaller block ranges
+    ///
     /// # Example
     /// ```no_run
     /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
@@ -300,6 +310,16 @@ impl Client {
 
     /// Retrieves events through a stream using the provided query and stream configuration.
     ///
+    /// # ⚠️ Important Warning
+    /// 
+    /// This method will continue executing until the query has run to completion from beginning 
+    /// to the end of the block range defined in the query. For heavy queries with large block 
+    /// ranges or high data volumes, consider:
+    /// 
+    /// - Use [`stream_events()`](Self::stream_events) to interact with each streamed chunk individually
+    /// - Use [`get_events()`](Self::get_events) which returns a `next_block` that can be paginated for the next query
+    /// - Break large queries into smaller block ranges
+    ///
     /// # Example
     /// ```no_run
     /// use hypersync_client::{Client, net_types::{Query, TransactionFilter, TransactionField}, StreamConfig};
@@ -367,6 +387,42 @@ impl Client {
 
     /// Retrieves blocks, transactions, traces, and logs in Arrow format through a stream using
     /// the provided query and stream configuration.
+    ///
+    /// Returns data in Apache Arrow format for high-performance columnar processing.
+    /// Useful for analytics workloads or when working with Arrow-compatible tools.
+    ///
+    /// # ⚠️ Important Warning
+    /// 
+    /// This method will continue executing until the query has run to completion from beginning 
+    /// to the end of the block range defined in the query. For heavy queries with large block 
+    /// ranges or high data volumes, consider:
+    /// 
+    /// - Use [`stream_arrow()`](Self::stream_arrow) to interact with each streamed chunk individually
+    /// - Use [`get_arrow()`](Self::get_arrow) which returns a `next_block` that can be paginated for the next query
+    /// - Break large queries into smaller block ranges
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, BlockFilter, BlockField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Get block data in Arrow format for analytics
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000100)
+    ///     .include_all_blocks()
+    ///     .select_block_fields([BlockField::Number, BlockField::Timestamp, BlockField::GasUsed]);
+    /// let response = client.collect_arrow(query, StreamConfig::default()).await?;
+    ///
+    /// println!("Retrieved {} Arrow batches for blocks", response.data.blocks.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn collect_arrow(&self, query: Query, config: StreamConfig) -> Result<ArrowResponse> {
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -412,6 +468,45 @@ impl Client {
 
     /// Writes parquet file getting data through a stream using the provided path, query,
     /// and stream configuration.
+    ///
+    /// Streams data directly to a Parquet file for efficient storage and later analysis.
+    /// Perfect for data exports or ETL pipelines.
+    ///
+    /// # ⚠️ Important Warning
+    /// 
+    /// This method will continue executing until the query has run to completion from beginning 
+    /// to the end of the block range defined in the query. For heavy queries with large block 
+    /// ranges or high data volumes, consider:
+    /// 
+    /// - Use [`stream_arrow()`](Self::stream_arrow) and write to Parquet incrementally
+    /// - Use [`get_arrow()`](Self::get_arrow) with pagination and append to Parquet files
+    /// - Break large queries into smaller block ranges
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Export all DEX trades to Parquet for analysis
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19010000)
+    ///     .where_logs(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"])?
+    ///     )
+    ///     .select_log_fields([LogField::Address, LogField::Data, LogField::BlockNumber]);
+    /// client.collect_parquet("./trades.parquet", query, StreamConfig::default()).await?;
+    ///
+    /// println!("Trade data exported to trades.parquet");
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn collect_parquet(
         &self,
         path: &str,
@@ -574,7 +669,26 @@ impl Client {
     }
 
     /// Get the height of the Client instance for health checks.
+    /// 
     /// Doesn't do any retries and the `http_req_timeout` parameter will override the http timeout config set when creating the client.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::Client;
+    /// use std::time::Duration;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Quick health check with 5 second timeout
+    /// let height = client.health_check(Some(Duration::from_secs(5))).await?;
+    /// println!("Server is healthy at block: {}", height);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn health_check(&self, http_req_timeout: Option<Duration>) -> Result<u64> {
         self.get_height_impl(http_req_timeout).await
     }
@@ -610,6 +724,36 @@ impl Client {
 
     /// Add block, transaction and log fields selection to the query, executes it with retries
     /// and returns the response.
+    ///
+    /// This method automatically joins blocks, transactions, and logs into unified events,
+    /// making it easier to work with related blockchain data.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField, TransactionField}};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Query ERC20 transfers with transaction context
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000010)
+    ///     .where_logs(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+    ///     )
+    ///     .select_log_fields([LogField::Address, LogField::Data])
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From]);
+    /// let response = client.get_events(query).await?;
+    ///
+    /// println!("Retrieved {} joined events", response.data.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_events(&self, mut query: Query) -> Result<EventResponse> {
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
         event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
@@ -890,6 +1034,38 @@ impl Client {
 
     /// Add block, transaction and log fields selection to the query and spawns task to execute it,
     /// returning data via a channel.
+    ///
+    /// This method automatically joins blocks, transactions, and logs into unified events,
+    /// then streams them via a channel for real-time processing.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField, TransactionField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Stream NFT transfer events with transaction context
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .where_logs(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+    ///     )
+    ///     .select_log_fields([LogField::Address, LogField::Topic1, LogField::Topic2])
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From]);
+    /// let mut receiver = client.stream_events(query, StreamConfig::default()).await?;
+    ///
+    /// while let Some(response) = receiver.recv().await {
+    ///     let response = response?;
+    ///     println!("Got {} joined events up to block: {}", response.data.len(), response.next_block);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn stream_events(
         &self,
         mut query: Query,
@@ -929,6 +1105,38 @@ impl Client {
     }
 
     /// Spawns task to execute query and return data via a channel in Arrow format.
+    ///
+    /// Returns raw Apache Arrow data via a channel for high-performance processing.
+    /// Ideal for applications that need to work directly with columnar data.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, TransactionFilter, TransactionField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Stream transaction data in Arrow format for analytics
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000100)
+    ///     .where_transactions(
+    ///         TransactionFilter::all()
+    ///             .and_value_gte(1000000000000000000u64)? // >= 1 ETH
+    ///     )
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::Value]);
+    /// let mut receiver = client.stream_arrow(query, StreamConfig::default()).await?;
+    ///
+    /// while let Some(response) = receiver.recv().await {
+    ///     let response = response?;
+    ///     println!("Got {} Arrow batches for transactions", response.data.transactions.len());
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn stream_arrow(
         &self,
         query: Query,

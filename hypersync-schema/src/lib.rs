@@ -1,3 +1,47 @@
+//! # HyperSync Schema
+//!
+//! Apache Arrow schemas and data transformation utilities for the HyperSync protocol.
+//!
+//! This crate provides the Arrow schema definitions and data transformation
+//! utilities used by HyperSync for high-performance columnar data processing.
+//! It bridges the gap between HyperSync's native data formats and Apache Arrow.
+//!
+//! ## Features
+//!
+//! - **Arrow schemas**: Predefined schemas for blocks, transactions, logs, and traces
+//! - **Data transformation**: Utilities for converting between formats
+//! - **High performance**: Optimized columnar data operations
+//! - **Schema projection**: Select only needed columns for memory efficiency
+//!
+//! ## Key Functions
+//!
+//! - [`block_schema()`] - Get Arrow schema for block data
+//! - [`transaction_schema()`] - Get Arrow schema for transaction data  
+//! - [`log_schema()`] - Get Arrow schema for log/event data
+//! - [`trace_schema()`] - Get Arrow schema for trace data
+//! - [`project_schema()`] - Project schema to subset of columns
+//! - [`concat_chunks()`] - Efficiently concatenate Arrow chunks
+//!
+//! ## Example
+//!
+//! ```
+//! use hypersync_schema::{transaction, log, project_schema};
+//! use std::collections::BTreeSet;
+//!
+//! // Get schema for transaction data
+//! let tx_schema = transaction();
+//! println!("Transaction schema has {} fields", tx_schema.fields.len());
+//!
+//! // Get schema for log data  
+//! let log_schema = log();
+//! println!("Log schema has {} fields", log_schema.fields.len());
+//!
+//! // Project to subset of fields
+//! let fields: BTreeSet<String> = ["hash", "from"].iter().map(|s| s.to_string()).collect();
+//! let projected = project_schema(&tx_schema, &fields);
+//! println!("Projected schema has {} fields", projected.fields.len());
+//! ```
+
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
