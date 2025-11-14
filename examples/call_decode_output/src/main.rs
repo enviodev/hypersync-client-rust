@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
 
     let client = Client::builder()
         .chain_id(1)
-        .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .api_token(std::env::var("ENVIO_API_TOKEN")?)
         .max_num_retries(10)
         .build()
         .unwrap();
