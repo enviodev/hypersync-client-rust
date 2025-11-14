@@ -231,11 +231,11 @@ impl Client {
     /// or execution timed out by server.
     ///
     /// # ⚠️ Important Warning
-    /// 
-    /// This method will continue executing until the query has run to completion from beginning 
-    /// to the end of the block range defined in the query. For heavy queries with large block 
+    ///
+    /// This method will continue executing until the query has run to completion from beginning
+    /// to the end of the block range defined in the query. For heavy queries with large block
     /// ranges or high data volumes, consider:
-    /// 
+    ///
     /// - Use [`stream()`](Self::stream) to interact with each streamed chunk individually
     /// - Use [`get()`](Self::get) which returns a `next_block` that can be paginated for the next query
     /// - Break large queries into smaller block ranges
@@ -311,11 +311,11 @@ impl Client {
     /// Retrieves events through a stream using the provided query and stream configuration.
     ///
     /// # ⚠️ Important Warning
-    /// 
-    /// This method will continue executing until the query has run to completion from beginning 
-    /// to the end of the block range defined in the query. For heavy queries with large block 
+    ///
+    /// This method will continue executing until the query has run to completion from beginning
+    /// to the end of the block range defined in the query. For heavy queries with large block
     /// ranges or high data volumes, consider:
-    /// 
+    ///
     /// - Use [`stream_events()`](Self::stream_events) to interact with each streamed chunk individually
     /// - Use [`get_events()`](Self::get_events) which returns a `next_block` that can be paginated for the next query
     /// - Break large queries into smaller block ranges
@@ -392,11 +392,11 @@ impl Client {
     /// Useful for analytics workloads or when working with Arrow-compatible tools.
     ///
     /// # ⚠️ Important Warning
-    /// 
-    /// This method will continue executing until the query has run to completion from beginning 
-    /// to the end of the block range defined in the query. For heavy queries with large block 
+    ///
+    /// This method will continue executing until the query has run to completion from beginning
+    /// to the end of the block range defined in the query. For heavy queries with large block
     /// ranges or high data volumes, consider:
-    /// 
+    ///
     /// - Use [`stream_arrow()`](Self::stream_arrow) to interact with each streamed chunk individually
     /// - Use [`get_arrow()`](Self::get_arrow) which returns a `next_block` that can be paginated for the next query
     /// - Break large queries into smaller block ranges
@@ -473,11 +473,11 @@ impl Client {
     /// Perfect for data exports or ETL pipelines.
     ///
     /// # ⚠️ Important Warning
-    /// 
-    /// This method will continue executing until the query has run to completion from beginning 
-    /// to the end of the block range defined in the query. For heavy queries with large block 
+    ///
+    /// This method will continue executing until the query has run to completion from beginning
+    /// to the end of the block range defined in the query. For heavy queries with large block
     /// ranges or high data volumes, consider:
-    /// 
+    ///
     /// - Use [`stream_arrow()`](Self::stream_arrow) and write to Parquet incrementally
     /// - Use [`get_arrow()`](Self::get_arrow) with pagination and append to Parquet files
     /// - Break large queries into smaller block ranges
@@ -669,7 +669,7 @@ impl Client {
     }
 
     /// Get the height of the Client instance for health checks.
-    /// 
+    ///
     /// Doesn't do any retries and the `http_req_timeout` parameter will override the http timeout config set when creating the client.
     ///
     /// # Example
@@ -1125,7 +1125,7 @@ impl Client {
     ///     .to_block_excl(19000100)
     ///     .where_transactions(
     ///         TransactionFilter::all()
-    ///             .and_value_gte(1000000000000000000u64)? // >= 1 ETH
+    ///             .and_contract_address(["0xA0b86a33E6411b87Fd9D3DF822C8698FC06BBe4c"])?
     ///     )
     ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::Value]);
     /// let mut receiver = client.stream_arrow(query, StreamConfig::default()).await?;
@@ -1716,3 +1716,4 @@ mod tests {
         Ok(())
     }
 }
+
