@@ -1,5 +1,77 @@
 #![deny(missing_docs)]
-//! Hypersync client library for interacting with hypersync server.
+//! # HyperSync Client
+//!
+//! A high-performance Rust client for the HyperSync protocol, enabling efficient retrieval
+//! of blockchain data including blocks, transactions, logs, and traces.
+//!
+//! ## Features
+//!
+//! - **High-performance streaming**: Parallel data fetching with automatic retries
+//! - **Flexible querying**: Rich query builder API for precise data selection
+//! - **Multiple data formats**: Support for Arrow, Parquet, and simple Rust types
+//! - **Event decoding**: Automatic ABI decoding for smart contract events
+//! - **Real-time updates**: Live height streaming via Server-Sent Events
+//! - **Production ready**: Built-in rate limiting, retries, and error handling
+//!
+//! ## Quick Start
+//!
+//! ```no_run
+//! use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
+//!
+//! #[tokio::main]
+//! async fn main() -> anyhow::Result<()> {
+//!     // Create a client for Ethereum mainnet
+//!     let client = Client::builder()
+//!         .chain_id(1)
+//!         .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+//!         .build()?;
+//!
+//!     // Query ERC20 transfer events from USDC contract
+//!     let query = Query::new()
+//!         .from_block(19000000)
+//!         .to_block_excl(19001000)
+//!         .where_logs(
+//!             LogFilter::all()
+//!                 .and_address(["0xA0b86a33E6411b87Fd9D3DF822C8698FC06BBe4c"])?
+//!                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+//!         )
+//!         .select_log_fields([LogField::Address, LogField::Topic1, LogField::Topic2, LogField::Data]);
+//!
+//!     // Get all data in one response
+//!     let response = client.get(&query).await?;
+//!     println!("Retrieved {} blocks", response.data.blocks.len());
+//!
+//!     // Or stream data for large ranges
+//!     let mut receiver = client.stream(query, StreamConfig::default()).await?;
+//!     while let Some(response) = receiver.recv().await {
+//!         let response = response?;
+//!         println!("Streaming: got blocks up to {}", response.next_block);
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Main Types
+//!
+//! - [`Client`] - Main client for interacting with HyperSync servers
+//! - [`net_types::Query`] - Query builder for specifying what data to fetch
+//! - [`StreamConfig`] - Configuration for streaming operations
+//! - [`QueryResponse`] - Response containing blocks, transactions, logs, and traces
+//! - [`ArrowResponse`] - Response in Apache Arrow format for high-performance processing
+//!
+//! ## Authentication
+//!
+//! You'll need a HyperSync API token to access the service. Get one from
+//! [https://envio.dev/app/api-tokens](https://envio.dev/app/api-tokens).
+//!
+//! ## Examples
+//!
+//! See the `examples/` directory for more detailed usage patterns including:
+//! - ERC20 token transfers
+//! - Wallet transaction history  
+//! - Event decoding and filtering
+//! - Real-time data streaming
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
@@ -77,6 +149,21 @@ pub struct Client {
 
 impl Client {
     /// Creates a new client with the given configuration.
+    ///
+    /// Configuration must include the `url` and `bearer_token` fields.
+    /// # Example
+    /// ```
+    /// use hypersync_client::{Client, ClientConfig};
+    ///
+    /// let config = ClientConfig {
+    ///     url: "https://eth.hypersync.xyz".to_string(),
+    ///     bearer_token: std::env::var("HYPERSYNC_API_TOKEN")?,
+    ///     ..Default::default()
+    /// };
+    /// let client = Client::new(config)?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
+    ///
     /// # Errors
     /// This method fails if the config is invalid.
     pub fn new(cfg: ClientConfig) -> Result<Self> {
@@ -142,11 +229,33 @@ impl Client {
     ///
     /// Each query runs until it reaches query.to, server height, any max_num_* query param,
     /// or execution timed out by server.
-    pub async fn collect(
-        &self,
-        query: Query,
-        config: StreamConfig,
-    ) -> Result<QueryResponse> {
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Query ERC20 transfer events
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000010)
+    ///     .where_logs(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+    ///     )
+    ///     .select_log_fields([LogField::Address, LogField::Data]);
+    /// let response = client.collect(query, StreamConfig::default()).await?;
+    ///
+    /// println!("Collected {} events", response.data.logs.len());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collect(&self, query: Query, config: StreamConfig) -> Result<QueryResponse> {
         check_simple_stream_params(&config)?;
 
         let mut recv = stream::stream_arrow(self, query, config)
@@ -190,6 +299,32 @@ impl Client {
     }
 
     /// Retrieves events through a stream using the provided query and stream configuration.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, TransactionFilter, TransactionField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Query transactions to a specific address
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000100)
+    ///     .where_transactions(
+    ///         TransactionFilter::all()
+    ///             .and_to(["0xA0b86a33E6411b87Fd9D3DF822C8698FC06BBe4c"])?
+    ///     )
+    ///     .select_transaction_fields([TransactionField::Hash, TransactionField::From, TransactionField::Value]);
+    /// let response = client.collect_events(query, StreamConfig::default()).await?;
+    ///
+    /// println!("Collected {} events", response.data.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn collect_events(
         &self,
         mut query: Query,
@@ -232,11 +367,7 @@ impl Client {
 
     /// Retrieves blocks, transactions, traces, and logs in Arrow format through a stream using
     /// the provided query and stream configuration.
-    pub async fn collect_arrow(
-        &self,
-        query: Query,
-        config: StreamConfig,
-    ) -> Result<ArrowResponse> {
+    pub async fn collect_arrow(&self, query: Query, config: StreamConfig) -> Result<ArrowResponse> {
         let mut recv = stream::stream_arrow(self, query, config)
             .await
             .context("start stream")?;
@@ -343,6 +474,22 @@ impl Client {
     }
 
     /// Get the chain_id from the server with retries.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::Client;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// let chain_id = client.get_chain_id().await?;
+    /// println!("Connected to chain ID: {}", chain_id);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_chain_id(&self) -> Result<u64> {
         let mut base = self.inner.retry_base_ms;
 
@@ -367,13 +514,32 @@ impl Client {
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
+            base = std::cmp::min(
+                base + self.inner.retry_backoff_ms,
+                self.inner.retry_ceiling_ms,
+            );
         }
 
         Err(err)
     }
 
     /// Get the height of from server with retries.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::Client;
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// let height = client.get_height().await?;
+    /// println!("Current block height: {}", height);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_height(&self) -> Result<u64> {
         let mut base = self.inner.retry_base_ms;
 
@@ -398,7 +564,10 @@ impl Client {
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
+            base = std::cmp::min(
+                base + self.inner.retry_backoff_ms,
+                self.inner.retry_ceiling_ms,
+            );
         }
 
         Err(err)
@@ -411,6 +580,29 @@ impl Client {
     }
 
     /// Executes query with retries and returns the response.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, BlockFilter, BlockField}};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Query all blocks from a specific range
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .to_block_excl(19000010)
+    ///     .include_all_blocks()
+    ///     .select_block_fields([BlockField::Number, BlockField::Hash, BlockField::Timestamp]);
+    /// let response = client.get(&query).await?;
+    ///
+    /// println!("Retrieved {} blocks", response.data.blocks.len());
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
         let arrow_response = self.get_arrow(query).await.context("get data")?;
         Ok(QueryResponse::from(&arrow_response))
@@ -626,13 +818,44 @@ impl Client {
 
             tokio::time::sleep(base_ms + jitter).await;
 
-            base = std::cmp::min(base + self.inner.retry_backoff_ms, self.inner.retry_ceiling_ms);
+            base = std::cmp::min(
+                base + self.inner.retry_backoff_ms,
+                self.inner.retry_ceiling_ms,
+            );
         }
 
         Err(err)
     }
 
     /// Spawns task to execute query and return data via a channel.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
+    ///
+    /// # async fn example() -> anyhow::Result<()> {
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .build()?;
+    ///
+    /// // Stream all ERC20 transfer events
+    /// let query = Query::new()
+    ///     .from_block(19000000)
+    ///     .where_logs(
+    ///         LogFilter::all()
+    ///             .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+    ///     )
+    ///     .select_log_fields([LogField::Address, LogField::Topic1, LogField::Topic2, LogField::Data]);
+    /// let mut receiver = client.stream(query, StreamConfig::default()).await?;
+    ///
+    /// while let Some(response) = receiver.recv().await {
+    ///     let response = response?;
+    ///     println!("Got {} events up to block: {}", response.data.logs.len(), response.next_block);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn stream(
         &self,
         query: Query,
@@ -715,6 +938,19 @@ impl Client {
     }
 
     /// Getter for url field.
+    ///
+    /// # Example
+    /// ```
+    /// use hypersync_client::Client;
+    ///
+    /// let client = Client::builder()
+    ///     .chain_id(1)
+    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .build()
+    ///     .unwrap();
+    ///
+    /// println!("Client URL: {}", client.url());
+    /// ```
     pub fn url(&self) -> &Url {
         &self.inner.url
     }
@@ -737,12 +973,13 @@ impl Client {
 ///     .build()
 ///     .unwrap();
 /// ```
+#[derive(Debug, Clone, Default)]
 pub struct ClientBuilder(ClientConfig);
 
 impl ClientBuilder {
     /// Creates a new ClientBuilder with default configuration.
     pub fn new() -> Self {
-        Self(ClientConfig::default())
+        Self::default()
     }
 
     /// Sets the chain ID and automatically configures the URL for the hypersync endpoint.
