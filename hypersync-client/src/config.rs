@@ -85,9 +85,7 @@ impl ClientConfig {
         }
 
         if self.api_token.is_empty() {
-            anyhow::bail!(
-                "api_token is required - get one from https://envio.dev/app/api-tokens"
-            );
+            anyhow::bail!("api_token is required - get one from https://envio.dev/app/api-tokens");
         }
         // validate that api token is a uuid
         if uuid::Uuid::parse_str(self.api_token.as_str()).is_err() {
@@ -279,7 +277,7 @@ mod tests {
     #[test]
     fn test_stream_config_defaults() {
         let default_config = StreamConfig::default();
-        
+
         // Check that all defaults are applied correctly
         assert_eq!(default_config.concurrency, 10);
         assert_eq!(default_config.batch_size, 1000);
@@ -297,22 +295,22 @@ mod tests {
         assert!(default_config.max_num_traces.is_none());
     }
 
-    #[test]  
+    #[test]
     fn test_stream_config_serde() {
         // Test serialization of default config
         let default_config = StreamConfig::default();
         let json = serde_json::to_string(&default_config).unwrap();
         let deserialized: StreamConfig = serde_json::from_str(&json).unwrap();
-        
+
         // Verify round-trip works
         assert_eq!(deserialized.concurrency, default_config.concurrency);
         assert_eq!(deserialized.batch_size, default_config.batch_size);
         assert_eq!(deserialized.reverse, default_config.reverse);
-        
+
         // Test partial JSON (missing some fields should use defaults)
         let partial_json = r#"{"reverse": true, "batch_size": 500}"#;
         let partial_config: StreamConfig = serde_json::from_str(partial_json).unwrap();
-        
+
         assert_eq!(partial_config.reverse, true);
         assert_eq!(partial_config.batch_size, 500);
         assert_eq!(partial_config.concurrency, 10); // should use default

@@ -3,7 +3,7 @@
 //! Core network types and query builders for the HyperSync protocol.
 //!
 //! This crate provides the fundamental types for constructing queries and handling
-//! responses when communicating with HyperSync servers. It supports both JSON 
+//! responses when communicating with HyperSync servers. It supports both JSON
 //! and Cap'n Proto serialization formats for efficient network communication.
 //!
 //! ## Features
@@ -35,7 +35,7 @@
 //!         .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
 //! ).select_log_fields([
 //!     LogField::Address,
-//!     LogField::Topic1, 
+//!     LogField::Topic1,
 //!     LogField::Topic2,
 //!     LogField::Data,
 //! ]);

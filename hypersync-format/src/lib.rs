@@ -30,7 +30,7 @@
 //! // Parse an Ethereum address  
 //! let addr: Address = "0x742d35Cc6634C0532925a3b8D400ACDCD5C94C33".parse()?;
 //! println!("Address: {}", addr);
-//! 
+//!
 //! // Create a hash from hex string  
 //! let hash: Hash = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".parse()?;
 //! println!("Hash: {}", hash);

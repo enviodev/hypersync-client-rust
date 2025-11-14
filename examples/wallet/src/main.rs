@@ -71,7 +71,6 @@ async fn main() -> anyhow::Result<()> {
             TransactionField::Value,
         ]);
 
-
     println!("Starting the stream");
 
     // Stream data
