@@ -3,7 +3,7 @@
 
 use hypersync_client::{
     net_types::{LogField, LogFilter, Query},
-    Client, ClientConfig, Decoder,
+    Client, Decoder,
 };
 use tokio::time::{sleep, Duration};
 
@@ -14,7 +14,11 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .chain_id(1)
+        .api_token(std::env::var("ENVIO_API_TOKEN")?)
+        .build()
+        .unwrap();
 
     let height = client.get_height().await.unwrap();
 

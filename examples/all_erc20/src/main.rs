@@ -1,11 +1,11 @@
 // Example of getting all erc20 transfers from eth mainnet and averaging transfer amount
 // It has no practical use but it is meant to show how to use the client
 
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use hypersync_client::{
     net_types::{LogField, LogFilter, Query},
-    Client, ClientConfig, ColumnMapping, DataType, SerializationFormat, StreamConfig,
+    Client, ColumnMapping, DataType, SerializationFormat, StreamConfig,
 };
 use polars_arrow::{
     array::{Array, Float64Array},
@@ -18,13 +18,14 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init().unwrap();
 
     // create default client, uses eth mainnet
-    let client = Client::new(ClientConfig {
-        serialization_format: SerializationFormat::CapnProto {
+    let client = Client::builder()
+        .chain_id(1)
+        .api_token(std::env::var("ENVIO_API_TOKEN")?)
+        .serialization_format(SerializationFormat::CapnProto {
             should_cache_queries: true,
-        },
-        ..Default::default()
-    })
-    .unwrap();
+        })
+        .build()
+        .unwrap();
 
     let query = Query::new()
         // start from block 10123123 and go to the end of the chain (we don't specify a toBlock).
@@ -47,9 +48,6 @@ async fn main() -> anyhow::Result<()> {
         ]);
 
     println!("Starting the stream");
-
-    // Put the client inside Arc so we can use it for streaming
-    let client = Arc::new(client);
 
     // Stream arrow data so we can average the erc20 transfer amounts in memory
     //

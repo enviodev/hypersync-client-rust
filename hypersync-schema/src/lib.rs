@@ -1,3 +1,47 @@
+//! # HyperSync Schema
+//!
+//! Apache Arrow schemas and data transformation utilities for the HyperSync protocol.
+//!
+//! This crate provides the Arrow schema definitions and data transformation
+//! utilities used by HyperSync for high-performance columnar data processing.
+//! It bridges the gap between HyperSync's native data formats and Apache Arrow.
+//!
+//! ## Features
+//!
+//! - **Arrow schemas**: Predefined schemas for blocks, transactions, logs, and traces
+//! - **Data transformation**: Utilities for converting between formats
+//! - **High performance**: Optimized columnar data operations
+//! - **Schema projection**: Select only needed columns for memory efficiency
+//!
+//! ## Key Functions
+//!
+//! - [`block_schema()`] - Get Arrow schema for block data
+//! - [`transaction_schema()`] - Get Arrow schema for transaction data  
+//! - [`log_schema()`] - Get Arrow schema for log/event data
+//! - [`trace_schema()`] - Get Arrow schema for trace data
+//! - [`project_schema()`] - Project schema to subset of columns
+//! - [`concat_chunks()`] - Efficiently concatenate Arrow chunks
+//!
+//! ## Example
+//!
+//! ```
+//! use hypersync_schema::{transaction, log, project_schema};
+//! use std::collections::BTreeSet;
+//!
+//! // Get schema for transaction data
+//! let tx_schema = transaction();
+//! println!("Transaction schema has {} fields", tx_schema.fields.len());
+//!
+//! // Get schema for log data  
+//! let log_schema = log();
+//! println!("Log schema has {} fields", log_schema.fields.len());
+//!
+//! // Project to subset of fields
+//! let fields: BTreeSet<String> = ["hash", "from"].iter().map(|s| s.to_string()).collect();
+//! let projected = project_schema(&tx_schema, &fields);
+//! println!("Projected schema has {} fields", projected.fields.len());
+//! ```
+
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -24,137 +68,139 @@ fn quantity_dt() -> DataType {
     DataType::BinaryView
 }
 
+const NULLABLE: bool = true;
+
 pub fn block_header() -> SchemaRef {
     Schema::from(vec![
-        Field::new("number", DataType::UInt64, false),
-        Field::new("hash", hash_dt(), false),
-        Field::new("parent_hash", hash_dt(), false),
-        Field::new("nonce", DataType::BinaryView, true),
-        Field::new("sha3_uncles", hash_dt(), false),
-        Field::new("logs_bloom", DataType::BinaryView, false),
-        Field::new("transactions_root", hash_dt(), false),
-        Field::new("state_root", hash_dt(), false),
-        Field::new("receipts_root", hash_dt(), false),
-        Field::new("miner", addr_dt(), false),
-        Field::new("difficulty", quantity_dt(), true),
-        Field::new("total_difficulty", quantity_dt(), true),
-        Field::new("extra_data", DataType::BinaryView, false),
-        Field::new("size", quantity_dt(), false),
-        Field::new("gas_limit", quantity_dt(), false),
-        Field::new("gas_used", quantity_dt(), false),
-        Field::new("timestamp", quantity_dt(), false),
-        Field::new("uncles", DataType::BinaryView, true),
-        Field::new("base_fee_per_gas", quantity_dt(), true),
-        Field::new("blob_gas_used", quantity_dt(), true),
-        Field::new("excess_blob_gas", quantity_dt(), true),
-        Field::new("parent_beacon_block_root", hash_dt(), true),
-        Field::new("withdrawals_root", hash_dt(), true),
-        Field::new("withdrawals", DataType::BinaryView, true),
-        Field::new("l1_block_number", DataType::UInt64, true),
-        Field::new("send_count", quantity_dt(), true),
-        Field::new("send_root", hash_dt(), true),
-        Field::new("mix_hash", hash_dt(), true),
+        Field::new("number", DataType::UInt64, !NULLABLE),
+        Field::new("hash", hash_dt(), !NULLABLE),
+        Field::new("parent_hash", hash_dt(), !NULLABLE),
+        Field::new("nonce", DataType::BinaryView, NULLABLE),
+        Field::new("sha3_uncles", hash_dt(), !NULLABLE),
+        Field::new("logs_bloom", DataType::BinaryView, !NULLABLE),
+        Field::new("transactions_root", hash_dt(), !NULLABLE),
+        Field::new("state_root", hash_dt(), !NULLABLE),
+        Field::new("receipts_root", hash_dt(), !NULLABLE),
+        Field::new("miner", addr_dt(), !NULLABLE),
+        Field::new("difficulty", quantity_dt(), NULLABLE),
+        Field::new("total_difficulty", quantity_dt(), NULLABLE),
+        Field::new("extra_data", DataType::BinaryView, !NULLABLE),
+        Field::new("size", quantity_dt(), !NULLABLE),
+        Field::new("gas_limit", quantity_dt(), !NULLABLE),
+        Field::new("gas_used", quantity_dt(), !NULLABLE),
+        Field::new("timestamp", quantity_dt(), !NULLABLE),
+        Field::new("uncles", DataType::BinaryView, NULLABLE),
+        Field::new("base_fee_per_gas", quantity_dt(), NULLABLE),
+        Field::new("blob_gas_used", quantity_dt(), NULLABLE),
+        Field::new("excess_blob_gas", quantity_dt(), NULLABLE),
+        Field::new("parent_beacon_block_root", hash_dt(), NULLABLE),
+        Field::new("withdrawals_root", hash_dt(), NULLABLE),
+        Field::new("withdrawals", DataType::BinaryView, NULLABLE),
+        Field::new("l1_block_number", DataType::UInt64, NULLABLE),
+        Field::new("send_count", quantity_dt(), NULLABLE),
+        Field::new("send_root", hash_dt(), NULLABLE),
+        Field::new("mix_hash", hash_dt(), NULLABLE),
     ])
     .into()
 }
 
 pub fn transaction() -> SchemaRef {
     Schema::from(vec![
-        Field::new("block_hash", hash_dt(), false),
-        Field::new("block_number", DataType::UInt64, false),
-        Field::new("from", addr_dt(), true),
-        Field::new("gas", quantity_dt(), false),
-        Field::new("gas_price", quantity_dt(), true),
-        Field::new("hash", hash_dt(), false),
-        Field::new("input", DataType::BinaryView, false),
-        Field::new("nonce", quantity_dt(), false),
-        Field::new("to", addr_dt(), true),
-        Field::new("transaction_index", DataType::UInt64, false),
-        Field::new("value", quantity_dt(), false),
-        Field::new("v", quantity_dt(), true),
-        Field::new("r", quantity_dt(), true),
-        Field::new("s", quantity_dt(), true),
-        Field::new("max_priority_fee_per_gas", quantity_dt(), true),
-        Field::new("max_fee_per_gas", quantity_dt(), true),
-        Field::new("chain_id", quantity_dt(), true),
-        Field::new("cumulative_gas_used", quantity_dt(), false),
-        Field::new("effective_gas_price", quantity_dt(), false),
-        Field::new("gas_used", quantity_dt(), false),
-        Field::new("contract_address", addr_dt(), true),
-        Field::new("logs_bloom", DataType::BinaryView, false),
-        Field::new("type", DataType::UInt8, true),
-        Field::new("root", hash_dt(), true),
-        Field::new("status", DataType::UInt8, true),
-        Field::new("sighash", DataType::BinaryView, true),
-        Field::new("y_parity", quantity_dt(), true),
-        Field::new("access_list", DataType::BinaryView, true),
-        Field::new("authorization_list", DataType::BinaryView, true),
-        Field::new("l1_fee", quantity_dt(), true),
-        Field::new("l1_gas_price", quantity_dt(), true),
-        Field::new("l1_gas_used", quantity_dt(), true),
-        Field::new("l1_fee_scalar", quantity_dt(), true),
-        Field::new("gas_used_for_l1", quantity_dt(), true),
-        Field::new("max_fee_per_blob_gas", quantity_dt(), true),
-        Field::new("blob_versioned_hashes", DataType::BinaryView, true),
-        Field::new("deposit_nonce", quantity_dt(), true),
-        Field::new("blob_gas_price", quantity_dt(), true),
-        Field::new("deposit_receipt_version", quantity_dt(), true),
-        Field::new("blob_gas_used", quantity_dt(), true),
-        Field::new("l1_base_fee_scalar", quantity_dt(), true),
-        Field::new("l1_blob_base_fee", quantity_dt(), true),
-        Field::new("l1_blob_base_fee_scalar", quantity_dt(), true),
-        Field::new("l1_block_number", quantity_dt(), true),
-        Field::new("mint", quantity_dt(), true),
-        Field::new("source_hash", hash_dt(), true),
+        Field::new("block_hash", hash_dt(), !NULLABLE),
+        Field::new("block_number", DataType::UInt64, !NULLABLE),
+        Field::new("from", addr_dt(), NULLABLE),
+        Field::new("gas", quantity_dt(), !NULLABLE),
+        Field::new("gas_price", quantity_dt(), NULLABLE),
+        Field::new("hash", hash_dt(), !NULLABLE),
+        Field::new("input", DataType::BinaryView, !NULLABLE),
+        Field::new("nonce", quantity_dt(), !NULLABLE),
+        Field::new("to", addr_dt(), NULLABLE),
+        Field::new("transaction_index", DataType::UInt64, !NULLABLE),
+        Field::new("value", quantity_dt(), !NULLABLE),
+        Field::new("v", quantity_dt(), NULLABLE),
+        Field::new("r", quantity_dt(), NULLABLE),
+        Field::new("s", quantity_dt(), NULLABLE),
+        Field::new("max_priority_fee_per_gas", quantity_dt(), NULLABLE),
+        Field::new("max_fee_per_gas", quantity_dt(), NULLABLE),
+        Field::new("chain_id", quantity_dt(), NULLABLE),
+        Field::new("cumulative_gas_used", quantity_dt(), !NULLABLE),
+        Field::new("effective_gas_price", quantity_dt(), !NULLABLE),
+        Field::new("gas_used", quantity_dt(), !NULLABLE),
+        Field::new("contract_address", addr_dt(), NULLABLE),
+        Field::new("logs_bloom", DataType::BinaryView, !NULLABLE),
+        Field::new("type", DataType::UInt8, NULLABLE),
+        Field::new("root", hash_dt(), NULLABLE),
+        Field::new("status", DataType::UInt8, NULLABLE),
+        Field::new("sighash", DataType::BinaryView, NULLABLE),
+        Field::new("y_parity", quantity_dt(), NULLABLE),
+        Field::new("access_list", DataType::BinaryView, NULLABLE),
+        Field::new("authorization_list", DataType::BinaryView, NULLABLE),
+        Field::new("l1_fee", quantity_dt(), NULLABLE),
+        Field::new("l1_gas_price", quantity_dt(), NULLABLE),
+        Field::new("l1_gas_used", quantity_dt(), NULLABLE),
+        Field::new("l1_fee_scalar", quantity_dt(), NULLABLE),
+        Field::new("gas_used_for_l1", quantity_dt(), NULLABLE),
+        Field::new("max_fee_per_blob_gas", quantity_dt(), NULLABLE),
+        Field::new("blob_versioned_hashes", DataType::BinaryView, NULLABLE),
+        Field::new("deposit_nonce", quantity_dt(), NULLABLE),
+        Field::new("blob_gas_price", quantity_dt(), NULLABLE),
+        Field::new("deposit_receipt_version", quantity_dt(), NULLABLE),
+        Field::new("blob_gas_used", quantity_dt(), NULLABLE),
+        Field::new("l1_base_fee_scalar", quantity_dt(), NULLABLE),
+        Field::new("l1_blob_base_fee", quantity_dt(), NULLABLE),
+        Field::new("l1_blob_base_fee_scalar", quantity_dt(), NULLABLE),
+        Field::new("l1_block_number", quantity_dt(), NULLABLE),
+        Field::new("mint", quantity_dt(), NULLABLE),
+        Field::new("source_hash", hash_dt(), NULLABLE),
     ])
     .into()
 }
 
 pub fn log() -> SchemaRef {
     Schema::from(vec![
-        Field::new("removed", DataType::Boolean, true),
-        Field::new("log_index", DataType::UInt64, false),
-        Field::new("transaction_index", DataType::UInt64, false),
-        Field::new("transaction_hash", hash_dt(), false),
-        Field::new("block_hash", hash_dt(), false),
-        Field::new("block_number", DataType::UInt64, false),
-        Field::new("address", addr_dt(), false),
-        Field::new("data", DataType::BinaryView, false),
-        Field::new("topic0", DataType::BinaryView, true),
-        Field::new("topic1", DataType::BinaryView, true),
-        Field::new("topic2", DataType::BinaryView, true),
-        Field::new("topic3", DataType::BinaryView, true),
+        Field::new("removed", DataType::Boolean, NULLABLE),
+        Field::new("log_index", DataType::UInt64, !NULLABLE),
+        Field::new("transaction_index", DataType::UInt64, !NULLABLE),
+        Field::new("transaction_hash", hash_dt(), !NULLABLE),
+        Field::new("block_hash", hash_dt(), !NULLABLE),
+        Field::new("block_number", DataType::UInt64, !NULLABLE),
+        Field::new("address", addr_dt(), !NULLABLE),
+        Field::new("data", DataType::BinaryView, !NULLABLE),
+        Field::new("topic0", DataType::BinaryView, NULLABLE),
+        Field::new("topic1", DataType::BinaryView, NULLABLE),
+        Field::new("topic2", DataType::BinaryView, NULLABLE),
+        Field::new("topic3", DataType::BinaryView, NULLABLE),
     ])
     .into()
 }
 
 pub fn trace() -> SchemaRef {
     Schema::from(vec![
-        Field::new("from", addr_dt(), true),
-        Field::new("to", addr_dt(), true),
-        Field::new("call_type", DataType::Utf8View, true),
-        Field::new("gas", quantity_dt(), true),
-        Field::new("input", DataType::BinaryView, true),
-        Field::new("init", DataType::BinaryView, true),
-        Field::new("value", quantity_dt(), true),
-        Field::new("author", addr_dt(), true),
-        Field::new("reward_type", DataType::Utf8View, true),
-        Field::new("block_hash", DataType::BinaryView, false),
-        Field::new("block_number", DataType::UInt64, false),
-        Field::new("address", addr_dt(), true),
-        Field::new("code", DataType::BinaryView, true),
-        Field::new("gas_used", quantity_dt(), true),
-        Field::new("output", DataType::BinaryView, true),
-        Field::new("subtraces", DataType::UInt64, true),
-        Field::new("trace_address", DataType::BinaryView, true),
-        Field::new("transaction_hash", DataType::BinaryView, true),
-        Field::new("transaction_position", DataType::UInt64, true),
-        Field::new("type", DataType::Utf8View, true),
-        Field::new("error", DataType::Utf8View, true),
-        Field::new("sighash", DataType::BinaryView, true),
-        Field::new("action_address", addr_dt(), true),
-        Field::new("balance", quantity_dt(), true),
-        Field::new("refund_address", addr_dt(), true),
+        Field::new("from", addr_dt(), NULLABLE),
+        Field::new("to", addr_dt(), NULLABLE),
+        Field::new("call_type", DataType::Utf8View, NULLABLE),
+        Field::new("gas", quantity_dt(), NULLABLE),
+        Field::new("input", DataType::BinaryView, NULLABLE),
+        Field::new("init", DataType::BinaryView, NULLABLE),
+        Field::new("value", quantity_dt(), NULLABLE),
+        Field::new("author", addr_dt(), NULLABLE),
+        Field::new("reward_type", DataType::Utf8View, NULLABLE),
+        Field::new("block_hash", DataType::BinaryView, !NULLABLE),
+        Field::new("block_number", DataType::UInt64, !NULLABLE),
+        Field::new("address", addr_dt(), NULLABLE),
+        Field::new("code", DataType::BinaryView, NULLABLE),
+        Field::new("gas_used", quantity_dt(), NULLABLE),
+        Field::new("output", DataType::BinaryView, NULLABLE),
+        Field::new("subtraces", DataType::UInt64, NULLABLE),
+        Field::new("trace_address", DataType::BinaryView, NULLABLE),
+        Field::new("transaction_hash", DataType::BinaryView, NULLABLE),
+        Field::new("transaction_position", DataType::UInt64, NULLABLE),
+        Field::new("type", DataType::Utf8View, NULLABLE),
+        Field::new("error", DataType::Utf8View, NULLABLE),
+        Field::new("sighash", DataType::BinaryView, NULLABLE),
+        Field::new("action_address", addr_dt(), NULLABLE),
+        Field::new("balance", quantity_dt(), NULLABLE),
+        Field::new("refund_address", addr_dt(), NULLABLE),
     ])
     .into()
 }

@@ -3,9 +3,8 @@ use anyhow::Context;
 use hypersync_client::{
     net_types::{Query, TraceField, TraceFilter},
     simple_types::Trace,
-    ArrowResponseData, CallDecoder, Client, ClientConfig, FromArrow, StreamConfig,
+    ArrowResponseData, CallDecoder, Client, FromArrow, StreamConfig,
 };
-use std::sync::Arc;
 
 const BALANCE_OF_SIGNATURE: &str =
     "function balanceOf(address account) external view returns (uint256)";
@@ -14,13 +13,12 @@ const DAI_ADDRESS: &str = "0x6B175474E89094C44Da98b954EedeAC495271d0F";
 async fn main() -> anyhow::Result<()> {
     env_logger::init()?;
 
-    let client = Arc::new(
-        Client::new(ClientConfig {
-            max_num_retries: Some(10),
-            ..ClientConfig::default()
-        })
-        .unwrap(),
-    );
+    let client = Client::builder()
+        .chain_id(1)
+        .api_token(std::env::var("ENVIO_API_TOKEN")?)
+        .max_num_retries(10)
+        .build()
+        .unwrap();
 
     let balance_of_sighash = Function::parse(BALANCE_OF_SIGNATURE)
         .context("parse function signature")?

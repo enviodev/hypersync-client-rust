@@ -1,7 +1,48 @@
-//! Hypersync network types for transport and queries.
+//! # HyperSync Network Types
 //!
-//! This library provides types and serialization capabilities for interacting with hypersync servers.
-//! It supports both JSON and Cap'n Proto serialization formats for efficient network communication.
+//! Core network types and query builders for the HyperSync protocol.
+//!
+//! This crate provides the fundamental types for constructing queries and handling
+//! responses when communicating with HyperSync servers. It supports both JSON
+//! and Cap'n Proto serialization formats for efficient network communication.
+//!
+//! ## Features
+//!
+//! - **Query builder API**: Fluent interface for building complex blockchain queries
+//! - **Type-safe filtering**: Strongly-typed filters for blocks, transactions, logs, and traces
+//! - **Field selection**: Choose exactly which data fields to retrieve
+//! - **Multiple serialization**: Support for JSON and Cap'n Proto protocols
+//! - **Validation**: Built-in query validation and optimization
+//!
+//! ## Key Types
+//!
+//! - [`Query`] - Main query builder for specifying blockchain data to retrieve
+//! - [`BlockFilter`] - Filter blocks by number, hash, or other criteria
+//! - [`TransactionFilter`] - Filter transactions by from/to addresses, value, etc.
+//! - [`LogFilter`] - Filter event logs by contract address, topics, etc.
+//! - [`TraceFilter`] - Filter execution traces by various criteria
+//!
+//! ## Example
+//!
+//! ```
+//! use hypersync_net_types::{Query, LogFilter, LogField};
+//!
+//! // Build a query for ERC20 transfer events
+//! let mut query = Query::new().from_block(19000000);
+//! query.to_block = Some(19001000);
+//! query = query.where_logs(
+//!     LogFilter::all()
+//!         .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
+//! ).select_log_fields([
+//!     LogField::Address,
+//!     LogField::Topic1,
+//!     LogField::Topic2,
+//!     LogField::Data,
+//! ]);
+//!
+//! println!("Query: {:?}", query);
+//! # Ok::<(), anyhow::Error>(())
+//! ```
 
 // Module declarations
 pub mod block;

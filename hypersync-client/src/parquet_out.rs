@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub async fn collect_parquet(
-    client: Arc<Client>,
+    client: &Client,
     path: &str,
     query: Query,
     config: StreamConfig,
