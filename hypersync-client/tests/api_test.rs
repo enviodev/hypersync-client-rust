@@ -2,8 +2,8 @@ use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
 use hypersync_client::{
-    preset_query, simple_types::Transaction, Client, ClientConfig, ColumnMapping,
-    SerializationFormat, StreamConfig,
+    preset_query, simple_types::Transaction, Client, ColumnMapping, SerializationFormat,
+    StreamConfig,
 };
 use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
 use hypersync_net_types::{
@@ -15,7 +15,11 @@ use polars_arrow::array::UInt64Array;
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let mut block_field_selection = BTreeSet::new();
     block_field_selection.insert(BlockField::Number);
@@ -46,7 +50,11 @@ async fn test_api_arrow_ipc() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc_ordering() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let mut block_field_selection = BTreeSet::new();
     block_field_selection.insert("number".to_owned());
@@ -107,7 +115,13 @@ async fn test_api_decode_logs() {
 
     const ADDR: &str = "0xc18360217d8f7ab5e7c516566761ea12ce7f9d72";
 
-    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
+    let client = Arc::new(
+        Client::builder()
+            .url("https://eth.hypersync.xyz")
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .build()
+            .unwrap(),
+    );
 
     let query: Query = serde_json::from_value(serde_json::json!({
         "from_block": 18680952,
@@ -202,6 +216,7 @@ async fn test_stream_decode_with_invalid_log() {
 
     let client = Client::builder()
         .url("https://base.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
         .build()
         .unwrap();
     let client = Arc::new(client);
@@ -254,7 +269,13 @@ async fn test_stream_decode_with_invalid_log() {
 async fn test_parquet_out() {
     env_logger::try_init().ok();
 
-    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
+    let client = Arc::new(
+        Client::builder()
+            .url("https://eth.hypersync.xyz")
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .build()
+            .unwrap(),
+    );
 
     let path = format!("{}/{}", temp_dir().to_string_lossy(), uuid::Uuid::new_v4());
 
@@ -305,7 +326,13 @@ async fn test_parquet_out() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_blocks_and_transactions() {
-    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
+    let client = Arc::new(
+        Client::builder()
+            .url("https://eth.hypersync.xyz")
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .build()
+            .unwrap(),
+    );
     let query = preset_query::blocks_and_transactions(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
@@ -330,7 +357,11 @@ async fn test_api_preset_query_blocks_and_transactions() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_blocks_and_transaction_hashes() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
     let query = preset_query::blocks_and_transaction_hashes(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
@@ -355,7 +386,11 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_logs() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let usdt_addr = Address::decode_hex("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap();
     let query = preset_query::logs(18_000_000, Some(18_000_010), usdt_addr);
@@ -375,7 +410,11 @@ async fn test_api_preset_query_logs() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_logs_of_event() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let usdt_addr = Address::decode_hex("0xdAC17F958D2ee523a2206206994597C13D831ec7").unwrap();
     let transfer_topic0 = LogArgument::decode_hex(
@@ -401,7 +440,11 @@ async fn test_api_preset_query_logs_of_event() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_transactions() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
     let query = preset_query::transactions(18_000_000, Some(18_000_010));
     let res = client.get_arrow(&query).await.unwrap();
 
@@ -419,7 +462,11 @@ async fn test_api_preset_query_transactions() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_preset_query_transactions_from_address() {
-    let client = Client::new(ClientConfig::default()).unwrap();
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .build()
+        .unwrap();
 
     let vitalik_eth_addr =
         Address::decode_hex("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").unwrap();
@@ -443,7 +490,13 @@ async fn test_api_preset_query_transactions_from_address() {
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_small_bloom_filter_query() {
-    let client = Arc::new(Client::new(ClientConfig::default()).unwrap());
+    let client = Arc::new(
+        Client::builder()
+            .url("https://eth.hypersync.xyz")
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .build()
+            .unwrap(),
+    );
 
     let vitalik_eth_addr =
         Address::decode_hex("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").unwrap();
@@ -497,6 +550,7 @@ async fn test_decode_string_param_into_arrow() {
     let client = Arc::new(
         Client::builder()
             .url("https://mev-commit.hypersync.xyz")
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
             .build()
             .unwrap(),
     );
@@ -535,7 +589,8 @@ async fn test_decode_string_param_into_arrow() {
 async fn test_api_capnp_client() {
     let client = Arc::new(
         Client::builder()
-            .url("http://localhost:1131")
+            .chain_id(1)
+            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
             .serialization_format(SerializationFormat::CapnProto {
                 should_cache_queries: true,
             })
@@ -561,8 +616,14 @@ async fn test_api_capnp_client() {
 
     let mut res = client.stream(query, StreamConfig::default()).await.unwrap();
 
+    let mut iters = 0;
+
     while let Some(res) = res.recv().await {
         let res = res.unwrap();
         dbg!(res);
+        iters += 1;
+        if iters > 5 {
+            break;
+        }
     }
 }
