@@ -10,9 +10,9 @@ pub struct ClientConfig {
     /// HyperSync server URL.
     #[serde(default)]
     pub url: String,
-    /// HyperSync server bearer token.
+    /// HyperSync server api token.
     #[serde(default)]
-    pub bearer_token: String,
+    pub api_token: String,
     /// Milliseconds to wait for a response before timing out.
     #[serde(default = "ClientConfig::default_http_req_timeout_millis")]
     pub http_req_timeout_millis: u64,
@@ -37,7 +37,7 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             url: String::default(),
-            bearer_token: String::default(),
+            api_token: String::default(),
             http_req_timeout_millis: Self::default_http_req_timeout_millis(),
             max_num_retries: Self::default_max_num_retries(),
             retry_backoff_ms: Self::default_retry_backoff_ms(),
@@ -84,14 +84,14 @@ impl ClientConfig {
             anyhow::bail!("url is malformed");
         }
 
-        if self.bearer_token.is_empty() {
+        if self.api_token.is_empty() {
             anyhow::bail!(
-                "bearer_token is required - get one from https://envio.dev/app/api-tokens"
+                "api_token is required - get one from https://envio.dev/app/api-tokens"
             );
         }
-        // validate that bearer token is a uuid
-        if uuid::Uuid::parse_str(self.bearer_token.as_str()).is_err() {
-            anyhow::bail!("bearer_token is malformed - make sure its a token from https://envio.dev/app/api-tokens");
+        // validate that api token is a uuid
+        if uuid::Uuid::parse_str(self.api_token.as_str()).is_err() {
+            anyhow::bail!("api_token is malformed - make sure its a token from https://envio.dev/app/api-tokens");
         }
 
         if self.http_req_timeout_millis == 0 {
@@ -239,7 +239,7 @@ mod tests {
     fn test_validate() {
         let valid_cfg = ClientConfig {
             url: "https://hypersync.xyz".into(),
-            bearer_token: "00000000-0000-0000-0000-000000000000".to_string(),
+            api_token: "00000000-0000-0000-0000-000000000000".to_string(),
             ..Default::default()
         };
 
@@ -247,7 +247,7 @@ mod tests {
 
         let cfg = ClientConfig {
             url: "https://hypersync.xyz".to_string(),
-            bearer_token: "not a uuid".to_string(),
+            api_token: "not a uuid".to_string(),
             ..Default::default()
         };
 
@@ -258,10 +258,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(cfg.validate().is_err(), "missing bearer token");
+        assert!(cfg.validate().is_err(), "missing api token");
 
         let cfg = ClientConfig {
-            bearer_token: "00000000-0000-0000-0000-000000000000".to_string(),
+            api_token: "00000000-0000-0000-0000-000000000000".to_string(),
             ..Default::default()
         };
 

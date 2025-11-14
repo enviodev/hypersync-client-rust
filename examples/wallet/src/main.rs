@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
 
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
         .build()
         .unwrap();
 

@@ -23,7 +23,7 @@
 //!     // Create a client for Ethereum mainnet
 //!     let client = Client::builder()
 //!         .chain_id(1)
-//!         .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+//!         .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
 //!         .build()?;
 //!
 //!     // Query ERC20 transfer events from USDC contract
@@ -127,8 +127,8 @@ struct ClientInner {
     http_client: reqwest::Client,
     /// HyperSync server URL.
     url: Url,
-    /// HyperSync server bearer token.
-    bearer_token: String,
+    /// HyperSync server api token.
+    api_token: String,
     /// Number of retries to attempt before returning error.
     max_num_retries: usize,
     /// Milliseconds that would be used for retry backoff increasing.
@@ -150,14 +150,14 @@ pub struct Client {
 impl Client {
     /// Creates a new client with the given configuration.
     ///
-    /// Configuration must include the `url` and `bearer_token` fields.
+    /// Configuration must include the `url` and `api_token` fields.
     /// # Example
     /// ```
     /// use hypersync_client::{Client, ClientConfig};
     ///
     /// let config = ClientConfig {
     ///     url: "https://eth.hypersync.xyz".to_string(),
-    ///     bearer_token: std::env::var("HYPERSYNC_API_TOKEN")?,
+    ///     api_token: std::env::var("HYPERSYNC_API_TOKEN")?,
     ///     ..Default::default()
     /// };
     /// let client = Client::new(config)?;
@@ -181,7 +181,7 @@ impl Client {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     /// ```
@@ -211,7 +211,7 @@ impl Client {
             inner: Arc::new(ClientInner {
                 http_client,
                 url,
-                bearer_token: cfg.bearer_token,
+                api_token: cfg.api_token,
                 max_num_retries: cfg.max_num_retries,
                 retry_backoff_ms: cfg.retry_backoff_ms,
                 retry_base_ms: cfg.retry_base_ms,
@@ -247,7 +247,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Query ERC20 transfer events
@@ -327,7 +327,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Query transactions to a specific address
@@ -408,7 +408,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Get block data in Arrow format for analytics
@@ -489,7 +489,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Export all DEX trades to Parquet for analysis
@@ -526,7 +526,7 @@ impl Client {
             .inner
             .http_client
             .request(Method::GET, url)
-            .bearer_auth(&self.inner.bearer_token);
+            .bearer_auth(&self.inner.api_token);
 
         let res = req.send().await.context("execute http req")?;
 
@@ -550,7 +550,7 @@ impl Client {
             .inner
             .http_client
             .request(Method::GET, url)
-            .bearer_auth(&self.inner.bearer_token);
+            .bearer_auth(&self.inner.api_token);
 
         if let Some(http_timeout_override) = http_timeout_override {
             req = req.timeout(http_timeout_override);
@@ -577,7 +577,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// let chain_id = client.get_chain_id().await?;
@@ -627,7 +627,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// let height = client.get_height().await?;
@@ -680,7 +680,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Quick health check with 5 second timeout
@@ -702,7 +702,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Query all blocks from a specific range
@@ -735,7 +735,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Query ERC20 transfers with transaction context
@@ -775,7 +775,7 @@ impl Client {
             .inner
             .http_client
             .request(Method::POST, url)
-            .bearer_auth(&self.inner.bearer_token);
+            .bearer_auth(&self.inner.api_token);
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -835,7 +835,7 @@ impl Client {
                 .inner
                 .http_client
                 .request(Method::POST, url.clone())
-                .bearer_auth(&self.inner.bearer_token);
+                .bearer_auth(&self.inner.api_token);
             req = req.header("content-type", "application/x-capnp");
 
             let res = req
@@ -894,7 +894,7 @@ impl Client {
             .inner
             .http_client
             .request(Method::POST, url)
-            .bearer_auth(&self.inner.bearer_token);
+            .bearer_auth(&self.inner.api_token);
         req = req.header("content-type", "application/x-capnp");
 
         let res = req
@@ -980,7 +980,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Stream all ERC20 transfer events
@@ -1045,7 +1045,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Stream NFT transfer events with transaction context
@@ -1116,7 +1116,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
     ///     .build()?;
     ///
     /// // Stream transaction data in Arrow format for analytics
@@ -1153,7 +1153,7 @@ impl Client {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     ///
@@ -1175,7 +1175,7 @@ impl Client {
 ///
 /// let client = Client::builder()
 ///     .chain_id(1)
-///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
 ///     .http_req_timeout_millis(30000)
 ///     .max_num_retries(3)
 ///     .build()
@@ -1203,7 +1203,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1) // Ethereum mainnet
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     /// ```
@@ -1226,7 +1226,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .url("https://my-custom-hypersync.example.com")
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     /// ```
@@ -1235,12 +1235,12 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the bearer token for authentication.
+    /// Sets the api token for authentication.
     ///
     /// Required for accessing authenticated hypersync endpoints.
     ///
     /// # Arguments
-    /// * `bearer_token` - The authentication token
+    /// * `api_token` - The authentication token
     ///
     /// # Example
     /// ```
@@ -1248,12 +1248,12 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     /// ```
-    pub fn bearer_token<S: ToString>(mut self, bearer_token: S) -> Self {
-        self.0.bearer_token = bearer_token.to_string();
+    pub fn api_token<S: ToString>(mut self, api_token: S) -> Self {
+        self.0.api_token = api_token.to_string();
         self
     }
 
@@ -1268,7 +1268,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .http_req_timeout_millis(60000) // 60 second timeout
     ///     .build()
     ///     .unwrap();
@@ -1289,7 +1289,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .max_num_retries(5)
     ///     .build()
     ///     .unwrap();
@@ -1312,7 +1312,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .retry_backoff_ms(1000) // 1 second backoff increment
     ///     .build()
     ///     .unwrap();
@@ -1333,7 +1333,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .retry_base_ms(1000) // Start with 1 second delay
     ///     .build()
     ///     .unwrap();
@@ -1356,7 +1356,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .retry_ceiling_ms(30000) // Cap at 30 seconds
     ///     .build()
     ///     .unwrap();
@@ -1377,7 +1377,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .serialization_format(SerializationFormat::Json)
     ///     .build()
     ///     .unwrap();
@@ -1403,7 +1403,7 @@ impl ClientBuilder {
     ///
     /// let client = Client::builder()
     ///     .chain_id(1)
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()
     ///     .unwrap();
     /// ```
@@ -1459,7 +1459,7 @@ impl Client {
             .http_client
             .get(url)
             .header(header::ACCEPT, "text/event-stream")
-            .bearer_auth(&self.inner.bearer_token);
+            .bearer_auth(&self.inner.api_token);
 
         // Configure exponential backoff for library-level retries
         let retry_policy = ExponentialBackoff::new(
@@ -1608,7 +1608,7 @@ impl Client {
     /// # async fn example() -> anyhow::Result<()> {
     /// let client = Client::builder()
     ///     .url("https://eth.hypersync.xyz")
-    ///     .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+    ///     .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
     ///     .build()?;
     ///
     /// let mut rx = client.stream_height();
@@ -1690,7 +1690,7 @@ mod tests {
         let handle = tokio::spawn(async move {
             let client = Client::builder()
                 .url("https://monad-testnet.hypersync.xyz")
-                .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+                .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
                 .build()?;
             let mut es = client.get_es_stream().context("get es stream")?;
             Client::stream_height_events(&mut es, &tx).await

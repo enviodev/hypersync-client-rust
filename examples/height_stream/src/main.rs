@@ -7,7 +7,7 @@ async fn main() -> Result<()> {
 
     let client = Client::builder()
         .url("https://arbitrum-sepolia.hypersync.xyz")
-        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN")?)
+        .api_token(std::env::var("HYPERSYNC_API_TOKEN")?)
         .build()?;
 
     let mut rx = client.stream_height();

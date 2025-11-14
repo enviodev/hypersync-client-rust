@@ -171,7 +171,7 @@ async fn test_get_events_without_join_fields() {
 
     let client = Client::builder()
         .url("https://base.hypersync.xyz")
-        .bearer_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
+        .api_token(std::env::var("HYPERSYNC_API_TOKEN").unwrap())
         .build()
         .unwrap();
 
