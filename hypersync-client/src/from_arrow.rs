@@ -191,6 +191,17 @@ impl FromArrow for Transaction {
         let l1_gas_used = batch.column::<B>("l1_gas_used").ok();
         let l1_fee_scalar = batch.column::<B>("l1_fee_scalar").ok();
         let gas_used_for_l1 = batch.column::<B>("gas_used_for_l1").ok();
+        let blob_gas_price = batch.column::<B>("blob_gas_price").ok();
+        let blob_gas_used = batch.column::<B>("blob_gas_used").ok();
+        let deposit_nonce = batch.column::<B>("deposit_nonce").ok();
+        let deposit_receipt_version = batch.column::<B>("deposit_receipt_version").ok();
+        let l1_base_fee_scalar = batch.column::<B>("l1_base_fee_scalar").ok();
+        let l1_blob_base_fee = batch.column::<B>("l1_blob_base_fee").ok();
+        let l1_blob_base_fee_scalar = batch.column::<B>("l1_blob_base_fee_scalar").ok();
+        let l1_block_number = batch.column::<B>("l1_block_number").ok();
+        let mint = batch.column::<B>("mint").ok();
+        let sighash = batch.column::<B>("sighash").ok();
+        let source_hash = batch.column::<B>("source_hash").ok();
 
         (0..batch.chunk.len())
             .map(|idx| Self {
@@ -243,6 +254,17 @@ impl FromArrow for Transaction {
                         .map(|v| std::str::from_utf8(v).unwrap().parse().unwrap())
                 }),
                 gas_used_for_l1: map_binary(idx, gas_used_for_l1),
+                blob_gas_price: map_binary(idx, blob_gas_price),
+                blob_gas_used: map_binary(idx, blob_gas_used),
+                deposit_nonce: map_binary(idx, deposit_nonce),
+                deposit_receipt_version: map_binary(idx, deposit_receipt_version),
+                l1_base_fee_scalar: map_binary(idx, l1_base_fee_scalar),
+                l1_blob_base_fee: map_binary(idx, l1_blob_base_fee),
+                l1_blob_base_fee_scalar: map_binary(idx, l1_blob_base_fee_scalar),
+                l1_block_number: map_binary(idx, l1_block_number),
+                mint: map_binary(idx, mint),
+                sighash: map_binary(idx, sighash),
+                source_hash: map_binary(idx, source_hash),
             })
             .collect()
     }

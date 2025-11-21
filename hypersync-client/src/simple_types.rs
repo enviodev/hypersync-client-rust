@@ -366,6 +366,28 @@ pub struct Transaction {
     pub l1_fee_scalar: Option<f64>,
     /// Amount of gas spent on L1 calldata in units of L2 gas.
     pub gas_used_for_l1: Option<Quantity>,
+    /// Gas price for blob transactions
+    pub blob_gas_price: Option<Quantity>,
+    /// Amount of blob gas used by this transaction
+    pub blob_gas_used: Option<Quantity>,
+    /// Deposit transaction nonce for Optimism
+    pub deposit_nonce: Option<Quantity>,
+    /// Deposit receipt version for Optimism
+    pub deposit_receipt_version: Option<Quantity>,
+    /// Base fee scalar for L1 cost calculation
+    pub l1_base_fee_scalar: Option<Quantity>,
+    /// L1 blob base fee for cost calculation
+    pub l1_blob_base_fee: Option<Quantity>,
+    /// L1 blob base fee scalar for cost calculation
+    pub l1_blob_base_fee_scalar: Option<Quantity>,
+    /// L1 block number associated with transaction
+    pub l1_block_number: Option<Quantity>,
+    /// Amount of ETH minted in this transaction
+    pub mint: Option<Quantity>,
+    /// 4-byte function signature hash
+    pub sighash: Option<Data>,
+    /// Source hash for optimism transactions
+    pub source_hash: Option<Hash>,
 }
 
 /// Log object
@@ -496,17 +518,17 @@ mod tests {
             TransactionField::GasUsedForL1 => tx.gas_used_for_l1.is_none(),
             TransactionField::MaxFeePerBlobGas => tx.max_fee_per_blob_gas.is_none(),
             TransactionField::BlobVersionedHashes => tx.blob_versioned_hashes.is_none(),
-            TransactionField::BlobGasPrice => todo!(),
-            TransactionField::BlobGasUsed => todo!(),
-            TransactionField::DepositNonce => todo!(),
-            TransactionField::DepositReceiptVersion => todo!(),
-            TransactionField::L1BaseFeeScalar => todo!(),
-            TransactionField::L1BlobBaseFee => todo!(),
-            TransactionField::L1BlobBaseFeeScalar => todo!(),
-            TransactionField::L1BlockNumber => todo!(),
-            TransactionField::Mint => todo!(),
-            TransactionField::Sighash => todo!(),
-            TransactionField::SourceHash => todo!(),
+            TransactionField::BlobGasPrice => tx.blob_gas_price.is_none(),
+            TransactionField::BlobGasUsed => tx.blob_gas_used.is_none(),
+            TransactionField::DepositNonce => tx.deposit_nonce.is_none(),
+            TransactionField::DepositReceiptVersion => tx.deposit_receipt_version.is_none(),
+            TransactionField::L1BaseFeeScalar => tx.l1_base_fee_scalar.is_none(),
+            TransactionField::L1BlobBaseFee => tx.l1_blob_base_fee.is_none(),
+            TransactionField::L1BlobBaseFeeScalar => tx.l1_blob_base_fee_scalar.is_none(),
+            TransactionField::L1BlockNumber => tx.l1_block_number.is_none(),
+            TransactionField::Mint => tx.mint.is_none(),
+            TransactionField::Sighash => tx.sighash.is_none(),
+            TransactionField::SourceHash => tx.source_hash.is_none(),
         }
     }
 
