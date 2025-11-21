@@ -454,3 +454,67 @@ pub struct Trace {
     /// None if successful, Reverted if not.
     pub error: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn has_tx_field(tx: &Transaction, field: TransactionField) -> bool {
+        match field {
+            TransactionField::BlockHash => tx.block_hash.is_none(),
+            TransactionField::BlockNumber => tx.block_number.is_none(),
+            TransactionField::From => tx.from.is_none(),
+            TransactionField::Gas => tx.gas.is_none(),
+            TransactionField::Hash => tx.hash.is_none(),
+            TransactionField::Input => tx.input.is_none(),
+            TransactionField::Nonce => tx.nonce.is_none(),
+            TransactionField::TransactionIndex => tx.transaction_index.is_none(),
+            TransactionField::Value => tx.value.is_none(),
+            TransactionField::CumulativeGasUsed => tx.cumulative_gas_used.is_none(),
+            TransactionField::EffectiveGasPrice => tx.effective_gas_price.is_none(),
+            TransactionField::GasUsed => tx.gas_used.is_none(),
+            TransactionField::LogsBloom => tx.logs_bloom.is_none(),
+            TransactionField::GasPrice => tx.gas_price.is_none(),
+            TransactionField::To => tx.to.is_none(),
+            TransactionField::V => tx.v.is_none(),
+            TransactionField::R => tx.r.is_none(),
+            TransactionField::S => tx.s.is_none(),
+            TransactionField::MaxPriorityFeePerGas => tx.max_priority_fee_per_gas.is_none(),
+            TransactionField::MaxFeePerGas => tx.max_fee_per_gas.is_none(),
+            TransactionField::ChainId => tx.chain_id.is_none(),
+            TransactionField::ContractAddress => tx.contract_address.is_none(),
+            TransactionField::Type => tx.kind.is_none(),
+            TransactionField::Root => tx.root.is_none(),
+            TransactionField::Status => tx.status.is_none(),
+            TransactionField::YParity => tx.y_parity.is_none(),
+            TransactionField::AccessList => tx.access_list.is_none(),
+            TransactionField::AuthorizationList => tx.authorization_list.is_none(),
+            TransactionField::L1Fee => tx.l1_fee.is_none(),
+            TransactionField::L1GasPrice => tx.l1_gas_price.is_none(),
+            TransactionField::L1GasUsed => tx.l1_gas_used.is_none(),
+            TransactionField::L1FeeScalar => tx.l1_fee_scalar.is_none(),
+            TransactionField::GasUsedForL1 => tx.gas_used_for_l1.is_none(),
+            TransactionField::MaxFeePerBlobGas => tx.max_fee_per_blob_gas.is_none(),
+            TransactionField::BlobVersionedHashes => tx.blob_versioned_hashes.is_none(),
+            TransactionField::BlobGasPrice => todo!(),
+            TransactionField::BlobGasUsed => todo!(),
+            TransactionField::DepositNonce => todo!(),
+            TransactionField::DepositReceiptVersion => todo!(),
+            TransactionField::L1BaseFeeScalar => todo!(),
+            TransactionField::L1BlobBaseFee => todo!(),
+            TransactionField::L1BlobBaseFeeScalar => todo!(),
+            TransactionField::L1BlockNumber => todo!(),
+            TransactionField::Mint => todo!(),
+            TransactionField::Sighash => todo!(),
+            TransactionField::SourceHash => todo!(),
+        }
+    }
+
+    #[test]
+    fn has_all_tx_fields() {
+        let tx = Transaction::default();
+        for field in TransactionField::all() {
+            assert!(has_tx_field(&tx, field));
+        }
+    }
+}
