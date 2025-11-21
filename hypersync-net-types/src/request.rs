@@ -3,7 +3,7 @@ use crate::{hypersync_net_types_capnp, CapnpReader, Query};
 use serde::{Deserialize, Serialize};
 
 use anyhow::Context;
-use capnp::message::Builder;
+use capnp::message::{Builder, HeapAllocator};
 use hypersync_format::FixedSizeData;
 
 /// A 128 bit hash of the query body, used as a unique identifier for the query body
@@ -18,7 +18,14 @@ impl QueryId {
     pub fn from_query_body_reader(reader: query_body::Reader<'_>) -> Result<QueryId, capnp::Error> {
         // See https://capnproto.org/encoding.html#canonicalization
         // we need to ensure the query body is canonicalized for hashing
-        let mut canon_builder = capnp::message::Builder::new_default();
+        let num_words = reader.total_size()?.word_count;
+        let first_segment_words = u32::try_from(num_words).map_err(|_| {
+            capnp::Error::failed(format!("query body too large for u32: {num_words} words"))
+        })?;
+
+        let mut canon_builder = capnp::message::Builder::new(
+            HeapAllocator::new().first_segment_words(first_segment_words),
+        );
         canon_builder.set_root_canonical(reader)?;
 
         // After canonicalization, there is only one segment.
@@ -146,6 +153,8 @@ impl request::Builder<'_> {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_format::Address;
+
     use crate::{
         log::LogField, BlockFilter, BlockSelection, CapnpBuilder, FieldSelection, LogFilter,
         LogSelection,
@@ -166,6 +175,23 @@ mod tests {
 
         let query_id = QueryId::from_query(&query).unwrap();
         println!("{query_id:?}");
+    }
+
+    #[test]
+    /// This was failing because the heap allocator was configured with a default first segment size of 1024.
+    fn test_large_query_id() {
+        let mut addresses = Vec::new();
+        for i in 0u64..200_000 {
+            let mock_bytes = i.to_be_bytes();
+            let padded_bytes = vec![0u8; 20 - mock_bytes.len()]
+                .into_iter()
+                .chain(mock_bytes)
+                .collect::<Vec<u8>>();
+            addresses.push(Address::try_from(padded_bytes).unwrap());
+        }
+        let query = Query::new().where_logs(LogFilter::all().and_address(addresses).unwrap());
+        let query_id = QueryId::from_query(&query);
+        assert!(query_id.is_ok());
     }
 
     #[test]

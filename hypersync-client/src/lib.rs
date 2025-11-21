@@ -871,7 +871,7 @@ impl Client {
             }
             } else {
                 let text = res.text().await.context("read text to see error")?;
-                log::error!(
+                log::warn!(
                     "Failed cache query, will retry full query. {}, err body: {}",
                     status,
                     text

@@ -346,7 +346,7 @@ pub struct Transaction {
     pub logs_bloom: Option<BloomFilter>,
     /// Transaction type. For ethereum: Legacy, Eip2930, Eip1559, Eip4844
     #[serde(rename = "type")]
-    pub kind: Option<TransactionType>,
+    pub type_: Option<TransactionType>,
     /// The Keccak 256-bit hash of the root node of the trie structure populated with each
     /// transaction in the transactions list portion of the block; formally Ht.
     pub root: Option<Hash>,
@@ -366,6 +366,28 @@ pub struct Transaction {
     pub l1_fee_scalar: Option<f64>,
     /// Amount of gas spent on L1 calldata in units of L2 gas.
     pub gas_used_for_l1: Option<Quantity>,
+    /// Gas price for blob transactions
+    pub blob_gas_price: Option<Quantity>,
+    /// Amount of blob gas used by this transaction
+    pub blob_gas_used: Option<Quantity>,
+    /// Deposit transaction nonce for Optimism
+    pub deposit_nonce: Option<Quantity>,
+    /// Deposit receipt version for Optimism
+    pub deposit_receipt_version: Option<Quantity>,
+    /// Base fee scalar for L1 cost calculation
+    pub l1_base_fee_scalar: Option<Quantity>,
+    /// L1 blob base fee for cost calculation
+    pub l1_blob_base_fee: Option<Quantity>,
+    /// L1 blob base fee scalar for cost calculation
+    pub l1_blob_base_fee_scalar: Option<Quantity>,
+    /// L1 block number associated with transaction
+    pub l1_block_number: Option<Quantity>,
+    /// Amount of ETH minted in this transaction
+    pub mint: Option<Quantity>,
+    /// 4-byte function signature hash
+    pub sighash: Option<Data>,
+    /// Source hash for optimism transactions
+    pub source_hash: Option<Hash>,
 }
 
 /// Log object
@@ -448,9 +470,188 @@ pub struct Trace {
     ///
     /// `create` represents the creation of a new smart contract. This type of trace occurs when a smart contract is deployed to the blockchain.
     #[serde(rename = "type")]
-    pub kind: Option<String>,
+    pub type_: Option<String>,
     /// A string that indicates whether the transaction was successful or not.
     ///
     /// None if successful, Reverted if not.
     pub error: Option<String>,
+    /// 4-byte function signature hash for the trace
+    pub sighash: Option<Data>,
+    /// The action address for traces that create contracts
+    pub action_address: Option<Address>,
+    /// The balance associated with the trace operation
+    pub balance: Option<Quantity>,
+    /// The refund address for refund operations
+    pub refund_address: Option<Address>,
+}
+
+#[cfg(test)]
+mod tests {
+    use hypersync_net_types::TraceField;
+
+    use super::*;
+
+    fn has_tx_field(tx: &Transaction, field: TransactionField) -> bool {
+        match field {
+            TransactionField::BlockHash => tx.block_hash.is_none(),
+            TransactionField::BlockNumber => tx.block_number.is_none(),
+            TransactionField::From => tx.from.is_none(),
+            TransactionField::Gas => tx.gas.is_none(),
+            TransactionField::Hash => tx.hash.is_none(),
+            TransactionField::Input => tx.input.is_none(),
+            TransactionField::Nonce => tx.nonce.is_none(),
+            TransactionField::TransactionIndex => tx.transaction_index.is_none(),
+            TransactionField::Value => tx.value.is_none(),
+            TransactionField::CumulativeGasUsed => tx.cumulative_gas_used.is_none(),
+            TransactionField::EffectiveGasPrice => tx.effective_gas_price.is_none(),
+            TransactionField::GasUsed => tx.gas_used.is_none(),
+            TransactionField::LogsBloom => tx.logs_bloom.is_none(),
+            TransactionField::GasPrice => tx.gas_price.is_none(),
+            TransactionField::To => tx.to.is_none(),
+            TransactionField::V => tx.v.is_none(),
+            TransactionField::R => tx.r.is_none(),
+            TransactionField::S => tx.s.is_none(),
+            TransactionField::MaxPriorityFeePerGas => tx.max_priority_fee_per_gas.is_none(),
+            TransactionField::MaxFeePerGas => tx.max_fee_per_gas.is_none(),
+            TransactionField::ChainId => tx.chain_id.is_none(),
+            TransactionField::ContractAddress => tx.contract_address.is_none(),
+            TransactionField::Type => tx.type_.is_none(),
+            TransactionField::Root => tx.root.is_none(),
+            TransactionField::Status => tx.status.is_none(),
+            TransactionField::YParity => tx.y_parity.is_none(),
+            TransactionField::AccessList => tx.access_list.is_none(),
+            TransactionField::AuthorizationList => tx.authorization_list.is_none(),
+            TransactionField::L1Fee => tx.l1_fee.is_none(),
+            TransactionField::L1GasPrice => tx.l1_gas_price.is_none(),
+            TransactionField::L1GasUsed => tx.l1_gas_used.is_none(),
+            TransactionField::L1FeeScalar => tx.l1_fee_scalar.is_none(),
+            TransactionField::GasUsedForL1 => tx.gas_used_for_l1.is_none(),
+            TransactionField::MaxFeePerBlobGas => tx.max_fee_per_blob_gas.is_none(),
+            TransactionField::BlobVersionedHashes => tx.blob_versioned_hashes.is_none(),
+            TransactionField::BlobGasPrice => tx.blob_gas_price.is_none(),
+            TransactionField::BlobGasUsed => tx.blob_gas_used.is_none(),
+            TransactionField::DepositNonce => tx.deposit_nonce.is_none(),
+            TransactionField::DepositReceiptVersion => tx.deposit_receipt_version.is_none(),
+            TransactionField::L1BaseFeeScalar => tx.l1_base_fee_scalar.is_none(),
+            TransactionField::L1BlobBaseFee => tx.l1_blob_base_fee.is_none(),
+            TransactionField::L1BlobBaseFeeScalar => tx.l1_blob_base_fee_scalar.is_none(),
+            TransactionField::L1BlockNumber => tx.l1_block_number.is_none(),
+            TransactionField::Mint => tx.mint.is_none(),
+            TransactionField::Sighash => tx.sighash.is_none(),
+            TransactionField::SourceHash => tx.source_hash.is_none(),
+        }
+    }
+
+    fn has_block_field(block: &Block, field: BlockField) -> bool {
+        match field {
+            BlockField::Number => block.number.is_none(),
+            BlockField::Hash => block.hash.is_none(),
+            BlockField::ParentHash => block.parent_hash.is_none(),
+            BlockField::Nonce => block.nonce.is_none(),
+            BlockField::Sha3Uncles => block.sha3_uncles.is_none(),
+            BlockField::LogsBloom => block.logs_bloom.is_none(),
+            BlockField::TransactionsRoot => block.transactions_root.is_none(),
+            BlockField::StateRoot => block.state_root.is_none(),
+            BlockField::ReceiptsRoot => block.receipts_root.is_none(),
+            BlockField::Miner => block.miner.is_none(),
+            BlockField::Difficulty => block.difficulty.is_none(),
+            BlockField::TotalDifficulty => block.total_difficulty.is_none(),
+            BlockField::ExtraData => block.extra_data.is_none(),
+            BlockField::Size => block.size.is_none(),
+            BlockField::GasLimit => block.gas_limit.is_none(),
+            BlockField::GasUsed => block.gas_used.is_none(),
+            BlockField::Timestamp => block.timestamp.is_none(),
+            BlockField::Uncles => block.uncles.is_none(),
+            BlockField::BaseFeePerGas => block.base_fee_per_gas.is_none(),
+            BlockField::BlobGasUsed => block.blob_gas_used.is_none(),
+            BlockField::ExcessBlobGas => block.excess_blob_gas.is_none(),
+            BlockField::ParentBeaconBlockRoot => block.parent_beacon_block_root.is_none(),
+            BlockField::WithdrawalsRoot => block.withdrawals_root.is_none(),
+            BlockField::Withdrawals => block.withdrawals.is_none(),
+            BlockField::L1BlockNumber => block.l1_block_number.is_none(),
+            BlockField::SendCount => block.send_count.is_none(),
+            BlockField::SendRoot => block.send_root.is_none(),
+            BlockField::MixHash => block.mix_hash.is_none(),
+        }
+    }
+
+    fn has_log_field(log: &Log, field: LogField) -> bool {
+        match field {
+            LogField::Removed => log.removed.is_none(),
+            LogField::LogIndex => log.log_index.is_none(),
+            LogField::TransactionIndex => log.transaction_index.is_none(),
+            LogField::TransactionHash => log.transaction_hash.is_none(),
+            LogField::BlockHash => log.block_hash.is_none(),
+            LogField::BlockNumber => log.block_number.is_none(),
+            LogField::Address => log.address.is_none(),
+            LogField::Data => log.data.is_none(),
+            #[allow(clippy::get_first)] // annoying clippy
+            LogField::Topic0 => log.topics.get(0).is_none(),
+            LogField::Topic1 => log.topics.get(1).is_none(),
+            LogField::Topic2 => log.topics.get(2).is_none(),
+            LogField::Topic3 => log.topics.get(3).is_none(),
+        }
+    }
+
+    fn has_trace_field(trace: &Trace, field: TraceField) -> bool {
+        match field {
+            TraceField::From => trace.from.is_none(),
+            TraceField::To => trace.to.is_none(),
+            TraceField::CallType => trace.call_type.is_none(),
+            TraceField::Gas => trace.gas.is_none(),
+            TraceField::Input => trace.input.is_none(),
+            TraceField::Init => trace.init.is_none(),
+            TraceField::Value => trace.value.is_none(),
+            TraceField::Author => trace.author.is_none(),
+            TraceField::RewardType => trace.reward_type.is_none(),
+            TraceField::BlockHash => trace.block_hash.is_none(),
+            TraceField::BlockNumber => trace.block_number.is_none(),
+            TraceField::Address => trace.address.is_none(),
+            TraceField::Code => trace.code.is_none(),
+            TraceField::GasUsed => trace.gas_used.is_none(),
+            TraceField::Output => trace.output.is_none(),
+            TraceField::Subtraces => trace.subtraces.is_none(),
+            TraceField::TraceAddress => trace.trace_address.is_none(),
+            TraceField::TransactionHash => trace.transaction_hash.is_none(),
+            TraceField::TransactionPosition => trace.transaction_position.is_none(),
+            TraceField::Type => trace.type_.is_none(),
+            TraceField::Error => trace.error.is_none(),
+            TraceField::Sighash => trace.sighash.is_none(),
+            TraceField::ActionAddress => trace.action_address.is_none(),
+            TraceField::Balance => trace.balance.is_none(),
+            TraceField::RefundAddress => trace.refund_address.is_none(),
+        }
+    }
+
+    #[test]
+    fn has_all_tx_fields() {
+        let tx = Transaction::default();
+        for field in TransactionField::all() {
+            assert!(has_tx_field(&tx, field));
+        }
+    }
+
+    #[test]
+    fn has_all_block_fields() {
+        let block = Block::default();
+        for field in BlockField::all() {
+            assert!(has_block_field(&block, field));
+        }
+    }
+
+    #[test]
+    fn has_all_log_fields() {
+        let log = Log::default();
+        for field in LogField::all() {
+            assert!(has_log_field(&log, field));
+        }
+    }
+
+    #[test]
+    fn has_all_trace_fields() {
+        let trace = Trace::default();
+        for field in TraceField::all() {
+            assert!(has_trace_field(&trace, field));
+        }
+    }
 }
