@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(default_config.min_batch_size, 200);
         assert_eq!(default_config.response_bytes_ceiling, 500_000);
         assert_eq!(default_config.response_bytes_floor, 250_000);
-        assert_eq!(default_config.reverse, false);
+        assert!(!default_config.reverse);
         assert_eq!(default_config.hex_output, HexOutput::NoEncode);
         assert!(default_config.column_mapping.is_none());
         assert!(default_config.event_signature.is_none());
@@ -311,7 +311,7 @@ mod tests {
         let partial_json = r#"{"reverse": true, "batch_size": 500}"#;
         let partial_config: StreamConfig = serde_json::from_str(partial_json).unwrap();
 
-        assert_eq!(partial_config.reverse, true);
+        assert!(partial_config.reverse);
         assert_eq!(partial_config.batch_size, 500);
         assert_eq!(partial_config.concurrency, 10); // should use default
         assert_eq!(partial_config.max_batch_size, 200_000); // should use default
