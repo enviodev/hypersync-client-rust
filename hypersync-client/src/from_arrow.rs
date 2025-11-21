@@ -183,7 +183,7 @@ impl FromArrow for Transaction {
         let gas_used = batch.column::<B>("gas_used").ok();
         let contract_address = batch.column::<B>("contract_address").ok();
         let logs_bloom = batch.column::<B>("logs_bloom").ok();
-        let kind = batch.column::<UInt8Array>("type").ok();
+        let type_ = batch.column::<UInt8Array>("type").ok();
         let root = batch.column::<B>("root").ok();
         let status = batch.column::<UInt8Array>("status").ok();
         let l1_fee = batch.column::<B>("l1_fee").ok();
@@ -240,7 +240,7 @@ impl FromArrow for Transaction {
                 gas_used: map_binary(idx, gas_used),
                 contract_address: map_binary(idx, contract_address),
                 logs_bloom: map_binary(idx, logs_bloom),
-                kind: kind.and_then(|arr| arr.get(idx).map(|v| v.into())),
+                type_: type_.and_then(|arr| arr.get(idx).map(|v| v.into())),
                 root: map_binary(idx, root),
                 status: status.and_then(|arr| {
                     arr.get(idx)
@@ -333,7 +333,7 @@ impl FromArrow for Trace {
         let trace_address = batch.column::<B>("trace_address").ok();
         let transaction_hash = batch.column::<B>("transaction_hash").ok();
         let transaction_position = batch.column::<UInt64Array>("transaction_position").ok();
-        let kind = batch.column::<U>("type").ok();
+        let type_ = batch.column::<U>("type").ok();
         let error = batch.column::<U>("error").ok();
         let sighash = batch.column::<B>("sighash").ok();
         let action_address = batch.column::<B>("action_address").ok();
@@ -362,7 +362,7 @@ impl FromArrow for Trace {
                     .and_then(|arr| arr.get_idx(idx).map(|v| bincode::deserialize(v).unwrap())),
                 transaction_hash: map_binary(idx, transaction_hash),
                 transaction_position: transaction_position.and_then(|arr| arr.get(idx)),
-                kind: kind.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
+                type_: type_.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
                 error: error.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
                 sighash: map_binary(idx, sighash),
                 action_address: map_binary(idx, action_address),

@@ -7,7 +7,7 @@ use hypersync_format::{
     LogIndex, Nonce, Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
 use hypersync_net_types::{
-    block::BlockField, log::LogField, trace::TraceField, transaction::TransactionField, FieldSelection,
+    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection,
 };
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
@@ -346,7 +346,7 @@ pub struct Transaction {
     pub logs_bloom: Option<BloomFilter>,
     /// Transaction type. For ethereum: Legacy, Eip2930, Eip1559, Eip4844
     #[serde(rename = "type")]
-    pub kind: Option<TransactionType>,
+    pub type_: Option<TransactionType>,
     /// The Keccak 256-bit hash of the root node of the trie structure populated with each
     /// transaction in the transactions list portion of the block; formally Ht.
     pub root: Option<Hash>,
@@ -470,7 +470,7 @@ pub struct Trace {
     ///
     /// `create` represents the creation of a new smart contract. This type of trace occurs when a smart contract is deployed to the blockchain.
     #[serde(rename = "type")]
-    pub kind: Option<String>,
+    pub type_: Option<String>,
     /// A string that indicates whether the transaction was successful or not.
     ///
     /// None if successful, Reverted if not.
@@ -487,6 +487,8 @@ pub struct Trace {
 
 #[cfg(test)]
 mod tests {
+    use hypersync_net_types::TraceField;
+
     use super::*;
 
     fn has_tx_field(tx: &Transaction, field: TransactionField) -> bool {
@@ -513,7 +515,7 @@ mod tests {
             TransactionField::MaxFeePerGas => tx.max_fee_per_gas.is_none(),
             TransactionField::ChainId => tx.chain_id.is_none(),
             TransactionField::ContractAddress => tx.contract_address.is_none(),
-            TransactionField::Type => tx.kind.is_none(),
+            TransactionField::Type => tx.type_.is_none(),
             TransactionField::Root => tx.root.is_none(),
             TransactionField::Status => tx.status.is_none(),
             TransactionField::YParity => tx.y_parity.is_none(),
@@ -583,10 +585,11 @@ mod tests {
             LogField::BlockNumber => log.block_number.is_none(),
             LogField::Address => log.address.is_none(),
             LogField::Data => log.data.is_none(),
-            LogField::Topic0 => log.topics.get(0).map_or(true, |t| t.is_none()),
-            LogField::Topic1 => log.topics.get(1).map_or(true, |t| t.is_none()),
-            LogField::Topic2 => log.topics.get(2).map_or(true, |t| t.is_none()),
-            LogField::Topic3 => log.topics.get(3).map_or(true, |t| t.is_none()),
+            #[allow(clippy::get_first)] // annoying clippy
+            LogField::Topic0 => log.topics.get(0).is_none(),
+            LogField::Topic1 => log.topics.get(1).is_none(),
+            LogField::Topic2 => log.topics.get(2).is_none(),
+            LogField::Topic3 => log.topics.get(3).is_none(),
         }
     }
 
@@ -611,7 +614,7 @@ mod tests {
             TraceField::TraceAddress => trace.trace_address.is_none(),
             TraceField::TransactionHash => trace.transaction_hash.is_none(),
             TraceField::TransactionPosition => trace.transaction_position.is_none(),
-            TraceField::Type => trace.kind.is_none(),
+            TraceField::Type => trace.type_.is_none(),
             TraceField::Error => trace.error.is_none(),
             TraceField::Sighash => trace.sighash.is_none(),
             TraceField::ActionAddress => trace.action_address.is_none(),

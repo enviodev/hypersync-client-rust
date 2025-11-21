@@ -91,7 +91,7 @@ pub struct Transaction {
     pub transaction_index: TransactionIndex,
     pub value: Quantity,
     #[serde(rename = "type")]
-    pub kind: Option<TransactionType>,
+    pub type_: Option<TransactionType>,
     pub v: Option<Quantity>,
     pub r: Option<Quantity>,
     pub s: Option<Quantity>,
@@ -157,7 +157,7 @@ pub struct TransactionReceipt {
     pub logs: Vec<Log>,
     pub logs_bloom: BloomFilter,
     #[serde(rename = "type")]
-    pub kind: Option<TransactionType>,
+    pub type_: Option<TransactionType>,
     pub root: Option<Hash>,
     pub status: Option<TransactionStatus>,
     pub l1_fee: Option<Quantity>,
@@ -250,7 +250,7 @@ pub struct Trace {
     pub transaction_hash: Option<Hash>,
     pub transaction_position: Option<u64>,
     #[serde(rename = "type")]
-    pub kind: Option<String>,
+    pub type_: Option<String>,
     pub error: Option<String>,
 }
 
@@ -302,7 +302,7 @@ pub struct DebugBlockTrace {
 #[serde(rename_all = "camelCase")]
 pub struct DebugTxTrace {
     #[serde(rename = "type")]
-    pub kind: Option<String>,
+    pub type_: Option<String>,
     pub from: Option<Address>,
     pub to: Option<Address>,
     pub value: Option<Quantity>,

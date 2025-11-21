@@ -435,7 +435,7 @@ impl TryFrom<Transaction> for EtherTransaction {
                 .ok_or(ConversionError::MissingValue("Field `s` is null".into()))?
                 .try_into()
                 .map_err(|_| ConversionError::ConvertError("Failed to convert field `s`".into()))?,
-            transaction_type: value.kind.map(|kind| kind.0.into()),
+            transaction_type: value.type_.map(|type_| type_.0.into()),
             access_list: value.access_list.map(access_conversion).transpose()?,
             max_priority_fee_per_gas: value
                 .max_priority_fee_per_gas
@@ -500,7 +500,7 @@ impl TryFrom<Trace> for EtherTrace {
     fn try_from(value: Trace) -> Result<Self, Self::Error> {
         Ok(EtherTrace {
             action: convert_action(
-                value.kind.as_deref(),
+                value.type_.as_deref(),
                 value.from,
                 value.to,
                 value.value,
@@ -514,7 +514,7 @@ impl TryFrom<Trace> for EtherTrace {
                 value.address.clone(),
             )?,
             result: convert_result(
-                value.kind.as_deref(),
+                value.type_.as_deref(),
                 value.gas_used,
                 value.output,
                 value.code,
@@ -567,15 +567,15 @@ impl TryFrom<Trace> for EtherTrace {
                 ))?
                 .into(),
             action_type: value
-                .kind
-                .map(|kind| match kind.as_str() {
+                .type_
+                .map(|type_| match type_.as_str() {
                     "call" => ActionType::Call,
                     "create" => ActionType::Create,
                     "reward" => ActionType::Reward,
                     "suicide" => ActionType::Suicide,
                     _ => ActionType::Call,
                 })
-                .ok_or(ConversionError::MissingValue("Field `kind` is null".into()))?,
+                .ok_or(ConversionError::MissingValue("Field `type` is null".into()))?,
             error: value.error,
         })
     }
@@ -583,13 +583,13 @@ impl TryFrom<Trace> for EtherTrace {
 
 /// Extracts ethers result from hypersync Trace
 fn convert_result(
-    kind: Option<&str>,
+    type_: Option<&str>,
     gas_used: Option<Quantity>,
     output: Option<Data>,
     code: Option<Data>,
     address: Option<Address>,
 ) -> Result<Option<Res>, ConversionError> {
-    match kind {
+    match type_ {
         Some("call") => Ok(Some(Res::Call(CallResult {
             gas_used: gas_used
                 .ok_or(ConversionError::MissingValue(
@@ -627,7 +627,7 @@ fn convert_result(
                 .into(),
         }))),
         Some(_) => Err(ConversionError::ConvertError(
-            "Field `kind` is missing or unknown".into(),
+            "Field `type` is missing or unknown".into(),
         )),
         None => Ok(None),
     }
@@ -636,7 +636,7 @@ fn convert_result(
 /// Extracts ethers action from hypersync Trace
 #[allow(clippy::too_many_arguments)]
 fn convert_action(
-    kind: Option<&str>,
+    type_: Option<&str>,
     from: Option<Address>,
     to: Option<Address>,
     value: Option<Quantity>,
@@ -648,7 +648,7 @@ fn convert_action(
     reward_type: Option<String>,
     address: Option<Address>,
 ) -> Result<Action, ConversionError> {
-    match kind {
+    match type_ {
         Some("call") => Ok(Action::Call(Call {
             from: from
                 .ok_or(ConversionError::MissingValue("Field `from` is null".into()))?
@@ -753,7 +753,7 @@ fn convert_action(
             balance: U256::zero(),
         })),
         None | Some(_) => Err(ConversionError::MissingValue(
-            "Field `kind` is missing or unknown".into(),
+            "Field `type` is missing or unknown".into(),
         )),
     }
 }
