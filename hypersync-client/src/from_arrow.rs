@@ -335,6 +335,10 @@ impl FromArrow for Trace {
         let transaction_position = batch.column::<UInt64Array>("transaction_position").ok();
         let kind = batch.column::<U>("type").ok();
         let error = batch.column::<U>("error").ok();
+        let sighash = batch.column::<B>("sighash").ok();
+        let action_address = batch.column::<B>("action_address").ok();
+        let balance = batch.column::<B>("balance").ok();
+        let refund_address = batch.column::<B>("refund_address").ok();
 
         (0..batch.chunk.len())
             .map(|idx| Self {
@@ -360,6 +364,10 @@ impl FromArrow for Trace {
                 transaction_position: transaction_position.and_then(|arr| arr.get(idx)),
                 kind: kind.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
                 error: error.and_then(|arr| arr.get_idx(idx).map(|v| v.to_owned())),
+                sighash: map_binary(idx, sighash),
+                action_address: map_binary(idx, action_address),
+                balance: map_binary(idx, balance),
+                refund_address: map_binary(idx, refund_address),
             })
             .collect()
     }

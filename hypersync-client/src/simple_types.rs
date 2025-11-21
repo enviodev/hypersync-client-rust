@@ -7,7 +7,7 @@ use hypersync_format::{
     LogIndex, Nonce, Quantity, TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
 use hypersync_net_types::{
-    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection,
+    block::BlockField, log::LogField, trace::TraceField, transaction::TransactionField, FieldSelection,
 };
 use nohash_hasher::IntMap;
 use serde::{Deserialize, Serialize};
@@ -475,6 +475,14 @@ pub struct Trace {
     ///
     /// None if successful, Reverted if not.
     pub error: Option<String>,
+    /// 4-byte function signature hash for the trace
+    pub sighash: Option<Data>,
+    /// The action address for traces that create contracts
+    pub action_address: Option<Address>,
+    /// The balance associated with the trace operation
+    pub balance: Option<Quantity>,
+    /// The refund address for refund operations
+    pub refund_address: Option<Address>,
 }
 
 #[cfg(test)]
@@ -532,11 +540,115 @@ mod tests {
         }
     }
 
+    fn has_block_field(block: &Block, field: BlockField) -> bool {
+        match field {
+            BlockField::Number => block.number.is_none(),
+            BlockField::Hash => block.hash.is_none(),
+            BlockField::ParentHash => block.parent_hash.is_none(),
+            BlockField::Nonce => block.nonce.is_none(),
+            BlockField::Sha3Uncles => block.sha3_uncles.is_none(),
+            BlockField::LogsBloom => block.logs_bloom.is_none(),
+            BlockField::TransactionsRoot => block.transactions_root.is_none(),
+            BlockField::StateRoot => block.state_root.is_none(),
+            BlockField::ReceiptsRoot => block.receipts_root.is_none(),
+            BlockField::Miner => block.miner.is_none(),
+            BlockField::Difficulty => block.difficulty.is_none(),
+            BlockField::TotalDifficulty => block.total_difficulty.is_none(),
+            BlockField::ExtraData => block.extra_data.is_none(),
+            BlockField::Size => block.size.is_none(),
+            BlockField::GasLimit => block.gas_limit.is_none(),
+            BlockField::GasUsed => block.gas_used.is_none(),
+            BlockField::Timestamp => block.timestamp.is_none(),
+            BlockField::Uncles => block.uncles.is_none(),
+            BlockField::BaseFeePerGas => block.base_fee_per_gas.is_none(),
+            BlockField::BlobGasUsed => block.blob_gas_used.is_none(),
+            BlockField::ExcessBlobGas => block.excess_blob_gas.is_none(),
+            BlockField::ParentBeaconBlockRoot => block.parent_beacon_block_root.is_none(),
+            BlockField::WithdrawalsRoot => block.withdrawals_root.is_none(),
+            BlockField::Withdrawals => block.withdrawals.is_none(),
+            BlockField::L1BlockNumber => block.l1_block_number.is_none(),
+            BlockField::SendCount => block.send_count.is_none(),
+            BlockField::SendRoot => block.send_root.is_none(),
+            BlockField::MixHash => block.mix_hash.is_none(),
+        }
+    }
+
+    fn has_log_field(log: &Log, field: LogField) -> bool {
+        match field {
+            LogField::Removed => log.removed.is_none(),
+            LogField::LogIndex => log.log_index.is_none(),
+            LogField::TransactionIndex => log.transaction_index.is_none(),
+            LogField::TransactionHash => log.transaction_hash.is_none(),
+            LogField::BlockHash => log.block_hash.is_none(),
+            LogField::BlockNumber => log.block_number.is_none(),
+            LogField::Address => log.address.is_none(),
+            LogField::Data => log.data.is_none(),
+            LogField::Topic0 => log.topics.get(0).map_or(true, |t| t.is_none()),
+            LogField::Topic1 => log.topics.get(1).map_or(true, |t| t.is_none()),
+            LogField::Topic2 => log.topics.get(2).map_or(true, |t| t.is_none()),
+            LogField::Topic3 => log.topics.get(3).map_or(true, |t| t.is_none()),
+        }
+    }
+
+    fn has_trace_field(trace: &Trace, field: TraceField) -> bool {
+        match field {
+            TraceField::From => trace.from.is_none(),
+            TraceField::To => trace.to.is_none(),
+            TraceField::CallType => trace.call_type.is_none(),
+            TraceField::Gas => trace.gas.is_none(),
+            TraceField::Input => trace.input.is_none(),
+            TraceField::Init => trace.init.is_none(),
+            TraceField::Value => trace.value.is_none(),
+            TraceField::Author => trace.author.is_none(),
+            TraceField::RewardType => trace.reward_type.is_none(),
+            TraceField::BlockHash => trace.block_hash.is_none(),
+            TraceField::BlockNumber => trace.block_number.is_none(),
+            TraceField::Address => trace.address.is_none(),
+            TraceField::Code => trace.code.is_none(),
+            TraceField::GasUsed => trace.gas_used.is_none(),
+            TraceField::Output => trace.output.is_none(),
+            TraceField::Subtraces => trace.subtraces.is_none(),
+            TraceField::TraceAddress => trace.trace_address.is_none(),
+            TraceField::TransactionHash => trace.transaction_hash.is_none(),
+            TraceField::TransactionPosition => trace.transaction_position.is_none(),
+            TraceField::Type => trace.kind.is_none(),
+            TraceField::Error => trace.error.is_none(),
+            TraceField::Sighash => trace.sighash.is_none(),
+            TraceField::ActionAddress => trace.action_address.is_none(),
+            TraceField::Balance => trace.balance.is_none(),
+            TraceField::RefundAddress => trace.refund_address.is_none(),
+        }
+    }
+
     #[test]
     fn has_all_tx_fields() {
         let tx = Transaction::default();
         for field in TransactionField::all() {
             assert!(has_tx_field(&tx, field));
+        }
+    }
+
+    #[test]
+    fn has_all_block_fields() {
+        let block = Block::default();
+        for field in BlockField::all() {
+            assert!(has_block_field(&block, field));
+        }
+    }
+
+    #[test]
+    fn has_all_log_fields() {
+        let log = Log::default();
+        for field in LogField::all() {
+            assert!(has_log_field(&log, field));
+        }
+    }
+
+    #[test]
+    fn has_all_trace_fields() {
+        let trace = Trace::default();
+        for field in TraceField::all() {
+            assert!(has_trace_field(&trace, field));
         }
     }
 }
