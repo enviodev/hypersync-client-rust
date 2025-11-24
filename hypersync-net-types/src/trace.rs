@@ -16,6 +16,7 @@ impl From<TraceFilter> for AnyOf<TraceFilter> {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TraceFilter {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub from: Vec<Address>,
@@ -645,6 +646,7 @@ impl CapnpReader<hypersync_net_types_capnp::trace_filter::Owned> for TraceFilter
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TraceField {
     // Core trace fields
     TransactionHash,

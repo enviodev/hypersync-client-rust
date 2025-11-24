@@ -20,6 +20,23 @@ pub struct LogFilter {
     pub topics: ArrayVec<Vec<LogArgument>, 4>,
 }
 
+#[cfg(feature = "arbitrary")]
+impl<'input> arbitrary::Arbitrary<'input> for LogFilter {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'input>) -> arbitrary::Result<Self> {
+        let num_topics = u.arbitrary::<u8>()? % 4 + 1;
+        let mut topics = ArrayVec::<Vec<LogArgument>, 4>::new();
+        for _ in 0..num_topics {
+            topics.push(u.arbitrary()?);
+        }
+
+        Ok(Self {
+            address: u.arbitrary()?,
+            address_filter: u.arbitrary()?,
+            topics,
+        })
+    }
+}
+
 impl From<LogFilter> for AnyOf<LogFilter> {
     fn from(filter: LogFilter) -> Self {
         Self::new(filter)
@@ -435,6 +452,7 @@ impl CapnpReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum LogField {
     // Core log fields
     TransactionHash,
