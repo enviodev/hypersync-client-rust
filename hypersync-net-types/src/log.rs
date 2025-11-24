@@ -388,6 +388,13 @@ impl CapnpReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
         // Parse topics
         if reader.has_topics() {
             let topics_list = reader.get_topics()?;
+
+            if topics_list.len() > 4 {
+                return Err(capnp::Error::failed(
+                    "Topics list should not exceed 4 topics".to_string(),
+                ));
+            }
+
             for i in 0..topics_list.len() {
                 let topic_list = topics_list.get(i)?;
                 let mut topic_vec = Vec::new();
@@ -399,9 +406,8 @@ impl CapnpReader<hypersync_net_types_capnp::log_filter::Owned> for LogFilter {
                         topic_vec.push(LogArgument::from(topic_bytes));
                     }
                 }
-                if i < 4 && !topic_vec.is_empty() {
-                    topics.push(topic_vec);
-                }
+
+                topics.push(topic_vec);
             }
         }
 
@@ -512,10 +518,10 @@ impl LogField {
 
 #[cfg(test)]
 mod tests {
-    use hypersync_format::Hex;
-
     use super::*;
     use crate::{query::tests::test_query_serde, Query};
+    use hypersync_format::Hex;
+    use serde_json::json;
 
     #[test]
     fn test_all_fields_in_schema() {
@@ -622,5 +628,28 @@ mod tests {
         assert_eq!(lf.topics[0].len(), 1, "topic0 should not have been changed");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_log_filter_topic_configurations() {
+        fn check_log_filter_json(json: serde_json::Value) {
+            let lf: LogFilter = serde_json::from_value(json).unwrap();
+            println!("{lf:?}");
+            let mut message = capnp::message::Builder::new_default();
+            let mut lf_builder =
+                message.init_root::<hypersync_net_types_capnp::log_filter::Builder>();
+            lf.populate_builder(&mut lf_builder).unwrap();
+            let lf_reader = lf_builder.into_reader();
+            let read_lf: LogFilter = LogFilter::from_reader(lf_reader).unwrap();
+            assert_eq!(lf, read_lf);
+        }
+
+        const TOPIC: &str = "0x1234567890123456789012345678901234567890123456789012345678901234";
+
+        check_log_filter_json(json!({"topics": []}));
+        check_log_filter_json(json!({"topics": [[], [], [], []]}));
+        check_log_filter_json(json!({"topics": [[], [], [], []]}));
+        check_log_filter_json(json!({"topics": [[TOPIC], [], [], []]}));
+        check_log_filter_json(json!({"topics": [[], [], [TOPIC]]}));
     }
 }
