@@ -1624,8 +1624,8 @@ impl Client {
     ///     match event {
     ///         HeightStreamEvent::Connected => println!("Connected to stream"),
     ///         HeightStreamEvent::Height(h) => println!("Height: {}", h),
-    ///         HeightStreamEvent::Reconnecting { delay } => {
-    ///             println!("Reconnecting in {:?}...", delay)
+    ///         HeightStreamEvent::Reconnecting { delay, error_msg } => {
+    ///             println!("Reconnecting in {delay:?} due to error: {error_msg}")
     ///         }
     ///     }
     /// }
