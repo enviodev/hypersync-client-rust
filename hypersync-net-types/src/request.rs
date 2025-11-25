@@ -23,8 +23,10 @@ impl QueryId {
             capnp::Error::failed(format!("query body too large for u32: {num_words} words"))
         })?;
 
+        // Must account for the additional root pointer word
+        const ROOT_POINTER_WORDS: u32 = 1;
         let mut canon_builder = capnp::message::Builder::new(
-            HeapAllocator::new().first_segment_words(first_segment_words),
+            HeapAllocator::new().first_segment_words(first_segment_words + ROOT_POINTER_WORDS),
         );
         canon_builder.set_root_canonical(reader)?;
 
