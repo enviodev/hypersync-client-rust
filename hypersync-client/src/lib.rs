@@ -76,7 +76,6 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
-use hypersync_net_types::request::QueryId;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
 use reqwest::{header, Method};
@@ -827,10 +826,6 @@ impl Client {
                     message.init_root::<hypersync_net_types_capnp::request::Builder>();
 
                 request_builder.build_query_id_from_query(query)?;
-                println!(
-                    "query_with_id: {:?}",
-                    QueryId::from_query(query).context("get query id")?
-                );
                 let mut query_with_id = Vec::new();
                 capnp::serialize_packed::write_message(&mut query_with_id, &message)?;
                 query_with_id
@@ -864,7 +859,6 @@ impl Client {
                 hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
                     query_response,
                 ) => {
-                        println!("query was cached");
                     let res = tokio::task::block_in_place(|| {
                         let res = query_response?;
                         read_query_response(&res).context("parse query response cached")
@@ -872,7 +866,6 @@ impl Client {
                     return Ok((res, bytes.len().try_into().unwrap()));
                 }
                 hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
-                        println!("query was not cached, retrying with full query");
                     log::trace!("query was not cached, retrying with full query");
                 }
             }
