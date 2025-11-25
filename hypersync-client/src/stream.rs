@@ -17,6 +17,7 @@ use polars_arrow::{
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
+use crate::util::{decode_traces_batch, filter_reverted_rows};
 use crate::{
     config::HexOutput,
     rayon_async,
@@ -255,6 +256,28 @@ async fn map_responses(
                                         decode_logs_batch(sig, batch).context("decode logs")?;
                                     map_batch(
                                         cfg.column_mapping.as_ref().map(|cm| &cm.decoded_log),
+                                        cfg.hex_output,
+                                        batch,
+                                        reverse,
+                                    )
+                                    .context("map batch")
+                                })
+                                .collect::<Result<Vec<_>>>()?,
+                            None => Vec::new(),
+                        },
+                        decoded_traces: match cfg.trace_signature.as_ref() {
+                            Some(sig) => resp
+                                .data
+                                .traces
+                                .iter()
+                                .map(|batch| {
+                                    // filter out "Reverted" rows
+                                    let batch = filter_reverted_rows(batch).context("filter reverted traces")?;
+                                    // decode the traces
+                                    let batch = decode_traces_batch(sig, &batch)
+                                        .context("decode traces")?;
+                                    map_batch(
+                                        cfg.column_mapping.as_ref().map(|cm| &cm.decoded_trace),
                                         cfg.hex_output,
                                         batch,
                                         reverse,

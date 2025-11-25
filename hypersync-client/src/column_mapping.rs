@@ -37,6 +37,9 @@ pub struct ColumnMapping {
     /// Mapping for decoded log data.
     #[serde(default)]
     pub decoded_log: BTreeMap<String, DataType>,
+    /// Mapping for decoded trace data.
+        #[serde(default)]
+        pub decoded_trace: BTreeMap<String, DataType>,
 }
 
 #[allow(missing_docs)]

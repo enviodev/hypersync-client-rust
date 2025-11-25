@@ -84,6 +84,7 @@ pub fn read_query_response(
             logs,
             traces,
             decoded_logs: Vec::new(),
+            decoded_traces: Vec::new(),
         },
         rollback_guard,
     })

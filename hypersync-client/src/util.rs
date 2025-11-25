@@ -1,7 +1,8 @@
 use std::sync::Arc;
-
-use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier};
-use alloy_json_abi::EventParam;
+use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier };
+use alloy_json_abi::{EventParam, Param};
+use polars_arrow::array::UInt64Array;
+use polars_arrow::datatypes::ArrowDataType;
 use anyhow::{anyhow, Context, Result};
 use hypersync_schema::empty_chunk;
 use polars_arrow::{
@@ -177,6 +178,115 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
 
     let mut cols = topic_cols;
     cols.extend_from_slice(&body_cols);
+
+    let chunk = Arc::new(ArrowChunk::try_new(cols).context("create arrow chunk")?);
+
+    Ok(ArrowBatch {
+        chunk,
+        schema: Arc::new(schema),
+    })
+}
+
+pub fn decode_traces_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
+    let sig = alloy_json_abi::Function::parse(sig).context("parse function signature")?;
+
+    let schema = schema_from_function_signature(&sig)
+        .context("build arrow schema from function signature")?;
+    if batch.chunk.is_empty() {
+        return Ok(ArrowBatch {
+            chunk: Arc::new(empty_chunk(&schema)),
+            schema: Arc::new(schema),
+        });
+    }
+
+    let function = sig
+        .resolve()
+        .context("resolve signature into function call")?;
+
+    let input_cols = {
+        let input_data = batch
+            .column::<BinaryArray<i32>>("input")
+            .context("get input column")?;
+
+        //Parameter Decoding:
+        let decoded_inputs = input_data
+        .values_iter()
+        .map(|input_bytes| {
+            if input_bytes.len() < 4 {
+                return Ok(None::<Vec<DynSolValue>>);
+            }
+            // Skip function selector (first 4 bytes)
+            let input_data = &input_bytes[4..];
+
+            match function.abi_decode_input(input_data, true) {
+                Ok(decoded) => Ok(Some(decoded)),
+                Err(e) => {
+                    log::trace!(
+                            "failed to decode trace input, will write null instead. Error was: {:?}",
+                            e
+                        );
+                    Ok(None)
+                }
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+        // Create a column for each input parameter
+        sig.inputs
+            .iter()
+            .enumerate()
+            .map(|(i, param)| {
+                decode_body_col(
+                    decoded_inputs
+                        .iter()
+                        .map(|t| t.as_ref().map(|t| t.get(i).unwrap())),
+                    &DynSolType::parse(&param.ty).context("parse parameter type")?,
+                )
+                .context("decode input parameter")
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    // Decode outputs
+    let output_cols = {
+        let output_data = batch
+            .column::<BinaryArray<i32>>("output")
+            .context("get output column")?;
+
+        let decoded_outputs = output_data
+        .values_iter()
+        .map(|output_bytes| {
+            match function.abi_decode_output(output_bytes, true) {
+                Ok(decoded) => Ok(Some(decoded)),
+                Err(e) => {
+                    log::trace!(
+                            "failed to decode trace output, will write null instead. Error was: {:?}",
+                            e
+                        );
+                    Ok(None)
+                }
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+        sig.outputs
+            .iter()
+            .enumerate()
+            .map(|(i, param)| {
+                decode_body_col(
+                    decoded_outputs
+                        .iter()
+                        .map(|t| t.as_ref().map(|t| t.get(i).unwrap())),
+                    &DynSolType::parse(&param.ty).context("parse parameter type")?,
+                )
+                .context("decode output parameter")
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    // Combine input and output columns
+    let mut cols = input_cols;
+    cols.extend(output_cols);
 
     let chunk = Arc::new(ArrowChunk::try_new(cols).context("create arrow chunk")?);
 
@@ -383,9 +493,60 @@ fn schema_from_event_signature(sig: &alloy_json_abi::Event) -> Result<Schema> {
     Ok(Schema::from(fields))
 }
 
+fn schema_from_function_signature(sig: &alloy_json_abi::Function) -> Result<Schema> {
+    let dyn_sol_call = sig.resolve().context("resolve signature into function")?;
+
+    let mut fields: Vec<Field> = Vec::new();
+
+    for (input, resolved_type) in sig.inputs.iter().zip(dyn_sol_call.types()) {
+        fields.push(
+            signature_to_function_field(&fields, input, resolved_type).context("process input")?,
+        );
+    }
+
+    // Add output fields
+    for (output, resolved_type) in sig.outputs.iter().zip(dyn_sol_call.returns().types()) {
+        fields.push(
+            signature_to_function_field(&fields, output, resolved_type)
+                .context("process output")?,
+        );
+    }
+
+    Ok(Schema::from(fields))
+}
+
 fn signature_input_to_field(
     fields: &[Field],
     input: &EventParam,
+    resolved_type: &DynSolType,
+) -> Result<Field> {
+    if input.name.is_empty() {
+        return Err(anyhow!("empty param names are not supported"));
+    }
+
+    if fields
+        .iter()
+        .any(|f| f.name.as_str() == input.name.as_str())
+    {
+        return Err(anyhow!("duplicate param name: {}", input.name));
+    }
+
+    let ty = DynSolType::parse(&input.ty).context("parse solidity type")?;
+
+    if &ty != resolved_type {
+        return Err(anyhow!(
+            "Internal error: Parsed type doesn't match resolved type. This should never happen."
+        ));
+    }
+
+    let dt = simple_type_to_data_type(&ty).context("convert simple type to arrow datatype")?;
+
+    Ok(Field::new(input.name.clone(), dt, true))
+}
+
+fn signature_to_function_field(
+    fields: &[Field],
+    input: &Param,
     resolved_type: &DynSolType,
 ) -> Result<Field> {
     if input.name.is_empty() {
@@ -473,6 +634,75 @@ pub fn map_batch_to_binary_view(batch: ArrowBatch) -> ArrowBatch {
         chunk: Arc::new(ArrowChunk::new(cols)),
         schema: Arc::new(schema),
     }
+}
+
+pub  fn filter_reverted_rows(batch: &ArrowBatch) -> Result<ArrowBatch>{
+    let error = batch.column::<Utf8Array<i32>>("error").context("failed to get error column")?;
+    // Create a mask based on the "error" column where "Reverted" values are excluded
+    let mask: Vec<bool> = (0..error.len())
+        .map(|idx| {
+            match error.get(idx) {
+                None => true,    // will return true when the value is None, indicating that the row should be kept
+                Some(value) => value != "Reverted",  //will return false when the value is Some("Reverted") indicating the row should be removed  OR return true for any othe Some value
+            }
+        })
+        .collect();
+
+    let filtered_columns : Result<Vec<Box<dyn Array>>>= batch
+        .schema
+        .fields
+        .iter()
+        .zip(batch.chunk.columns().as_ref())
+        .map(|(field, col)| {
+            match field.data_type() {
+                ArrowDataType::Binary => {
+                    let typed_column = col
+                        .as_any()
+                        .downcast_ref::<BinaryArray<i32>>()
+                        .context("failed to downcast to BinaryArray")?;
+                    let filtered = typed_column
+                        .iter()
+                        .zip(mask.iter())
+                        .filter(|(_, &keep)| keep)
+                        .map(|(value, _)| value)
+                        .collect::<BinaryArray<i32>>();
+                    Ok(Box::new(filtered) as Box<dyn Array>)
+                },
+                ArrowDataType::UInt64 => {
+                    let typed_column = col
+                        .as_any()
+                        .downcast_ref::<UInt64Array>()
+                        .context("failed to downcast to UInt64Array")?;
+                    let filtered = typed_column
+                        .iter()
+                        .zip(mask.iter())
+                        .filter(|(_, &keep)| keep)
+                        .map(|(value, _)| value.copied())
+                        .collect::<UInt64Array>();
+                    Ok(Box::new(filtered) as Box<dyn Array>)
+                },
+                ArrowDataType::Utf8 => {
+                    let typed_column = col
+                        .as_any()
+                        .downcast_ref::<Utf8Array<i32>>()
+                        .context("failed to downcast to Utf8Array")?;
+                    let filtered = typed_column
+                        .iter()
+                        .zip(mask.iter())
+                        .filter(|(_, &keep)| keep)
+                        .map(|(value, _)| value)
+                        .collect::<Utf8Array<i32>>();
+                    Ok(Box::new(filtered) as Box<dyn Array>)
+                },
+                dt=> Err(anyhow!("unsupported datatype : {:?}", dt)),
+            }
+        }).collect();
+
+    // Create new RecordBatch with filtered columns
+    let filtered_columns = filtered_columns.context("filter reverted columns")?;
+
+    let chunk = Arc::new(ArrowChunk::try_new(filtered_columns).context("reverted chunk")?);
+    Ok(ArrowBatch { chunk, schema: batch.schema.clone() })
 }
 
 #[cfg(test)]
