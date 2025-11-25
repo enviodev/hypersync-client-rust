@@ -1436,6 +1436,8 @@ pub enum HeightStreamEvent {
     Reconnecting {
         /// Duration to wait before attempting reconnection.
         delay: Duration,
+        /// The error that caused the reconnection.
+        error_msg: String,
     },
 }
 
@@ -1551,6 +1553,8 @@ impl Client {
             // something is wrong with the req builder otherwise
             let mut es = self.get_es_stream().context("get es stream")?;
 
+            let mut error = anyhow!("");
+
             match Self::stream_height_events(&mut es, tx).await {
                 Ok(received_an_event) => {
                     if received_an_event {
@@ -1560,6 +1564,7 @@ impl Client {
                 }
                 Err(e) => {
                     log::trace!("Stream height failed: {e:?}");
+                    error = e;
                 }
             }
 
@@ -1573,8 +1578,10 @@ impl Client {
             let delay = Self::get_delay(consecutive_failures);
             log::trace!("Reconnecting in {:?}...", delay);
 
+            let error_msg = format!("{error:?}");
+
             if tx
-                .send(HeightStreamEvent::Reconnecting { delay })
+                .send(HeightStreamEvent::Reconnecting { delay, error_msg })
                 .await
                 .is_err()
             {
