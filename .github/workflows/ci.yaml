@@ -25,10 +25,6 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
-      - name: Install Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
       - name: Check Rust version
         run: |
           rustc --version
@@ -48,10 +44,6 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
-      - name: Install Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
       - name: Check Rust version
         run: |
           rustc --version
@@ -72,10 +64,6 @@ jobs:
           components: rustfmt, clippy
           override: true
       - uses: Swatinem/rust-cache@v2
-      - name: Install Dependencies
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
       - name: Check Rust version
         run: |
           rustc --version
@@ -85,3 +73,22 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy -- -Dwarnings
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+      - name: Run fuzz tests
+        run: |
+          cd fuzz
+          cargo fuzz run format_serde_json -- -max_total_time=5
+          # TODO: fix bincode, currently has failing case but not used
+          # cargo fuzz run format_serde_bincode -- -max_total_time=5
+          cargo fuzz run net_types_serde_capnp -- -max_total_time=5

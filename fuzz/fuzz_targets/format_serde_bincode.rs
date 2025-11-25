@@ -15,13 +15,13 @@ struct Input {
 
 // Test if roundtripping the data through bincode produces same results
 fuzz_target!(|data: Input| {
-    let bin = bincode::serialize(&data).unwrap();
+    let bin = bincode::serialize(&data).expect("should serialize");
 
-    let out: Input = bincode::deserialize(&bin).unwrap();
+    let out: Input = bincode::deserialize(&bin).expect("should deserialize");
 
-    assert_eq!(out, data);
+    assert_eq!(out, data, "deserialized data should match original");
 
-    let out_bin = bincode::serialize(&out).unwrap();
+    let out_bin = bincode::serialize(&out).expect("should serialize again");
 
-    assert_eq!(&bin, &out_bin);
+    assert_eq!(&bin, &out_bin, "reserialized should match bin");
 });
