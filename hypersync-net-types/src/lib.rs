@@ -74,6 +74,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::AnyOf;
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Selection<T> {
     /// Filters where matching values should be included in the response
     /// Default::default() means include everything

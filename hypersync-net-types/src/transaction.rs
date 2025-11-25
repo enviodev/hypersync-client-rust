@@ -8,6 +8,7 @@ use hypersync_format::{Address, FilterWrapper, Hash};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AuthorizationSelection {
     /// List of chain ids to match in the transaction authorizationList
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -127,6 +128,7 @@ impl From<TransactionFilter> for AnyOf<TransactionFilter> {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TransactionFilter {
     /// Address the transaction should originate from. If transaction.from matches any of these, the transaction
     /// will be returned. Keep in mind that this has an and relationship with to filter, so each transaction should
@@ -910,6 +912,7 @@ impl CapnpReader<hypersync_net_types_capnp::transaction_filter::Owned> for Trans
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TransactionField {
     // Non-nullable fields (required)
     BlockHash,

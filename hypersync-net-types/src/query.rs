@@ -140,6 +140,7 @@ use std::collections::BTreeSet;
 ///     .select_block_fields(BlockField::all());
 /// ```
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Query {
     /// The block to start the query from
     pub from_block: u64,
@@ -205,6 +206,7 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Copy)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum JoinMode {
     /// Join in this order logs -> transactions -> traces -> blocks
     #[default]
@@ -813,6 +815,7 @@ impl Query {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FieldSelection {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub block: BTreeSet<BlockField>,
@@ -1212,6 +1215,7 @@ pub mod tests {
     use super::*;
     use capnp::message::{Builder, ReaderOptions};
     use pretty_assertions::assert_eq;
+    use serde_json::json;
 
     pub fn test_query_serde(query: Query, label: &str) {
         fn test_encode_decode<T: PartialEq + std::fmt::Debug>(
@@ -1310,5 +1314,36 @@ pub mod tests {
             join_mode: JoinMode::JoinAll,
         };
         test_query_serde(query, "base query with_non_null_values");
+    }
+
+    #[test]
+    pub fn test_query_serde_with_empty_topics() {
+        let query_json = json!({
+        "from_block": 0,
+        "logs": [
+          {
+            "address": ["0x000000000000aDdB49795b0f9bA5BC298cDda236"],
+            "topics": [
+              [
+                "0x2150ada912bf189ed721c44211199e270903fc88008c2a1e1e889ef30fe67c5f",
+              ],
+              [],
+              [],
+              [],
+            ],
+          }
+        ]
+            });
+        let query: Query = serde_json::from_value(query_json).unwrap();
+
+        let mut message = Builder::new_default();
+        let mut request_builder =
+            message.init_root::<hypersync_net_types_capnp::request::Builder>();
+        request_builder
+            .build_full_query_from_query(&query, true)
+            .unwrap();
+
+        let read_query = Query::from_reader(request_builder.into_reader()).unwrap();
+        assert_eq!(query, read_query);
     }
 }

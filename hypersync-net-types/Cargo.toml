@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-net-types"
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 description = "hypersync types for transport over network"
 license = "MPL-2.0"
@@ -9,13 +9,13 @@ license = "MPL-2.0"
 capnp = "0.23"
 serde = { version = "1", features = ["derive"] }
 arrayvec = { version = "0.7", features = ["serde"] }
-
 hypersync-format = { path = "../hypersync-format", version = "0.6.0" }
 schemars = "1.0.4"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 anyhow = "1.0.100"
 xxhash-rust = "0.8.15"
+arbitrary = { version = "1.4.2", optional = true, features = ["derive"] }
 
 [dev-dependencies]
 hypersync-schema = { path = "../hypersync-schema" }
@@ -26,6 +26,9 @@ flate2 = "1.1.5"
 lz4_flex = "0.11.5"
 zstd = "0.13.3"
 tabled = "0.20.0"
+
+[features]
+arbitrary = ["dep:arbitrary"]
 
 [[bench]]
 name = "compression"

@@ -13,6 +13,7 @@ impl From<BlockFilter> for AnyOf<BlockFilter> {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BlockFilter {
     /// Hash of a block, any blocks that have one of these hashes will be returned.
     /// Empty means match all.
@@ -258,6 +259,7 @@ impl CapnpBuilder<hypersync_net_types_capnp::block_filter::Owned> for BlockFilte
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum BlockField {
     // Non-nullable fields (required)
     Number,
