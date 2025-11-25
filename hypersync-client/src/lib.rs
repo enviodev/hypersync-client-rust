@@ -76,7 +76,6 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
-use hypersync_format::Hex;
 use hypersync_net_types::request::QueryId;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
