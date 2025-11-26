@@ -77,7 +77,6 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
-use polars_arrow::{array::Array, record_batch::RecordBatchT as Chunk};
 use reqwest::{header, Method};
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
@@ -113,12 +112,10 @@ pub use config::HexOutput;
 pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
-pub use types::{ArrowBatch, ArrowResponse, ArrowResponseData, QueryResponse};
+pub use types::{ArrowResponse, ArrowResponseData, QueryResponse};
 
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
-
-type ArrowChunk = Chunk<Box<dyn Array>>;
 
 /// Internal client state to handle http requests and retries.
 #[derive(Debug)]

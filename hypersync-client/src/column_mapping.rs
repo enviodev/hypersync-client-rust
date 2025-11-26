@@ -1,22 +1,15 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_primitives::I256;
 use anyhow::{anyhow, Context, Result};
-use hypersync_schema::ArrowChunk;
-use polars_arrow::array::{
-    Array, BinaryArray, Float32Array, Float64Array, Int128Array, Int256Array, Int256Vec,
-    Int32Array, Int64Array, MutablePrimitiveArray, MutableUtf8Array, PrimitiveArray, UInt32Array,
-    UInt64Array, Utf8Array,
+use arrow::{
+    array::{Array, ArrayRef, BinaryArray, Float64Array, RecordBatch},
+    compute,
+    datatypes::{DataType as ArrowDataType, Field, Schema},
 };
-use polars_arrow::compute::cast::CastOptionsImpl as CastOptions;
-use polars_arrow::compute::{self, cast};
-use polars_arrow::datatypes::{ArrowDataType, ArrowSchema as Schema, Field};
-use polars_arrow::types::{i256 as Decimal, NativeType};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
 use serde::{Deserialize, Serialize};
-
-use crate::ArrowBatch;
 
 /// Column mapping for stream function output.
 /// It lets you map columns you want into the DataTypes you want.
@@ -73,9 +66,9 @@ impl From<DataType> for ArrowDataType {
 }
 
 pub fn apply_to_batch(
-    batch: &ArrowBatch,
+    batch: &RecordBatch,
     mapping: &BTreeMap<String, DataType>,
-) -> Result<ArrowBatch> {
+) -> Result<RecordBatch> {
     if mapping.is_empty() {
         return Ok(batch.clone());
     }
@@ -84,11 +77,11 @@ pub fn apply_to_batch(
         .chunk
         .columns()
         .par_iter()
-        .zip(batch.schema.fields.par_iter())
+        .zip(batch.schema().fields().par_iter())
         .map(|(col, field)| {
-            let col = match mapping.get(&field.name) {
+            let col = match mapping.get(field.name()) {
                 Some(&dt) => {
-                    if field.name == "l1_fee_scalar" {
+                    if field.name() == "l1_fee_scalar" {
                         map_l1_fee_scalar(&**col, dt)
                             .context(format!("apply cast to column '{}'", field.name))?
                     } else {
@@ -110,37 +103,22 @@ pub fn apply_to_batch(
         })
         .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
-    Ok(ArrowBatch {
-        chunk: ArrowChunk::new(cols).into(),
-        schema: Schema::from(fields).into(),
-    })
+    let schema = Arc::new(Schema::new(fields));
+
+    Ok(RecordBatch::try_new(schema, cols).unwrap())
 }
 
-pub fn map_l1_fee_scalar(
-    col: &dyn Array,
-    target_data_type: DataType,
-) -> Result<Box<dyn Array + 'static>> {
-    let col = col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap();
+pub fn map_l1_fee_scalar(col: &dyn Array, target_data_type: DataType) -> Result<ArrayRef> {
+    let col = col.as_any().downcast_ref::<BinaryArray>().unwrap();
     let col = Float64Array::from_iter(
         col.iter()
             .map(|v| v.map(|v| std::str::from_utf8(v).unwrap().parse().unwrap())),
     );
 
-    let arr = compute::cast::cast(
-        &*to_box(col),
-        &target_data_type.into(),
-        CastOptions {
-            wrapped: false,
-            partial: false,
-        },
-    )
-    .with_context(|| anyhow!("failed to l1_fee_scalar to {:?}", target_data_type))?;
+    let arr = compute::cast(&col, &target_data_type)
+        .with_context(|| anyhow!("failed to l1_fee_scalar to {:?}", target_data_type))?;
 
     Ok(arr)
-}
-
-fn to_box<T: Array>(arr: T) -> Box<dyn Array> {
-    Box::new(arr)
 }
 
 fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Array + 'static>> {
