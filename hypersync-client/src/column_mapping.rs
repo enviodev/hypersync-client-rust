@@ -90,7 +90,7 @@ pub fn apply_to_batch(
                             .context(format!("apply cast to column '{}'", field.name()))?
                     } else {
                         map_column(&**col, dt)
-                            .context(format!("apply cast to colum '{}'", field.name()))?
+                            .context(format!("apply cast to column '{}'", field.name()))?
                     }
                 }
                 None => col.clone(),
