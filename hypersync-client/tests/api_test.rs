@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
+use arrow::{array::AsArray, datatypes::UInt64Type};
 use hypersync_client::{
     preset_query, simple_types::Transaction, Client, ColumnMapping, SerializationFormat,
     StreamConfig,
@@ -10,7 +11,6 @@ use hypersync_net_types::{
     block::BlockField, log::LogField, transaction::TransactionField, FieldSelection, LogSelection,
     Query, TransactionFilter, TransactionSelection,
 };
-use polars_arrow::array::UInt64Array;
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
@@ -93,10 +93,18 @@ async fn test_api_arrow_ipc_ordering() {
 
     let mut last = (0, 0);
     for batch in res.data.logs {
-        let block_number = batch.column::<UInt64Array>("block_number").unwrap();
-        let log_index = batch.column::<UInt64Array>("log_index").unwrap();
+        let block_number = batch
+            .column_by_name("block_number")
+            .unwrap()
+            .as_primitive::<UInt64Type>();
+        let log_index = batch
+            .column_by_name("log_index")
+            .unwrap()
+            .as_primitive::<UInt64Type>();
 
-        for (&block_number, &log_index) in block_number.values_iter().zip(log_index.values_iter()) {
+        for (block_number, log_index) in block_number.iter().zip(log_index.iter()) {
+            let block_number = block_number.unwrap();
+            let log_index = log_index.unwrap();
             let number = (block_number, log_index);
             assert!(last < number, "last: {:?};number: {:?};", last, number);
             last = number;
@@ -166,7 +174,7 @@ async fn test_api_decode_logs() {
 
     dbg!(res.data.logs);
 
-    assert_eq!(decoded_logs[0].chunk.len(), 1);
+    assert_eq!(decoded_logs[0].num_rows(), 1);
 
     println!("{:?}", decoded_logs[0]);
 }
@@ -340,13 +348,13 @@ async fn test_api_preset_query_blocks_and_transactions() {
         .data
         .blocks
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
     let num_txs: usize = res
         .data
         .transactions
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert_eq!(res.next_block, 18_000_010);
@@ -369,13 +377,13 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
         .data
         .blocks
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
     let num_txs: usize = res
         .data
         .transactions
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert_eq!(res.next_block, 18_000_010);
@@ -400,7 +408,7 @@ async fn test_api_preset_query_logs() {
         .data
         .logs
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert_eq!(res.next_block, 18_000_010);
@@ -430,7 +438,7 @@ async fn test_api_preset_query_logs_of_event() {
         .data
         .logs
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert_eq!(res.next_block, 18_000_010);
@@ -452,7 +460,7 @@ async fn test_api_preset_query_transactions() {
         .data
         .transactions
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert_eq!(res.next_block, 18_000_010);
@@ -478,7 +486,7 @@ async fn test_api_preset_query_transactions_from_address() {
         .data
         .transactions
         .into_iter()
-        .map(|batch| batch.chunk.len())
+        .map(|batch| batch.num_rows())
         .sum();
 
     assert!(res.next_block == 19_300_000);
