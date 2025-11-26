@@ -1,60 +1,8 @@
 //! # HyperSync Schema
 //!
-//! Apache Arrow schemas and data transformation utilities for the HyperSync protocol.
-//!
-//! This crate provides the Arrow schema definitions and data transformation
-//! utilities used by HyperSync for high-performance columnar data processing.
-//! It bridges the gap between HyperSync's native data formats and Apache Arrow.
-//!
-//! ## Features
-//!
-//! - **Arrow schemas**: Predefined schemas for blocks, transactions, logs, and traces
-//! - **Data transformation**: Utilities for converting between formats
-//! - **High performance**: Optimized columnar data operations
-//! - **Schema projection**: Select only needed columns for memory efficiency
-//!
-//! ## Key Functions
-//!
-//! - [`block_schema()`] - Get Arrow schema for block data
-//! - [`transaction_schema()`] - Get Arrow schema for transaction data  
-//! - [`log_schema()`] - Get Arrow schema for log/event data
-//! - [`trace_schema()`] - Get Arrow schema for trace data
-//! - [`project_schema()`] - Project schema to subset of columns
-//! - [`concat_chunks()`] - Efficiently concatenate Arrow chunks
-//!
-//! ## Example
-//!
-//! ```
-//! use hypersync_schema::{transaction, log, project_schema};
-//! use std::collections::BTreeSet;
-//!
-//! // Get schema for transaction data
-//! let tx_schema = transaction();
-//! println!("Transaction schema has {} fields", tx_schema.fields.len());
-//!
-//! // Get schema for log data  
-//! let log_schema = log();
-//! println!("Log schema has {} fields", log_schema.fields.len());
-//!
-//! // Project to subset of fields
-//! let fields: BTreeSet<String> = ["hash", "from"].iter().map(|s| s.to_string()).collect();
-//! let projected = project_schema(&tx_schema, &fields);
-//! println!("Projected schema has {} fields", projected.fields.len());
-//! ```
+//! Apache Arrow schemas for the HyperSync protocol.
 
-use std::sync::Arc;
-
-use anyhow::{anyhow, Context, Result};
-use polars_arrow::array::{new_empty_array, Array, BinaryArray, Utf8Array};
-use polars_arrow::compute;
-use polars_arrow::datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field, SchemaRef};
-use polars_arrow::record_batch::RecordBatchT as Chunk;
-
-mod util;
-
-pub use util::project_schema;
-
-pub type ArrowChunk = Chunk<Box<dyn Array>>;
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 
 fn hash_dt() -> DataType {
     DataType::BinaryView
@@ -71,7 +19,7 @@ fn quantity_dt() -> DataType {
 const NULLABLE: bool = true;
 
 pub fn block_header() -> SchemaRef {
-    Schema::from(vec![
+    Schema::new(vec![
         Field::new("number", DataType::UInt64, !NULLABLE),
         Field::new("hash", hash_dt(), !NULLABLE),
         Field::new("parent_hash", hash_dt(), !NULLABLE),
@@ -105,7 +53,7 @@ pub fn block_header() -> SchemaRef {
 }
 
 pub fn transaction() -> SchemaRef {
-    Schema::from(vec![
+    Schema::new(vec![
         Field::new("block_hash", hash_dt(), !NULLABLE),
         Field::new("block_number", DataType::UInt64, !NULLABLE),
         Field::new("from", addr_dt(), NULLABLE),
@@ -157,7 +105,7 @@ pub fn transaction() -> SchemaRef {
 }
 
 pub fn log() -> SchemaRef {
-    Schema::from(vec![
+    Schema::new(vec![
         Field::new("removed", DataType::Boolean, NULLABLE),
         Field::new("log_index", DataType::UInt64, !NULLABLE),
         Field::new("transaction_index", DataType::UInt64, !NULLABLE),
@@ -175,7 +123,7 @@ pub fn log() -> SchemaRef {
 }
 
 pub fn trace() -> SchemaRef {
-    Schema::from(vec![
+    Schema::new(vec![
         Field::new("from", addr_dt(), NULLABLE),
         Field::new("to", addr_dt(), NULLABLE),
         Field::new("call_type", DataType::Utf8View, NULLABLE),
@@ -205,66 +153,6 @@ pub fn trace() -> SchemaRef {
     .into()
 }
 
-pub fn concat_chunks(chunks: &[Arc<ArrowChunk>]) -> Result<ArrowChunk> {
-    if chunks.is_empty() {
-        return Err(anyhow!("can't concat 0 chunks"));
-    }
-
-    let num_cols = chunks[0].columns().len();
-
-    let cols = (0..num_cols)
-        .map(|col| {
-            let mut is_utf8 = false;
-            let arrs = chunks
-                .iter()
-                .map(|chunk| {
-                    let col = chunk
-                        .columns()
-                        .get(col)
-                        .map(|col| col.as_ref())
-                        .context("get column")?;
-                    is_utf8 = col.data_type() == &DataType::Utf8;
-                    Ok(col)
-                })
-                .collect::<Result<Vec<_>>>()?;
-            if !is_utf8 {
-                compute::concatenate::concatenate(&arrs).context("concat arrays")
-            } else {
-                let arrs = arrs
-                    .into_iter()
-                    .map(|a| {
-                        a.as_any()
-                            .downcast_ref::<Utf8Array<i32>>()
-                            .unwrap()
-                            .to_binary()
-                            .boxed()
-                    })
-                    .collect::<Vec<_>>();
-                let arrs = arrs.iter().map(|a| a.as_ref()).collect::<Vec<_>>();
-                let arr =
-                    compute::concatenate::concatenate(arrs.as_slice()).context("concat arrays")?;
-
-                Ok(compute::cast::binary_to_utf8(
-                    arr.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-                    DataType::Utf8,
-                )
-                .unwrap()
-                .boxed())
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(ArrowChunk::new(cols))
-}
-
-pub fn empty_chunk(schema: &Schema) -> ArrowChunk {
-    let mut cols = Vec::new();
-    for field in schema.fields.iter() {
-        cols.push(new_empty_array(field.data_type().clone()));
-    }
-    ArrowChunk::new(cols)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,30 +163,5 @@ mod tests {
         transaction();
         log();
         trace();
-    }
-
-    #[test]
-    fn test_concat_utf8() {
-        let chunks = [
-            Arc::new(Chunk::new(vec![Utf8Array::<i32>::from(&[Some(
-                "hello".to_owned(),
-            )])
-            .boxed()])),
-            Arc::new(Chunk::new(vec![Utf8Array::<i32>::from(&[Some(
-                "world".to_owned(),
-            )])
-            .boxed()])),
-        ];
-
-        let out = concat_chunks(&chunks).unwrap();
-
-        assert_eq!(
-            out,
-            ArrowChunk::new(vec![Utf8Array::<i32>::from(&[
-                Some("hello".to_owned()),
-                Some("world".to_owned())
-            ])
-            .boxed(),])
-        )
     }
 }

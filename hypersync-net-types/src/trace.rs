@@ -792,7 +792,7 @@ mod tests {
         let schema_fields = schema
             .fields
             .iter()
-            .map(|f| f.name.clone())
+            .map(|f| f.name().clone())
             .collect::<std::collections::BTreeSet<_>>();
         let all_fields = TraceField::all()
             .into_iter()

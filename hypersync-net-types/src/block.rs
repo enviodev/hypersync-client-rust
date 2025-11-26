@@ -424,7 +424,7 @@ mod tests {
         let schema_fields = schema
             .fields
             .iter()
-            .map(|f| f.name.clone())
+            .map(|f| f.name().clone())
             .collect::<BTreeSet<_>>();
         let all_fields = BlockField::all()
             .into_iter()
