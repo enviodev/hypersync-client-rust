@@ -109,7 +109,7 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
         let decoded_tuples = data
             .iter()
             .map(|opt| {
-                let val = opt.unwrap();
+                let val = opt.unwrap_or(b"");
                 let tuple = tuple_decoder
                     .abi_decode_sequence(val)
                     .context("decode body tuple")
