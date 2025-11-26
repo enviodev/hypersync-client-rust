@@ -92,8 +92,6 @@ pub mod preset_query;
 mod rayon_async;
 pub mod simple_types;
 mod stream;
-#[cfg(feature = "ethers")]
-pub mod to_ethers;
 mod types;
 mod util;
 

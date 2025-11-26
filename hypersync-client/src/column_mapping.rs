@@ -3,9 +3,14 @@ use std::{collections::BTreeMap, sync::Arc};
 use alloy_primitives::I256;
 use anyhow::{anyhow, Context, Result};
 use arrow::{
-    array::{Array, ArrayRef, BinaryArray, Float64Array, RecordBatch},
+    array::{
+        Array, ArrayRef, ArrowPrimitiveType, AsArray, BinaryArray, Decimal128Array,
+        Decimal256Array, Decimal256Builder, Float32Array, Float64Array, Int32Array, Int64Array,
+        PrimitiveArray, PrimitiveBuilder, RecordBatch, StringArray, StringBuilder, UInt32Array,
+        UInt64Array,
+    },
     compute,
-    datatypes::{DataType as ArrowDataType, Field, Schema},
+    datatypes::{i256, DataType as ArrowDataType, Field, Schema},
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
@@ -60,7 +65,7 @@ impl From<DataType> for ArrowDataType {
             DataType::Int32 => Self::Int32,
             DataType::IntStr => Self::Utf8,
             DataType::Decimal256 => Self::Decimal256(76, 0),
-            DataType::Decimal128 => Self::Decimal(38, 0),
+            DataType::Decimal128 => Self::Decimal128(38, 0),
         }
     }
 }
@@ -74,7 +79,6 @@ pub fn apply_to_batch(
     }
 
     let (fields, cols) = batch
-        .chunk
         .columns()
         .par_iter()
         .zip(batch.schema().fields().par_iter())
@@ -83,10 +87,10 @@ pub fn apply_to_batch(
                 Some(&dt) => {
                     if field.name() == "l1_fee_scalar" {
                         map_l1_fee_scalar(&**col, dt)
-                            .context(format!("apply cast to column '{}'", field.name))?
+                            .context(format!("apply cast to column '{}'", field.name()))?
                     } else {
                         map_column(&**col, dt)
-                            .context(format!("apply cast to colum '{}'", field.name))?
+                            .context(format!("apply cast to colum '{}'", field.name()))?
                     }
                 }
                 None => col.clone(),
@@ -94,9 +98,9 @@ pub fn apply_to_batch(
 
             Ok((
                 Field::new(
-                    field.name.clone(),
+                    field.name().clone(),
                     col.data_type().clone(),
-                    field.is_nullable,
+                    field.is_nullable(),
                 ),
                 col,
             ))
@@ -115,69 +119,75 @@ pub fn map_l1_fee_scalar(col: &dyn Array, target_data_type: DataType) -> Result<
             .map(|v| v.map(|v| std::str::from_utf8(v).unwrap().parse().unwrap())),
     );
 
-    let arr = compute::cast(&col, &target_data_type)
+    let arrow_dt = ArrowDataType::from(target_data_type);
+
+    let arr = compute::cast(&col, &arrow_dt)
         .with_context(|| anyhow!("failed to l1_fee_scalar to {:?}", target_data_type))?;
 
     Ok(arr)
 }
 
-fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<Box<dyn Array + 'static>> {
+fn to_array_ref<Arr: Array + 'static>(arr: Arr) -> ArrayRef {
+    Arc::new(arr)
+}
+
+fn map_column(col: &dyn Array, target_data_type: DataType) -> Result<ArrayRef> {
     match target_data_type {
-        DataType::Float64 => map_to_f64(col).map(to_box),
-        DataType::Float32 => map_to_f32(col).map(to_box),
-        DataType::UInt64 => map_to_uint64(col).map(to_box),
-        DataType::UInt32 => map_to_uint32(col).map(to_box),
-        DataType::Int64 => map_to_int64(col).map(to_box),
-        DataType::Int32 => map_to_int32(col).map(to_box),
-        DataType::IntStr => map_to_int_str(col).map(to_box),
-        DataType::Decimal256 => map_to_decimal(col).map(to_box),
-        DataType::Decimal128 => map_to_decimal128(col).map(to_box),
+        DataType::Float64 => map_to_f64(col).map(to_array_ref),
+        DataType::Float32 => map_to_f32(col).map(to_array_ref),
+        DataType::UInt64 => map_to_uint64(col).map(to_array_ref),
+        DataType::UInt32 => map_to_uint32(col).map(to_array_ref),
+        DataType::Int64 => map_to_int64(col).map(to_array_ref),
+        DataType::Int32 => map_to_int32(col).map(to_array_ref),
+        DataType::IntStr => map_to_int_str(col).map(to_array_ref),
+        DataType::Decimal256 => map_to_decimal(col).map(to_array_ref),
+        DataType::Decimal128 => map_to_decimal128(col).map(to_array_ref),
     }
 }
 
-fn map_to_decimal(col: &dyn Array) -> Result<Int256Array> {
+fn map_to_decimal(col: &dyn Array) -> Result<Decimal256Array> {
     match col.data_type() {
         &ArrowDataType::Binary => {
-            binary_to_decimal_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
+            binary_to_decimal_array(col.as_any().downcast_ref::<BinaryArray>().unwrap())
         }
         dt => Err(anyhow!("Can't convert {:?} to decimal", dt)),
     }
 }
 
-fn binary_to_decimal_array(arr: &BinaryArray<i32>) -> Result<Int256Array> {
-    let mut out = Int256Vec::with_capacity(arr.len());
+fn binary_to_decimal_array(arr: &BinaryArray) -> Result<Decimal256Array> {
+    let mut out = Decimal256Builder::with_capacity(arr.len());
 
     for val in arr.iter() {
-        out.push(val.map(binary_to_decimal).transpose()?);
+        out.append_option(val.map(binary_to_decimal).transpose()?);
     }
 
-    Ok(out.into())
+    Ok(out.finish())
 }
 
-fn binary_to_decimal(binary: &[u8]) -> Result<Decimal> {
+fn binary_to_decimal(binary: &[u8]) -> Result<i256> {
     let big_num = I256::try_from_be_slice(binary).context("failed to parse number into I256")?;
-    let decimal = Decimal::from_be_bytes(big_num.to_be_bytes::<32>());
+    let decimal = i256::from_be_bytes(big_num.to_be_bytes::<32>());
 
     Ok(decimal)
 }
 
-fn map_to_int_str(col: &dyn Array) -> Result<Utf8Array<i32>> {
+fn map_to_int_str(col: &dyn Array) -> Result<StringArray> {
     match col.data_type() {
         &ArrowDataType::Binary => {
-            binary_to_int_str_array(col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap())
+            binary_to_int_str_array(col.as_any().downcast_ref::<BinaryArray>().unwrap())
         }
         dt => Err(anyhow!("Can't convert {:?} to intstr", dt)),
     }
 }
 
-fn binary_to_int_str_array(arr: &BinaryArray<i32>) -> Result<Utf8Array<i32>> {
-    let mut out = MutableUtf8Array::with_capacity(arr.len());
+fn binary_to_int_str_array(arr: &BinaryArray) -> Result<StringArray> {
+    let mut out = StringBuilder::new();
 
     for val in arr.iter() {
-        out.push(val.map(binary_to_int_str).transpose()?);
+        out.append_option(val.map(binary_to_int_str).transpose()?);
     }
 
-    Ok(out.into())
+    Ok(out.finish())
 }
 
 fn binary_to_int_str(binary: &[u8]) -> Result<String> {
@@ -187,113 +197,99 @@ fn binary_to_int_str(binary: &[u8]) -> Result<String> {
 
 fn map_to_f64(col: &dyn Array) -> Result<Float64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            binary_to_f64,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::Float64,
-        )),
+        &ArrowDataType::Binary => binary_to_target_array(col.as_binary(), binary_to_f64),
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::Float64)
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to f64", dt)),
     }
 }
 
 fn map_to_f32(col: &dyn Array) -> Result<Float32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            binary_to_f32,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::Float32,
-        )),
+        &ArrowDataType::Binary => binary_to_target_array(col.as_binary(), binary_to_f32),
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::Float32)
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to f32", dt)),
     }
 }
 
 fn map_to_uint64(col: &dyn Array) -> Result<UInt64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            signed_binary_to_target::<u64>,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::UInt64,
-        )),
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_binary(), signed_binary_to_target::<u64>)
+        }
+        &ArrowDataType::UInt64 => Ok(col.as_primitive().clone()),
         dt => Err(anyhow!("Can't convert {:?} to uint64", dt)),
     }
 }
 
 fn map_to_uint32(col: &dyn Array) -> Result<UInt32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            signed_binary_to_target::<u32>,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::UInt32,
-        )),
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_binary(), signed_binary_to_target::<u32>)
+        }
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::UInt32)
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to uint32", dt)),
     }
 }
 
-fn map_to_decimal128(col: &dyn Array) -> Result<Int128Array> {
+fn map_to_decimal128(col: &dyn Array) -> Result<Decimal128Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            signed_binary_to_target::<i128>,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::Decimal(38, 0),
-        )),
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_binary(), signed_binary_to_target::<i128>)
+        }
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::Decimal128(38, 0))
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to int64", dt)),
     }
 }
 
 fn map_to_int64(col: &dyn Array) -> Result<Int64Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            signed_binary_to_target::<i64>,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::Int64,
-        )),
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_binary(), signed_binary_to_target::<i64>)
+        }
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::Int64)
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to int64", dt)),
     }
 }
 
 fn map_to_int32(col: &dyn Array) -> Result<Int32Array> {
     match col.data_type() {
-        &ArrowDataType::Binary => binary_to_target_array(
-            col.as_any().downcast_ref::<BinaryArray<i32>>().unwrap(),
-            signed_binary_to_target::<i32>,
-        ),
-        &ArrowDataType::UInt64 => Ok(cast::primitive_as_primitive(
-            col.as_any().downcast_ref::<UInt64Array>().unwrap(),
-            &ArrowDataType::Int32,
-        )),
+        &ArrowDataType::Binary => {
+            binary_to_target_array(col.as_binary(), signed_binary_to_target::<i32>)
+        }
+        &ArrowDataType::UInt64 => Ok(compute::cast(col, &ArrowDataType::Int32)
+            .context("arrow cast")?
+            .as_primitive()
+            .clone()),
         dt => Err(anyhow!("Can't convert {:?} to int32", dt)),
     }
 }
 
-fn binary_to_target_array<T: NativeType>(
-    src: &BinaryArray<i32>,
-    convert: fn(&[u8]) -> Result<T>,
+fn binary_to_target_array<T: ArrowPrimitiveType>(
+    src: &BinaryArray,
+    convert: fn(&[u8]) -> Result<T::Native>,
 ) -> Result<PrimitiveArray<T>> {
-    let mut out = MutablePrimitiveArray::with_capacity(src.len());
+    let mut out = PrimitiveBuilder::<T>::with_capacity(src.len());
 
     for val in src.iter() {
-        out.push(val.map(convert).transpose()?);
+        out.append_option(val.map(convert).transpose()?);
     }
 
-    Ok(out.into())
+    Ok(out.finish())
 }
 
 fn signed_binary_to_target<T: TryFrom<I256>>(src: &[u8]) -> Result<T> {

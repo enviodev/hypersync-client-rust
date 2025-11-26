@@ -72,41 +72,6 @@ impl<const N: usize> TryFrom<Vec<u8>> for FixedSizeData<N> {
     }
 }
 
-#[cfg(feature = "ethers")]
-impl From<FixedSizeData<32>> for ethabi::ethereum_types::H256 {
-    fn from(value: FixedSizeData<32>) -> Self {
-        ethabi::ethereum_types::H256(*value.0)
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl From<ethabi::ethereum_types::H256> for FixedSizeData<32> {
-    fn from(value: ethabi::ethereum_types::H256) -> Self {
-        value.0.into()
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl From<FixedSizeData<20>> for ethabi::ethereum_types::H160 {
-    fn from(value: FixedSizeData<20>) -> Self {
-        ethabi::ethereum_types::H160(*value.0)
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl From<FixedSizeData<8>> for ethabi::ethereum_types::H64 {
-    fn from(value: FixedSizeData<8>) -> Self {
-        ethabi::ethereum_types::H64(*value.0)
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl From<ethabi::ethereum_types::H160> for FixedSizeData<20> {
-    fn from(value: ethabi::ethereum_types::H160) -> Self {
-        FixedSizeData::<20>(Box::new(value.0))
-    }
-}
-
 impl<const N: usize> Hex for FixedSizeData<N> {
     fn encode_hex(&self) -> String {
         encode_hex(self.as_slice())

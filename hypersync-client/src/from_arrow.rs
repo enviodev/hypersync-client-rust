@@ -1,7 +1,8 @@
+use std::fmt::Debug;
+
 use arrayvec::ArrayVec;
 use arrow::array::{
-    Array, ArrayAccessor, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array,
-    UInt8Array,
+    Array, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array, UInt8Array,
 };
 use hypersync_format::{TransactionStatus, TransactionType, UInt};
 
@@ -14,12 +15,12 @@ pub trait FromArrow: Sized {
     fn from_arrow(batch: &RecordBatch) -> Vec<Self>;
 }
 
-fn get_str(array: Option<&StringArray>, index: usize) -> Option<&str> {
+fn get_str<'a, T: From<&'a str>>(array: Option<&'a StringArray>, index: usize) -> Option<T> {
     match array {
         None => None,
         Some(a) => {
             if a.is_valid(index) {
-                a.value(index)
+                Some(a.value(index).into())
             } else {
                 None
             }
@@ -27,12 +28,15 @@ fn get_str(array: Option<&StringArray>, index: usize) -> Option<&str> {
     }
 }
 
-fn get_binary(array: Option<&BinaryArray>, index: usize) -> Option<&[u8]> {
+fn get_binary<'a, T: TryFrom<&'a [u8]>>(array: Option<&'a BinaryArray>, index: usize) -> Option<T>
+where
+    <T as TryFrom<&'a [u8]>>::Error: Debug,
+{
     match array {
         None => None,
         Some(a) => {
             if a.is_valid(index) {
-                a.value(index)
+                Some(a.value(index).try_into().unwrap())
             } else {
                 None
             }
@@ -45,7 +49,7 @@ fn get_bool(array: Option<&BooleanArray>, index: usize) -> Option<bool> {
         None => None,
         Some(a) => {
             if a.is_valid(index) {
-                a.value(index)
+                Some(a.value(index))
             } else {
                 None
             }
@@ -58,7 +62,7 @@ fn get_u8(array: Option<&UInt8Array>, index: usize) -> Option<u8> {
         None => None,
         Some(a) => {
             if a.is_valid(index) {
-                a.value(index)
+                Some(a.value(index))
             } else {
                 None
             }
@@ -71,7 +75,7 @@ fn get_u64(array: Option<&UInt64Array>, index: usize) -> Option<u64> {
         None => None,
         Some(a) => {
             if a.is_valid(index) {
-                a.value(index)
+                Some(a.value(index))
             } else {
                 None
             }
@@ -79,7 +83,7 @@ fn get_u64(array: Option<&UInt64Array>, index: usize) -> Option<u64> {
     }
 }
 
-fn column_as<'a, T>(batch: &'a RecordBatch, col_name: &str) -> Option<&'a T> {
+fn column_as<'a, T: 'static>(batch: &'a RecordBatch, col_name: &str) -> Option<&'a T> {
     match batch.column_by_name(col_name) {
         None => None,
         Some(c) => c.as_any().downcast_ref::<T>(),
@@ -136,7 +140,7 @@ impl FromArrow for Block {
                 gas_limit: get_binary(gas_limit, idx),
                 gas_used: get_binary(gas_used, idx),
                 timestamp: get_binary(timestamp, idx),
-                uncles: get_binary(uncles, idx).map(|v| {
+                uncles: get_binary(uncles, idx).map(|v: &[u8]| {
                     v.chunks(32)
                         .map(|chunk| chunk.try_into().unwrap())
                         .collect()
@@ -229,7 +233,7 @@ impl FromArrow for Transaction {
                 authorization_list: get_binary(authorization_list, idx)
                     .map(|v| bincode::deserialize(v).unwrap()),
                 max_fee_per_blob_gas: get_binary(max_fee_per_blob_gas, idx),
-                blob_versioned_hashes: get_binary(blob_versioned_hashes, idx).map(|v| {
+                blob_versioned_hashes: get_binary(blob_versioned_hashes, idx).map(|v: &[u8]| {
                     v.chunks(32)
                         .map(|chunk| chunk.try_into().unwrap())
                         .collect()
@@ -241,7 +245,7 @@ impl FromArrow for Transaction {
                 logs_bloom: get_binary(logs_bloom, idx),
                 type_: get_u8(type_, idx).map(TransactionType::from),
                 root: get_binary(root, idx),
-                status: get_u8(status, idx).map(TransactionStatus::from),
+                status: get_u8(status, idx).map(|v| TransactionStatus::from_u8(v).unwrap()),
                 l1_fee: get_binary(l1_fee, idx),
                 l1_gas_price: get_binary(l1_gas_price, idx),
                 l1_gas_used: get_binary(l1_gas_used, idx),

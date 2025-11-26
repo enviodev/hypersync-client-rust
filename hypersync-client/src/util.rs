@@ -3,7 +3,13 @@ use std::sync::Arc;
 use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier};
 use alloy_json_abi::EventParam;
 use anyhow::{anyhow, Context, Result};
-use arrow::{array::{ArrayRef, AsArray, BinaryArray, BinaryBuilder, BooleanBuilder, RecordBatch, StringArray, StringBuilder}, datatypes::{DataType, Field, Schema}};
+use arrow::{
+    array::{
+        Array, ArrayRef, AsArray, BinaryArray, BinaryBuilder, BooleanBuilder, RecordBatch,
+        StringArray, StringBuilder,
+    },
+    datatypes::{DataType, Field, Schema},
+};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
@@ -17,38 +23,33 @@ pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
     String::from_utf8(out).unwrap()
 }
 
-fn hex_encode_array(
-    input: &BinaryArray,
-    prefixed: bool,
-) -> StringArray {
+fn hex_encode_array(input: &BinaryArray, prefixed: bool) -> StringArray {
     let mut arr = StringBuilder::new();
 
     if prefixed {
         for buf in input.iter() {
-            arr.push(buf.map(hex_encode_prefixed));
+            arr.append_option(buf.map(hex_encode_prefixed));
         }
     } else {
         for buf in input.iter() {
-            arr.push(buf.map(faster_hex::hex_string));
+            arr.append_option(buf.map(faster_hex::hex_string));
         }
     }
 
-    arr.into()
+    arr.finish()
 }
 
-pub fn hex_encode_batch(
-    batch: &RecordBatch,
-    prefixed: bool,
-) -> RecordBatch {
+pub fn hex_encode_batch(batch: &RecordBatch, prefixed: bool) -> RecordBatch {
     let (fields, cols) = batch
         .columns()
         .par_iter()
         .zip(batch.schema().fields().par_iter())
         .map(|(col, field)| {
             let col: ArrayRef = match col.data_type() {
-                DataType::Binary => {
-                    Arc::new(hex_encode_array(col.as_any().downcast_ref().unwrap(), prefixed))
-                }
+                DataType::Binary => Arc::new(hex_encode_array(
+                    col.as_any().downcast_ref().unwrap(),
+                    prefixed,
+                )),
                 _ => col.clone(),
             };
 
@@ -65,17 +66,18 @@ pub fn hex_encode_batch(
 
     let schema = Arc::new(Schema::new(fields));
 
-    Ok(RecordBatch::try_new(schema, cols).unwrap())
+    RecordBatch::try_new(schema, cols).unwrap()
 }
 
 pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> {
     let sig = alloy_json_abi::Event::parse(sig).context("parse event signature")?;
 
-    let schema =
-        Arc::new(schema_from_event_signature(&sig).context("build arrow schema from event signature")?);
+    let schema = Arc::new(
+        schema_from_event_signature(&sig).context("build arrow schema from event signature")?,
+    );
 
     if batch.num_rows() == 0 {
-        return RecordBatch::new_empty(schema);
+        return Ok(RecordBatch::new_empty(schema));
     }
 
     let event = sig.resolve().context("resolve signature into event")?;
@@ -99,14 +101,15 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
         let data = batch
             .column_by_name("data")
             .context("get data column")?
-            .as_binary_opt()
+            .as_binary_opt::<i32>()
             .context("data column as binary")?;
 
         let tuple_decoder = DynSolType::Tuple(event.body().to_vec());
 
         let decoded_tuples = data
-            .values_iter()
-            .map(|val| {
+            .iter()
+            .map(|opt| {
+                let val = opt.unwrap();
                 let tuple = tuple_decoder
                     .abi_decode_sequence(val)
                     .context("decode body tuple")
@@ -205,7 +208,7 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
                 }
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
         DynSolType::String => {
             let mut builder = StringBuilder::new();
@@ -324,10 +327,7 @@ fn decode_col(col: &BinaryArray, decoder: &DynSolType) -> Result<ArrayRef> {
     }
 }
 
-fn push_sol_value_to_binary(
-    val: &DynSolValue,
-    builder: &mut BinaryBuilder,
-) -> Result<()> {
+fn push_sol_value_to_binary(val: &DynSolValue, builder: &mut BinaryBuilder) -> Result<()> {
     match val {
         DynSolValue::Int(v, _) => builder.append_value(v.to_be_bytes::<32>()),
         DynSolValue::Uint(v, _) => builder.append_value(v.to_be_bytes::<32>()),
@@ -371,7 +371,7 @@ fn schema_from_event_signature(sig: &alloy_json_abi::Event) -> Result<Schema> {
         );
     }
 
-    Ok(Schema::from(fields))
+    Ok(Schema::new(fields))
 }
 
 fn signature_input_to_field(
@@ -458,9 +458,12 @@ mod tests {
 
         push_sol_value_to_binary(&val, &mut builder).unwrap();
 
-        let raw_output = builder.pop().unwrap();
+        let arr = builder.finish();
 
-        let output_val = I256::try_from_be_slice(&raw_output).unwrap();
+        assert!(arr.is_valid(0));
+        let raw_output = arr.value(0);
+
+        let output_val = I256::try_from_be_slice(raw_output).unwrap();
 
         assert_eq!(input_val, output_val);
     }

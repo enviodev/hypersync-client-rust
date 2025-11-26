@@ -8,12 +8,15 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Result};
-use hypersync_net_types::Query;
-use polars_arrow::{
-    array::{Array, BinaryArray, BooleanArray, UInt64Array, UInt8Array, Utf8Array},
-    datatypes::ArrowDataType,
-    record_batch::RecordBatch,
+use arrow::datatypes::DataType as ArrowDataType;
+use arrow::{
+    array::{
+        Array, ArrayRef, AsArray, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array,
+        UInt8Array,
+    },
+    datatypes::UInt64Type,
 };
+use hypersync_net_types::Query;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
@@ -21,8 +24,8 @@ use crate::{
     config::HexOutput,
     rayon_async,
     types::ArrowResponse,
-    util::{decode_logs_batch, hex_encode_batch, hex_encode_prefixed},
-    ArrowBatch, ArrowResponseData, StreamConfig,
+    util::{decode_logs_batch, hex_encode_batch},
+    ArrowResponseData, StreamConfig,
 };
 
 pub async fn stream_arrow(
@@ -212,8 +215,8 @@ pub async fn stream_arrow(
     Ok(rx)
 }
 
-fn count_rows(batches: &[ArrowBatch]) -> usize {
-    batches.iter().map(|b| b.chunk.len()).sum()
+fn count_rows(batches: &[RecordBatch]) -> usize {
+    batches.iter().map(|b| b.num_rows()).sum()
 }
 
 fn check_entity_limit(val: usize, limit: Option<usize>) -> bool {
@@ -329,22 +332,18 @@ async fn map_responses(
 fn map_batch(
     column_mapping: Option<&BTreeMap<String, crate::DataType>>,
     hex_output: HexOutput,
-    mut batch: ArrowBatch,
+    mut batch: RecordBatch,
     reverse: bool,
-) -> Result<ArrowBatch> {
+) -> Result<RecordBatch> {
     if reverse {
         let cols = batch
-            .chunk
             .columns()
             .iter()
             .map(|a| reverse_array(a.as_ref()))
             .collect::<Result<Vec<_>>>()
             .context("reverse the arrays")?;
-        let chunk = Arc::new(RecordBatch::new(cols));
-        batch = ArrowBatch {
-            chunk,
-            schema: batch.schema,
-        };
+
+        batch = RecordBatch::try_new(batch.schema(), cols).unwrap();
     }
 
     if let Some(map) = column_mapping {
@@ -353,63 +352,36 @@ fn map_batch(
     }
 
     match hex_output {
-        HexOutput::NonPrefixed => batch = hex_encode_batch(&batch, faster_hex::hex_string),
-        HexOutput::Prefixed => batch = hex_encode_batch(&batch, hex_encode_prefixed),
+        HexOutput::NonPrefixed => batch = hex_encode_batch(&batch, false),
+        HexOutput::Prefixed => batch = hex_encode_batch(&batch, true),
         HexOutput::NoEncode => (),
     }
 
     Ok(batch)
 }
 
-fn reverse_array(array: &dyn Array) -> Result<Box<dyn Array>> {
+fn reverse_array(array: &dyn Array) -> Result<ArrayRef> {
     match array.data_type() {
-        ArrowDataType::Binary => Ok(BinaryArray::<i32>::from_iter(
-            array
-                .as_any()
-                .downcast_ref::<BinaryArray<i32>>()
-                .unwrap()
-                .iter()
-                .rev(),
-        )
-        .boxed()),
-        ArrowDataType::Utf8 => Ok(Utf8Array::<i32>::from_iter(
-            array
-                .as_any()
-                .downcast_ref::<Utf8Array<i32>>()
-                .unwrap()
-                .iter()
-                .rev(),
-        )
-        .boxed()),
-        ArrowDataType::Boolean => Ok(BooleanArray::from_iter(
-            array
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .unwrap()
-                .iter()
-                .rev(),
-        )
-        .boxed()),
-        ArrowDataType::UInt64 => Ok(UInt64Array::from_iter(
-            array
-                .as_any()
-                .downcast_ref::<UInt64Array>()
-                .unwrap()
-                .iter()
-                .map(|opt| opt.copied())
-                .rev(),
-        )
-        .boxed()),
-        ArrowDataType::UInt8 => Ok(UInt8Array::from_iter(
+        ArrowDataType::Binary => Ok(Arc::new(BinaryArray::from_iter(
+            array.as_binary::<i32>().iter().rev(),
+        ))),
+        ArrowDataType::Utf8 => Ok(Arc::new(StringArray::from_iter(
+            array.as_string::<i32>().iter().rev(),
+        ))),
+        ArrowDataType::Boolean => Ok(Arc::new(BooleanArray::from_iter(
+            array.as_boolean().iter().rev(),
+        ))),
+        ArrowDataType::UInt64 => Ok(Arc::new(UInt64Array::from_iter(
+            array.as_primitive::<UInt64Type>().iter().rev(),
+        ))),
+        ArrowDataType::UInt8 => Ok(Arc::new(UInt8Array::from_iter(
             array
                 .as_any()
                 .downcast_ref::<UInt8Array>()
                 .unwrap()
                 .iter()
-                .map(|opt| opt.copied())
                 .rev(),
-        )
-        .boxed()),
+        ))),
         dt => Err(anyhow!(
             "reversing an array of datatype {:?} is not supported",
             dt

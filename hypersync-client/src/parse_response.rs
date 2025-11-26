@@ -6,9 +6,9 @@ use arrow::{array::RecordBatch, ipc};
 use hypersync_net_types::{hypersync_net_types_capnp, RollbackGuard};
 
 fn read_chunks(bytes: &[u8]) -> Result<Vec<RecordBatch>> {
-    let mut reader = Cursor::new(bytes);
+    let reader = Cursor::new(bytes);
 
-    let mut reader = ipc::reader::FileReader::try_new(reader, None).context("create reader")?;
+    let reader = ipc::reader::FileReader::try_new(reader, None).context("create reader")?;
 
     let chunks = reader
         .map(|chunk| chunk.context("read chunk"))
