@@ -3,17 +3,8 @@ use std::sync::Arc;
 use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier};
 use alloy_json_abi::EventParam;
 use anyhow::{anyhow, Context, Result};
-use hypersync_schema::empty_chunk;
-use polars_arrow::{
-    array::{
-        Array, ArrayFromIter, BinaryArray, BinaryViewArray, MutableArray, MutableBinaryArray,
-        MutableBooleanArray, MutableUtf8Array, Utf8Array, Utf8ViewArray,
-    },
-    datatypes::{ArrowDataType as DataType, ArrowSchema as Schema, Field},
-};
+use arrow::{array::{ArrayRef, AsArray, BinaryArray, BinaryBuilder, BooleanBuilder, RecordBatch, StringArray, StringBuilder}, datatypes::{DataType, Field, Schema}};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
-
-use crate::{ArrowBatch, ArrowChunk};
 
 pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
     let mut out = vec![0; bytes.len() * 2 + 2];
@@ -23,67 +14,68 @@ pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
 
     faster_hex::hex_encode(bytes, &mut out[2..]).unwrap();
 
-    unsafe { String::from_utf8_unchecked(out) }
+    String::from_utf8(out).unwrap()
 }
 
-pub fn hex_encode_batch<F: Fn(&[u8]) -> String + Send + Sync + Copy>(
-    batch: &ArrowBatch,
-    encode: F,
-) -> ArrowBatch {
+fn hex_encode_array(
+    input: &BinaryArray,
+    prefixed: bool,
+) -> StringArray {
+    let mut arr = StringBuilder::new();
+
+    if prefixed {
+        for buf in input.iter() {
+            arr.push(buf.map(hex_encode_prefixed));
+        }
+    } else {
+        for buf in input.iter() {
+            arr.push(buf.map(faster_hex::hex_string));
+        }
+    }
+
+    arr.into()
+}
+
+pub fn hex_encode_batch(
+    batch: &RecordBatch,
+    prefixed: bool,
+) -> RecordBatch {
     let (fields, cols) = batch
-        .chunk
         .columns()
         .par_iter()
-        .zip(batch.schema.fields.par_iter())
+        .zip(batch.schema().fields().par_iter())
         .map(|(col, field)| {
-            let col = match col.data_type() {
+            let col: ArrayRef = match col.data_type() {
                 DataType::Binary => {
-                    Box::new(hex_encode(col.as_any().downcast_ref().unwrap(), encode))
+                    Arc::new(hex_encode_array(col.as_any().downcast_ref().unwrap(), prefixed))
                 }
                 _ => col.clone(),
             };
 
             (
                 Field::new(
-                    field.name.clone(),
+                    field.name().clone(),
                     col.data_type().clone(),
-                    field.is_nullable,
+                    field.is_nullable(),
                 ),
                 col,
             )
         })
         .collect::<(Vec<_>, Vec<_>)>();
 
-    ArrowBatch {
-        chunk: ArrowChunk::new(cols).into(),
-        schema: Schema::from(fields).into(),
-    }
+    let schema = Arc::new(Schema::new(fields));
+
+    Ok(RecordBatch::try_new(schema, cols).unwrap())
 }
 
-fn hex_encode<F: Fn(&[u8]) -> String + Copy>(
-    input: &BinaryArray<i32>,
-    encode: F,
-) -> Utf8Array<i32> {
-    let mut arr = MutableUtf8Array::<i32>::new();
-
-    for buf in input.iter() {
-        arr.push(buf.map(encode));
-    }
-
-    arr.into()
-}
-
-pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
+pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> {
     let sig = alloy_json_abi::Event::parse(sig).context("parse event signature")?;
 
     let schema =
-        schema_from_event_signature(&sig).context("build arrow schema from event signature")?;
+        Arc::new(schema_from_event_signature(&sig).context("build arrow schema from event signature")?);
 
-    if batch.chunk.is_empty() {
-        return Ok(ArrowBatch {
-            chunk: Arc::new(empty_chunk(&schema)),
-            schema: Arc::new(schema),
-        });
+    if batch.num_rows() == 0 {
+        return RecordBatch::new_empty(schema);
     }
 
     let event = sig.resolve().context("resolve signature into event")?;
@@ -94,8 +86,10 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
         .zip(["topic1", "topic2", "topic3"].par_iter())
         .map(|(decoder, topic_name)| {
             let col = batch
-                .column::<BinaryArray<i32>>(topic_name)
-                .context("get column")?;
+                .column_by_name(topic_name)
+                .context("get column")?
+                .as_binary_opt()
+                .context("column as binary")?;
             let col = decode_col(col, decoder).context("decode column")?;
             Ok::<_, anyhow::Error>(col)
         })
@@ -103,8 +97,10 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
 
     let body_cols = {
         let data = batch
-            .column::<BinaryArray<i32>>("data")
-            .context("get column")?;
+            .column_by_name("data")
+            .context("get data column")?
+            .as_binary_opt()
+            .context("data column as binary")?;
 
         let tuple_decoder = DynSolType::Tuple(event.body().to_vec());
 
@@ -178,33 +174,28 @@ pub fn decode_logs_batch(sig: &str, batch: &ArrowBatch) -> Result<ArrowBatch> {
     let mut cols = topic_cols;
     cols.extend_from_slice(&body_cols);
 
-    let chunk = Arc::new(ArrowChunk::try_new(cols).context("create arrow chunk")?);
-
-    Ok(ArrowBatch {
-        chunk,
-        schema: Arc::new(schema),
-    })
+    Ok(RecordBatch::try_new(schema, cols).unwrap())
 }
 
 fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
     vals: I,
     ty: &DynSolType,
-) -> Result<Box<dyn Array>> {
+) -> Result<ArrayRef> {
     match ty {
         DynSolType::Bool => {
-            let mut builder = MutableBooleanArray::with_capacity(vals.len());
+            let mut builder = BooleanBuilder::with_capacity(vals.len());
 
             for val in vals {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
 
                 match val {
-                    DynSolValue::Bool(b) => builder.push(Some(*b)),
+                    DynSolValue::Bool(b) => builder.append_value(*b),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -217,19 +208,19 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
             Ok(builder.as_box())
         }
         DynSolType::String => {
-            let mut builder = MutableUtf8Array::<i32>::new();
+            let mut builder = StringBuilder::new();
 
             for val in vals {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
 
                 match val {
-                    DynSolValue::String(v) => builder.push(Some(v)),
+                    DynSolValue::String(v) => builder.append_value(v),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -239,16 +230,16 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
                 }
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
         _ => {
-            let mut builder = MutableBinaryArray::<i32>::new();
+            let mut builder = BinaryBuilder::new();
 
             for val in vals {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
@@ -256,26 +247,26 @@ fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
                 push_sol_value_to_binary(val, &mut builder)?;
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
     }
 }
 
-fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Array>> {
+fn decode_col(col: &BinaryArray, decoder: &DynSolType) -> Result<ArrayRef> {
     match decoder {
         DynSolType::Bool => {
-            let mut builder = MutableBooleanArray::with_capacity(col.len());
+            let mut builder = BooleanBuilder::with_capacity(col.len());
 
             for val in col.iter() {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
                 match decoder.abi_decode(val).context("decode sol value")? {
-                    DynSolValue::Bool(b) => builder.push(Some(b)),
+                    DynSolValue::Bool(b) => builder.append_value(b),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -285,22 +276,22 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
                 }
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
         DynSolType::String => {
-            let mut builder = MutableUtf8Array::<i32>::new();
+            let mut builder = StringBuilder::new();
 
             for val in col.iter() {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
 
                 match decoder.abi_decode(val).context("decode sol value")? {
-                    DynSolValue::String(v) => builder.push(Some(v)),
+                    DynSolValue::String(v) => builder.append_value(v),
                     v => {
                         return Err(anyhow!(
                             "unexpected output type from decode: {:?}",
@@ -310,16 +301,16 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
                 }
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
         _ => {
-            let mut builder = MutableBinaryArray::<i32>::new();
+            let mut builder = BinaryBuilder::new();
 
             for val in col.iter() {
                 let val = match val {
                     Some(val) => val,
                     None => {
-                        builder.push_null();
+                        builder.append_null();
                         continue;
                     }
                 };
@@ -328,21 +319,21 @@ fn decode_col(col: &BinaryArray<i32>, decoder: &DynSolType) -> Result<Box<dyn Ar
                 push_sol_value_to_binary(&val, &mut builder)?;
             }
 
-            Ok(builder.as_box())
+            Ok(Arc::new(builder.finish()))
         }
     }
 }
 
 fn push_sol_value_to_binary(
     val: &DynSolValue,
-    builder: &mut MutableBinaryArray<i32>,
+    builder: &mut BinaryBuilder,
 ) -> Result<()> {
     match val {
-        DynSolValue::Int(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-        DynSolValue::Uint(v, _) => builder.push(Some(v.to_be_bytes::<32>())),
-        DynSolValue::FixedBytes(v, _) => builder.push(Some(v)),
-        DynSolValue::Address(v) => builder.push(Some(v)),
-        DynSolValue::Bytes(v) => builder.push(Some(v)),
+        DynSolValue::Int(v, _) => builder.append_value(v.to_be_bytes::<32>()),
+        DynSolValue::Uint(v, _) => builder.append_value(v.to_be_bytes::<32>()),
+        DynSolValue::FixedBytes(v, _) => builder.append_value(v),
+        DynSolValue::Address(v) => builder.append_value(v),
+        DynSolValue::Bytes(v) => builder.append_value(v),
         v => {
             return Err(anyhow!(
                 "unexpected output type from decode: {:?}",
@@ -394,7 +385,7 @@ fn signature_input_to_field(
 
     if fields
         .iter()
-        .any(|f| f.name.as_str() == input.name.as_str())
+        .any(|f| f.name().as_str() == input.name.as_str())
     {
         return Err(anyhow!("duplicate param name: {}", input.name));
     }
@@ -428,53 +419,6 @@ fn simple_type_to_data_type(ty: &DynSolType) -> Result<DataType> {
     }
 }
 
-pub fn map_batch_to_binary_view(batch: ArrowBatch) -> ArrowBatch {
-    let cols = batch
-        .chunk
-        .arrays()
-        .iter()
-        .map(|col| match col.data_type() {
-            DataType::Binary => BinaryViewArray::arr_from_iter(
-                col.as_any()
-                    .downcast_ref::<BinaryArray<i32>>()
-                    .unwrap()
-                    .iter(),
-            )
-            .boxed(),
-            DataType::Utf8 => Utf8ViewArray::arr_from_iter(
-                col.as_any()
-                    .downcast_ref::<Utf8Array<i32>>()
-                    .unwrap()
-                    .iter(),
-            )
-            .boxed(),
-            _ => col.clone(),
-        })
-        .collect::<Vec<_>>();
-
-    let fields = cols
-        .iter()
-        .zip(batch.schema.fields.iter())
-        .map(|(col, field)| {
-            Field::new(
-                field.name.clone(),
-                col.data_type().clone(),
-                field.is_nullable,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let schema = Schema {
-        fields,
-        metadata: Default::default(),
-    };
-
-    ArrowBatch {
-        chunk: Arc::new(ArrowChunk::new(cols)),
-        schema: Arc::new(schema),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alloy_json_abi::Event;
@@ -495,7 +439,7 @@ mod tests {
 
         assert_eq!(
             schema,
-            Schema::from(vec![
+            Schema::new(vec![
                 Field::new("sender", DataType::Binary, true),
                 Field::new("to", DataType::Binary, true),
                 Field::new("amount0In", DataType::Binary, true),
@@ -508,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_sol_value_to_binary() {
-        let mut builder = MutableBinaryArray::<i32>::new();
+        let mut builder = BinaryBuilder::new();
         let input_val = I256::try_from(69).unwrap();
         let val = DynSolValue::Int(input_val, 24);
 

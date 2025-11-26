@@ -2,23 +2,11 @@ use std::{collections::VecDeque, path::PathBuf, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use hypersync_net_types::Query;
-use hypersync_schema::concat_chunks;
-use polars_arrow::{datatypes::ArrowSchema as Schema, legacy::error::PolarsError};
-use polars_parquet::parquet::write::FileStreamer;
-use polars_parquet::write::StatisticsOptions;
-use polars_parquet::{
-    read::ParquetError,
-    write::{
-        array_to_columns, to_parquet_schema, to_parquet_type, transverse, CompressedPage, DynIter,
-        DynStreamingIterator, Encoding, FallibleStreamingIterator,
-        RowGroupIterColumns as RowGroupIter, WriteOptions,
-    },
-};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use crate::{
-    config::StreamConfig, rayon_async, util::map_batch_to_binary_view, ArrowBatch, Client,
+    config::StreamConfig, rayon_async, Client,
 };
 
 pub async fn collect_parquet(
