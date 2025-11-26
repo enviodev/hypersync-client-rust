@@ -8,7 +8,7 @@ homepage = "https://github.com/enviodev/hypersync-client-rust"
 repository = "https://github.com/enviodev/hypersync-client-rust"
 
 [dependencies]
-arrow = { workspace = true }
+arrow = { workspace = true, features = ["ipc_compression"] }
 parquet = { workspace = true, features = ["arrow", "async"] }
 
 anyhow = "1"
