@@ -94,6 +94,7 @@ pub mod simple_types;
 mod stream;
 mod types;
 mod util;
+pub mod zero_copy_types;
 
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
