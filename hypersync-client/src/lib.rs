@@ -97,6 +97,7 @@ mod stream;
 pub mod to_ethers;
 mod types;
 mod util;
+pub mod zero_copy_types;
 
 pub use from_arrow::FromArrow;
 pub use hypersync_format as format;
