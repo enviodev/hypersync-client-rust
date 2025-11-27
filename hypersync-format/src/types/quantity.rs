@@ -45,6 +45,26 @@ impl<const N: usize> From<[u8; N]> for Quantity {
     }
 }
 
+impl TryFrom<i64> for Quantity {
+    type Error = Error;
+
+    fn try_from(value: i64) -> Result<Self> {
+        if value < 0 {
+            return Err(Error::UnexpectedQuantity(value.to_string()));
+        }
+
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(value: u64) -> Self {
+        Quantity::from(canonicalize_bytes(value.to_be_bytes().as_slice().to_vec()))
+    }
+}
+
 struct QuantityVisitor;
 
 impl Visitor<'_> for QuantityVisitor {
@@ -67,23 +87,19 @@ impl Visitor<'_> for QuantityVisitor {
     where
         E: de::Error,
     {
-        if value < 0 {
-            return Err(serde::de::Error::custom(
+        match Quantity::try_from(value) {
+            Ok(v) => Ok(v),
+            Err(_) => Err(serde::de::Error::custom(
                 "negative int quantity not allowed",
-            ));
+            )),
         }
-        Ok(Quantity::from(canonicalize_bytes(
-            value.to_be_bytes().as_slice().to_vec(),
-        )))
     }
 
     fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
     where
         E: de::Error,
     {
-        Ok(Quantity::from(canonicalize_bytes(
-            value.to_be_bytes().as_slice().to_vec(),
-        )))
+        Ok(Quantity::from(value))
     }
 }
 

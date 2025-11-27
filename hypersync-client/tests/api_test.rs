@@ -1,23 +1,263 @@
-use std::{collections::BTreeSet, env::temp_dir, sync::Arc};
+use std::{collections::BTreeSet, env::temp_dir, str::FromStr, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
-use arrow::{array::AsArray, datatypes::UInt64Type};
+use arrayvec::ArrayVec;
+use arrow::{
+    array::{AsArray, StringArray},
+    datatypes::UInt64Type,
+};
 use hypersync_client::{
-    preset_query, simple_types::Transaction, Client, ColumnMapping, SerializationFormat,
-    StreamConfig,
+    preset_query,
+    simple_types::{self, Transaction},
+    Client, ColumnMapping, HexOutput, SerializationFormat, StreamConfig,
 };
-use hypersync_format::{Address, FilterWrapper, Hex, LogArgument};
+use hypersync_format::{Address, Data, FilterWrapper, FixedSizeData, Hex, LogArgument, Quantity};
 use hypersync_net_types::{
-    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection, LogSelection,
-    Query, TransactionFilter, TransactionSelection,
+    block::BlockField, log::LogField, transaction::TransactionField, FieldSelection, JoinMode,
+    LogFilter, LogSelection, Query, TraceField, TransactionFilter, TransactionSelection,
 };
+
+const ENVIO_API_TOKEN: &str = "ENVIO_API_TOKEN";
+
+fn uni_v2_pool_creations_query(
+    from_block: u64,
+    to_block: u64,
+    contract_addr: FixedSizeData<20>,
+) -> Query {
+    let mut block_field_selection = BTreeSet::new();
+    block_field_selection.insert(BlockField::Number);
+    block_field_selection.insert(BlockField::Timestamp);
+    block_field_selection.insert(BlockField::Hash);
+
+    let mut tx_field_selection = BTreeSet::new();
+    tx_field_selection.insert(TransactionField::BlockNumber);
+    tx_field_selection.insert(TransactionField::Hash);
+    tx_field_selection.insert(TransactionField::From);
+    tx_field_selection.insert(TransactionField::To);
+    tx_field_selection.insert(TransactionField::Value);
+    tx_field_selection.insert(TransactionField::Input);
+
+    let mut log_field_selection = BTreeSet::new();
+    log_field_selection.insert(LogField::Address);
+    log_field_selection.insert(LogField::Data);
+    log_field_selection.insert(LogField::Topic0);
+    log_field_selection.insert(LogField::Topic1);
+    log_field_selection.insert(LogField::Topic2);
+    log_field_selection.insert(LogField::Topic3);
+    log_field_selection.insert(LogField::BlockNumber);
+    log_field_selection.insert(LogField::TransactionHash);
+
+    let mut trace_field_selection = BTreeSet::new();
+    trace_field_selection.insert(TraceField::BlockNumber);
+    trace_field_selection.insert(TraceField::TransactionHash);
+    trace_field_selection.insert(TraceField::From);
+    trace_field_selection.insert(TraceField::To);
+    trace_field_selection.insert(TraceField::Value);
+    trace_field_selection.insert(TraceField::Input);
+    trace_field_selection.insert(TraceField::Output);
+
+    let mut topic_filters = ArrayVec::<_, 4>::new();
+    topic_filters.push(vec![FixedSizeData::<32>::from_str(
+        "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9",
+    )
+    .unwrap()]);
+
+    Query {
+        from_block,
+        to_block: Some(to_block),
+        logs: vec![LogSelection {
+            include: LogFilter {
+                address: vec![contract_addr],
+                address_filter: None,
+                topics: topic_filters,
+            },
+            exclude: None,
+        }],
+        field_selection: FieldSelection {
+            block: block_field_selection,
+            log: log_field_selection,
+            transaction: tx_field_selection,
+            trace: trace_field_selection,
+        },
+        join_mode: JoinMode::Default,
+        ..Default::default()
+    }
+}
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_uni_v2_pool_creations_eth_decode() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+    let client = Arc::new(client);
+
+    let contract_addr =
+        FixedSizeData::<20>::from_str("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap();
+
+    let block_no = 23774411;
+
+    let query = uni_v2_pool_creations_query(block_no, block_no + 1, contract_addr.clone());
+
+    let mut stream = client
+        .stream_arrow(
+            query,
+            StreamConfig {
+                hex_output: HexOutput::Prefixed,
+                event_signature: Some("PairCreated (address indexed token0, address indexed token1, address pair, uint256 noname)".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    let resp = stream.recv().await.unwrap().unwrap();
+    assert_eq!(resp.next_block, block_no + 1);
+
+    assert_eq!(resp.data.decoded_logs.len(), 1);
+
+    let decoded_logs = &resp.data.decoded_logs[0];
+
+    let token0 = decoded_logs.column_by_name("token0").unwrap();
+    let token1 = decoded_logs.column_by_name("token1").unwrap();
+    let pair = decoded_logs.column_by_name("pair").unwrap();
+    let noname = decoded_logs.column_by_name("noname").unwrap();
+
+    assert_eq!(
+        &**token0,
+        &StringArray::from(vec!["0x8d1fec4adc1b6f75e4c9e297bb95cca8b4d2e8c4"])
+    );
+    assert_eq!(
+        &**token1,
+        &StringArray::from(vec!["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"])
+    );
+    assert_eq!(
+        &**pair,
+        &StringArray::from(vec!["0xb0a02a3e364e5b2e3aa8a5467d743777aab71bbc"])
+    );
+    assert_eq!(
+        &**noname,
+        &StringArray::from(vec![
+            "0x0000000000000000000000000000000000000000000000000000000000071f67"
+        ])
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_uni_v2_pool_creations_eth() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let contract_addr =
+        FixedSizeData::<20>::from_str("0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap();
+
+    let block_no = 23774411;
+
+    let query = uni_v2_pool_creations_query(block_no, block_no + 1, contract_addr.clone());
+
+    let resp = client.get(&query).await.unwrap();
+    assert_eq!(resp.next_block, block_no + 1);
+
+    assert_eq!(
+        resp.data.logs,
+        vec![vec![simple_types::Log {
+            removed: None,
+            log_index: None,
+            transaction_index: None,
+            transaction_hash: Some(FixedSizeData::<32>::from_str("0xeaa52051f5cfbfd446ae0de3002b2bd3e7bfb3d5703402591a85b1881b55539d").unwrap()),
+            block_hash: None,
+            block_number: Some(block_no.into()),
+            address: Some(contract_addr.clone()),
+            data: Some(Data::decode_hex("0x000000000000000000000000b0a02a3e364e5b2e3aa8a5467d743777aab71bbc0000000000000000000000000000000000000000000000000000000000071f67").unwrap()),
+            topics: serde_json::from_value(serde_json::json!([
+                "0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9",
+                "0x0000000000000000000000008d1fec4adc1b6f75e4c9e297bb95cca8b4d2e8c4",
+                "0x000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                null,
+            ])).unwrap(),
+        }]],
+    );
+
+    assert_eq!(
+        resp.data.blocks,
+        vec![vec![simple_types::Block {
+            number: Some(block_no),
+            timestamp: Some(1762844915.into()),
+            hash: Some(
+                FixedSizeData::<32>::from_str(
+                    "0x36d9bbc5759fc82c578efd0c8cc9d805e4e1c1e0ae685f2311d9304c01f895b4"
+                )
+                .unwrap()
+            ),
+            ..Default::default()
+        }]]
+    );
+
+    assert_eq!(
+        resp.data.transactions,
+        vec![vec![simple_types::Transaction {
+            block_number: Some(block_no.into()),
+            hash: Some(
+                FixedSizeData::<32>::from_str(
+                    "0xeaa52051f5cfbfd446ae0de3002b2bd3e7bfb3d5703402591a85b1881b55539d"
+                )
+                .unwrap()
+            ),
+            from: Some(
+                FixedSizeData::<20>::from_str("0x9Ccad762dC9bf889a21c15f6b95fAEb9481041b9").unwrap() // contract creation tx
+            ),
+            to: Some(contract_addr.clone()), // the factory itself is the "to" because it deployed the pool
+            value: Some(Quantity::from(0)),
+            input: Some(
+                Data::decode_hex(
+                    "0xc9c653960000000000000000000000008d1fec4adc1b6f75e4c9e297bb95cca8b4d2e8c4000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                )
+                .unwrap()
+            ),
+            ..Default::default()
+        }]]
+    );
+
+    // Doesn't return trace for some reason
+    // assert_eq!(
+    //     resp.data.traces,
+    //     vec![vec![simple_types::Trace {
+    //         block_number: Some(block_no.into()),
+    //         transaction_hash: Some(
+    //             FixedSizeData::<32>::from_str(
+    //                 "0xeaa52051f5cfbfd446ae0de3002b2bd3e7bfb3d5703402591a85b1881b55539d"
+    //             )
+    //             .unwrap()
+    //         ),
+    //         from: Some(contract_addr.clone()), // factory
+    //         to: Some(
+    //             FixedSizeData::<20>::from_str("0xB0a02a3e364e5B2e3aA8A5467d743777aAb71bbc")
+    //                 .unwrap() // the newly created pool
+    //         ),
+    //         value: Some(Quantity::from(0)),
+    //         input: Some(Data::decode_hex("0x").unwrap()), // CREATE has no input in trace
+    //         output: Some(
+    //             Data::decode_hex(
+    //                 "0x000000000000000000000000b0a02a3e364e5b2e3aa8a5467d743777aab71bbc"
+    //             )
+    //             .unwrap()
+    //         ),
+    //         ..Default::default()
+    //     }]]
+    // );
+}
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_api_arrow_ipc() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -52,7 +292,7 @@ async fn test_api_arrow_ipc() {
 async fn test_api_arrow_ipc_ordering() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -126,7 +366,7 @@ async fn test_api_decode_logs() {
     let client = Arc::new(
         Client::builder()
             .url("https://eth.hypersync.xyz")
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
@@ -193,7 +433,7 @@ async fn test_get_events_without_join_fields() {
 
     let client = Client::builder()
         .url("https://base.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -224,7 +464,7 @@ async fn test_stream_decode_with_invalid_log() {
 
     let client = Client::builder()
         .url("https://base.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
     let client = Arc::new(client);
@@ -280,7 +520,7 @@ async fn test_parquet_out() {
     let client = Arc::new(
         Client::builder()
             .url("https://eth.hypersync.xyz")
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
@@ -337,7 +577,7 @@ async fn test_api_preset_query_blocks_and_transactions() {
     let client = Arc::new(
         Client::builder()
             .url("https://eth.hypersync.xyz")
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
@@ -367,7 +607,7 @@ async fn test_api_preset_query_blocks_and_transactions() {
 async fn test_api_preset_query_blocks_and_transaction_hashes() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
     let query = preset_query::blocks_and_transaction_hashes(18_000_000, Some(18_000_010));
@@ -396,7 +636,7 @@ async fn test_api_preset_query_blocks_and_transaction_hashes() {
 async fn test_api_preset_query_logs() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -420,7 +660,7 @@ async fn test_api_preset_query_logs() {
 async fn test_api_preset_query_logs_of_event() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -450,7 +690,7 @@ async fn test_api_preset_query_logs_of_event() {
 async fn test_api_preset_query_transactions() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
     let query = preset_query::transactions(18_000_000, Some(18_000_010));
@@ -472,7 +712,7 @@ async fn test_api_preset_query_transactions() {
 async fn test_api_preset_query_transactions_from_address() {
     let client = Client::builder()
         .url("https://eth.hypersync.xyz")
-        .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
         .build()
         .unwrap();
 
@@ -501,7 +741,7 @@ async fn test_small_bloom_filter_query() {
     let client = Arc::new(
         Client::builder()
             .url("https://eth.hypersync.xyz")
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
@@ -558,7 +798,7 @@ async fn test_decode_string_param_into_arrow() {
     let client = Arc::new(
         Client::builder()
             .url("https://mev-commit.hypersync.xyz")
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
@@ -598,7 +838,7 @@ async fn test_api_capnp_client() {
     let client = Arc::new(
         Client::builder()
             .chain_id(1)
-            .api_token(std::env::var("ENVIO_API_TOKEN").unwrap())
+            .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .serialization_format(SerializationFormat::CapnProto {
                 should_cache_queries: true,
             })
