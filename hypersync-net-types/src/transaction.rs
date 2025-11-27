@@ -983,6 +983,57 @@ impl TransactionField {
         Self::iter().collect()
     }
 
+    pub const fn is_nullable(&self) -> bool {
+        match self {
+            TransactionField::From
+            | TransactionField::GasPrice
+            | TransactionField::To
+            | TransactionField::V
+            | TransactionField::R
+            | TransactionField::S
+            | TransactionField::MaxPriorityFeePerGas
+            | TransactionField::MaxFeePerGas
+            | TransactionField::ChainId
+            | TransactionField::ContractAddress
+            | TransactionField::Type
+            | TransactionField::Root
+            | TransactionField::Status
+            | TransactionField::Sighash
+            | TransactionField::YParity
+            | TransactionField::AccessList
+            | TransactionField::AuthorizationList
+            | TransactionField::L1Fee
+            | TransactionField::L1GasPrice
+            | TransactionField::L1GasUsed
+            | TransactionField::L1FeeScalar
+            | TransactionField::GasUsedForL1
+            | TransactionField::MaxFeePerBlobGas
+            | TransactionField::BlobVersionedHashes
+            | TransactionField::DepositNonce
+            | TransactionField::BlobGasPrice
+            | TransactionField::DepositReceiptVersion
+            | TransactionField::BlobGasUsed
+            | TransactionField::L1BaseFeeScalar
+            | TransactionField::L1BlobBaseFee
+            | TransactionField::L1BlobBaseFeeScalar
+            | TransactionField::L1BlockNumber
+            | TransactionField::Mint
+            | TransactionField::SourceHash => true,
+            TransactionField::BlockHash
+            | TransactionField::BlockNumber
+            | TransactionField::Gas
+            | TransactionField::Hash
+            | TransactionField::Input
+            | TransactionField::Nonce
+            | TransactionField::TransactionIndex
+            | TransactionField::Value
+            | TransactionField::CumulativeGasUsed
+            | TransactionField::EffectiveGasPrice
+            | TransactionField::GasUsed
+            | TransactionField::LogsBloom => false,
+        }
+    }
+
     /// Convert TransactionField to Cap'n Proto enum
     pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::TransactionField {
         match self {
@@ -1328,5 +1379,23 @@ mod tests {
             .select_transaction_fields(TransactionField::all());
 
         test_query_serde(query, "authorization selection with rest defaults");
+    }
+
+    #[test]
+    fn nullable_fields() {
+        use std::collections::HashMap;
+        
+        let is_nullable_map: HashMap<_, _> = TransactionField::all()
+            .iter()
+            .map(|f| (f.to_string(), f.is_nullable()))
+            .collect();
+        for field in hypersync_schema::transaction().fields.iter() {
+            let should_be_nullable = is_nullable_map.get(field.name.as_str()).unwrap();
+            assert_eq!(
+                field.is_nullable, *should_be_nullable,
+                "field {} nullable mismatch",
+                field.name
+            );
+        }
     }
 }

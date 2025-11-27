@@ -489,6 +489,23 @@ impl LogField {
         Self::iter().collect()
     }
 
+    pub const fn is_nullable(&self) -> bool {
+        match self {
+            LogField::Removed
+            | LogField::Topic0
+            | LogField::Topic1
+            | LogField::Topic2
+            | LogField::Topic3 => true,
+            LogField::TransactionHash
+            | LogField::BlockHash
+            | LogField::BlockNumber
+            | LogField::TransactionIndex
+            | LogField::LogIndex
+            | LogField::Address
+            | LogField::Data => false,
+        }
+    }
+
     /// Convert LogField to Cap'n Proto enum
     pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::LogField {
         match self {
@@ -536,6 +553,8 @@ impl LogField {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::{query::tests::test_query_serde, Query};
     use hypersync_format::Hex;
@@ -669,5 +688,21 @@ mod tests {
         check_log_filter_json(json!({"topics": [[], [], [], []]}));
         check_log_filter_json(json!({"topics": [[TOPIC], [], [], []]}));
         check_log_filter_json(json!({"topics": [[], [], [TOPIC]]}));
+    }
+
+    #[test]
+    fn nullable_fields() {
+        let is_nullable_map: HashMap<_, _> = LogField::all()
+            .iter()
+            .map(|f| (f.to_string(), f.is_nullable()))
+            .collect();
+        for field in hypersync_schema::log().fields.iter() {
+            let should_be_nullable = is_nullable_map.get(field.name.as_str()).unwrap();
+            assert_eq!(
+                field.is_nullable, *should_be_nullable,
+                "field {} nullable mismatch",
+                field.name
+            );
+        }
     }
 }
