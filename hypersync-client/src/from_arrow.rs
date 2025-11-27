@@ -8,13 +8,6 @@ use hypersync_format::{TransactionStatus, TransactionType, UInt};
 
 use crate::simple_types::{Block, Log, Trace, Transaction};
 
-/// Used to convert arrow `RecordBatch` into a vector of structs of the appropriate type like
-/// Log, Transaction, Block etc.
-pub trait FromArrow: Sized {
-    /// Convert given record batch to a vector of structs
-    fn from_arrow(batch: &RecordBatch) -> Vec<Self>;
-}
-
 fn get_str<'a, T: From<&'a str>>(array: Option<&'a StringArray>, index: usize) -> Option<T> {
     match array {
         None => None,
@@ -90,8 +83,9 @@ fn column_as<'a, T: 'static>(batch: &'a RecordBatch, col_name: &str) -> Option<&
     }
 }
 
-impl FromArrow for Block {
-    fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
+impl Block {
+    /// Convert an arrow RecordBatch into a vector of Block structs
+    pub fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
         let number = column_as::<UInt64Array>(batch, "number");
         let hash = column_as::<BinaryArray>(batch, "hash");
         let parent_hash = column_as::<BinaryArray>(batch, "parent_hash");
@@ -160,8 +154,9 @@ impl FromArrow for Block {
     }
 }
 
-impl FromArrow for Transaction {
-    fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
+impl Transaction {
+    /// Convert an arrow RecordBatch into a vector of Transaction structs
+    pub fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
         let block_hash = column_as::<BinaryArray>(batch, "block_hash");
         let block_number = column_as::<UInt64Array>(batch, "block_number");
         let from = column_as::<BinaryArray>(batch, "from");
@@ -268,8 +263,9 @@ impl FromArrow for Transaction {
     }
 }
 
-impl FromArrow for Log {
-    fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
+impl Log {
+    /// Convert an arrow RecordBatch into a vector of Log structs
+    pub fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
         let removed = column_as::<BooleanArray>(batch, "removed");
         let log_index = column_as::<UInt64Array>(batch, "log_index");
         let transaction_index = column_as::<UInt64Array>(batch, "transaction_index");
@@ -308,8 +304,9 @@ impl FromArrow for Log {
     }
 }
 
-impl FromArrow for Trace {
-    fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
+impl Trace {
+    /// Convert an arrow RecordBatch into a vector of Trace structs
+    pub fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
         let from = column_as::<BinaryArray>(batch, "from");
         let to = column_as::<BinaryArray>(batch, "to");
         let call_type = column_as::<StringArray>(batch, "call_type");

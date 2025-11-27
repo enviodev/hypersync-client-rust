@@ -95,7 +95,6 @@ mod stream;
 mod types;
 mod util;
 
-pub use from_arrow::FromArrow;
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;

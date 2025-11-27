@@ -1,7 +1,4 @@
-use crate::{
-    simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction},
-    FromArrow,
-};
+use crate::simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction};
 use arrow::array::RecordBatch;
 use hypersync_net_types::RollbackGuard;
 
