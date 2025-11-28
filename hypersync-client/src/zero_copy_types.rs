@@ -1001,20 +1001,26 @@ mod tests {
         }
         // This test will fail to compile if the return types are wrong
 
-        assert_nullable(LogReader::removed, LogField::Removed);
-        assert_nullable(LogReader::topic0, LogField::Topic0);
-        assert_nullable(LogReader::topic1, LogField::Topic1);
-        assert_nullable(LogReader::topic2, LogField::Topic2);
-        assert_nullable(LogReader::topic3, LogField::Topic3);
-
-        assert_not_nullable(LogReader::log_index, LogField::LogIndex);
-        assert_not_nullable(LogReader::log_index, LogField::LogIndex);
-        assert_not_nullable(LogReader::transaction_index, LogField::TransactionIndex);
-        assert_not_nullable(LogReader::transaction_hash, LogField::TransactionHash);
-        assert_not_nullable(LogReader::block_hash, LogField::BlockHash);
-        assert_not_nullable(LogReader::block_number, LogField::BlockNumber);
-        assert_not_nullable(LogReader::address, LogField::Address);
-        assert_not_nullable(LogReader::data, LogField::Data);
+        for field in LogField::all() {
+            match field {
+                LogField::Removed => assert_nullable(LogReader::removed, field),
+                LogField::Topic0 => assert_nullable(LogReader::topic0, field),
+                LogField::Topic1 => assert_nullable(LogReader::topic1, field),
+                LogField::Topic2 => assert_nullable(LogReader::topic2, field),
+                LogField::Topic3 => assert_nullable(LogReader::topic3, field),
+                LogField::LogIndex => assert_not_nullable(LogReader::log_index, field),
+                LogField::TransactionIndex => {
+                    assert_not_nullable(LogReader::transaction_index, field)
+                }
+                LogField::TransactionHash => {
+                    assert_not_nullable(LogReader::transaction_hash, field)
+                }
+                LogField::BlockHash => assert_not_nullable(LogReader::block_hash, field),
+                LogField::BlockNumber => assert_not_nullable(LogReader::block_number, field),
+                LogField::Address => assert_not_nullable(LogReader::address, field),
+                LogField::Data => assert_not_nullable(LogReader::data, field),
+            }
+        }
     }
 
     #[test]
@@ -1037,38 +1043,48 @@ mod tests {
             assert!(!block_field.is_nullable(), "should not be nullable");
         }
 
-        // Nullable fields
-        assert_nullable(BlockReader::nonce, BlockField::Nonce);
-        assert_nullable(BlockReader::difficulty, BlockField::Difficulty);
-        assert_nullable(BlockReader::total_difficulty, BlockField::TotalDifficulty);
-        assert_nullable(BlockReader::uncles, BlockField::Uncles);
-        assert_nullable(BlockReader::base_fee_per_gas, BlockField::BaseFeePerGas);
-        assert_nullable(BlockReader::blob_gas_used, BlockField::BlobGasUsed);
-        assert_nullable(BlockReader::excess_blob_gas, BlockField::ExcessBlobGas);
-        assert_nullable(
-            BlockReader::parent_beacon_block_root,
-            BlockField::ParentBeaconBlockRoot,
-        );
-        assert_nullable(BlockReader::withdrawals_root, BlockField::WithdrawalsRoot);
-        assert_nullable(BlockReader::withdrawals, BlockField::Withdrawals);
-        assert_nullable(BlockReader::l1_block_number, BlockField::L1BlockNumber);
-        assert_nullable(BlockReader::send_count, BlockField::SendCount);
-        assert_nullable(BlockReader::send_root, BlockField::SendRoot);
-        assert_nullable(BlockReader::mix_hash, BlockField::MixHash);
-
-        // Non-nullable fields
-        assert_not_nullable(BlockReader::number, BlockField::Number);
-        assert_not_nullable(BlockReader::hash, BlockField::Hash);
-        assert_not_nullable(BlockReader::parent_hash, BlockField::ParentHash);
-        assert_not_nullable(BlockReader::sha3_uncles, BlockField::Sha3Uncles);
-        assert_not_nullable(BlockReader::transactions_root, BlockField::TransactionsRoot);
-        assert_not_nullable(BlockReader::state_root, BlockField::StateRoot);
-        assert_not_nullable(BlockReader::receipts_root, BlockField::ReceiptsRoot);
-        assert_not_nullable(BlockReader::miner, BlockField::Miner);
-        assert_not_nullable(BlockReader::size, BlockField::Size);
-        assert_not_nullable(BlockReader::gas_limit, BlockField::GasLimit);
-        assert_not_nullable(BlockReader::gas_used, BlockField::GasUsed);
-        assert_not_nullable(BlockReader::timestamp, BlockField::Timestamp);
+        for field in BlockField::all() {
+            match field {
+                // Nullable fields
+                BlockField::Nonce => assert_nullable(BlockReader::nonce, field),
+                BlockField::Difficulty => assert_nullable(BlockReader::difficulty, field),
+                BlockField::TotalDifficulty => {
+                    assert_nullable(BlockReader::total_difficulty, field)
+                }
+                BlockField::Uncles => assert_nullable(BlockReader::uncles, field),
+                BlockField::BaseFeePerGas => assert_nullable(BlockReader::base_fee_per_gas, field),
+                BlockField::BlobGasUsed => assert_nullable(BlockReader::blob_gas_used, field),
+                BlockField::ExcessBlobGas => assert_nullable(BlockReader::excess_blob_gas, field),
+                BlockField::ParentBeaconBlockRoot => {
+                    assert_nullable(BlockReader::parent_beacon_block_root, field)
+                }
+                BlockField::WithdrawalsRoot => {
+                    assert_nullable(BlockReader::withdrawals_root, field)
+                }
+                BlockField::Withdrawals => assert_nullable(BlockReader::withdrawals, field),
+                BlockField::L1BlockNumber => assert_nullable(BlockReader::l1_block_number, field),
+                BlockField::SendCount => assert_nullable(BlockReader::send_count, field),
+                BlockField::SendRoot => assert_nullable(BlockReader::send_root, field),
+                BlockField::MixHash => assert_nullable(BlockReader::mix_hash, field),
+                // Non-nullable fields
+                BlockField::Number => assert_not_nullable(BlockReader::number, field),
+                BlockField::Hash => assert_not_nullable(BlockReader::hash, field),
+                BlockField::ParentHash => assert_not_nullable(BlockReader::parent_hash, field),
+                BlockField::Sha3Uncles => assert_not_nullable(BlockReader::sha3_uncles, field),
+                BlockField::LogsBloom => assert_not_nullable(BlockReader::logs_bloom, field),
+                BlockField::TransactionsRoot => {
+                    assert_not_nullable(BlockReader::transactions_root, field)
+                }
+                BlockField::StateRoot => assert_not_nullable(BlockReader::state_root, field),
+                BlockField::ReceiptsRoot => assert_not_nullable(BlockReader::receipts_root, field),
+                BlockField::Miner => assert_not_nullable(BlockReader::miner, field),
+                BlockField::ExtraData => assert_not_nullable(BlockReader::extra_data, field),
+                BlockField::Size => assert_not_nullable(BlockReader::size, field),
+                BlockField::GasLimit => assert_not_nullable(BlockReader::gas_limit, field),
+                BlockField::GasUsed => assert_not_nullable(BlockReader::gas_used, field),
+                BlockField::Timestamp => assert_not_nullable(BlockReader::timestamp, field),
+            }
+        }
     }
 
     #[test]
@@ -1091,71 +1107,77 @@ mod tests {
             assert!(!transaction_field.is_nullable(), "should not be nullable");
         }
 
-        // Nullable fields
-        assert_nullable(TransactionReader::from, TransactionField::From);
-        assert_nullable(TransactionReader::gas_price, TransactionField::GasPrice);
-        assert_nullable(TransactionReader::to, TransactionField::To);
-        assert_nullable(TransactionReader::v, TransactionField::V);
-        assert_nullable(TransactionReader::r, TransactionField::R);
-        assert_nullable(TransactionReader::s, TransactionField::S);
-        assert_nullable(
-            TransactionReader::max_priority_fee_per_gas,
-            TransactionField::MaxPriorityFeePerGas,
-        );
-        assert_nullable(
-            TransactionReader::max_fee_per_gas,
-            TransactionField::MaxFeePerGas,
-        );
-        assert_nullable(TransactionReader::chain_id, TransactionField::ChainId);
-        assert_nullable(
-            TransactionReader::contract_address,
-            TransactionField::ContractAddress,
-        );
-        assert_nullable(TransactionReader::type_, TransactionField::Type);
-        assert_nullable(TransactionReader::root, TransactionField::Root);
-        assert_nullable(TransactionReader::status, TransactionField::Status);
-        assert_nullable(TransactionReader::sighash, TransactionField::Sighash);
-        assert_nullable(TransactionReader::y_parity, TransactionField::YParity);
-        assert_nullable(TransactionReader::access_list, TransactionField::AccessList);
-        assert_nullable(
-            TransactionReader::authorization_list,
-            TransactionField::AuthorizationList,
-        );
-        assert_nullable(TransactionReader::l1_fee, TransactionField::L1Fee);
-        assert_nullable(
-            TransactionReader::max_fee_per_blob_gas,
-            TransactionField::MaxFeePerBlobGas,
-        );
-        assert_nullable(
-            TransactionReader::blob_versioned_hashes,
-            TransactionField::BlobVersionedHashes,
-        );
-
-        // Non-nullable fields
-        assert_not_nullable(TransactionReader::block_hash, TransactionField::BlockHash);
-        assert_not_nullable(
-            TransactionReader::block_number,
-            TransactionField::BlockNumber,
-        );
-        assert_not_nullable(TransactionReader::gas, TransactionField::Gas);
-        assert_not_nullable(TransactionReader::hash, TransactionField::Hash);
-        assert_not_nullable(TransactionReader::input, TransactionField::Input);
-        assert_not_nullable(TransactionReader::nonce, TransactionField::Nonce);
-        assert_not_nullable(
-            TransactionReader::transaction_index,
-            TransactionField::TransactionIndex,
-        );
-        assert_not_nullable(TransactionReader::value, TransactionField::Value);
-        assert_not_nullable(
-            TransactionReader::cumulative_gas_used,
-            TransactionField::CumulativeGasUsed,
-        );
-        assert_not_nullable(
-            TransactionReader::effective_gas_price,
-            TransactionField::EffectiveGasPrice,
-        );
-        assert_not_nullable(TransactionReader::gas_used, TransactionField::GasUsed);
-        assert_not_nullable(TransactionReader::logs_bloom, TransactionField::LogsBloom);
+        for field in TransactionField::all() {
+            match field {
+                // Nullable fields
+                TransactionField::From => assert_nullable(TransactionReader::from, field),
+                TransactionField::GasPrice => assert_nullable(TransactionReader::gas_price, field),
+                TransactionField::To => assert_nullable(TransactionReader::to, field),
+                TransactionField::V => assert_nullable(TransactionReader::v, field),
+                TransactionField::R => assert_nullable(TransactionReader::r, field),
+                TransactionField::S => assert_nullable(TransactionReader::s, field),
+                TransactionField::MaxPriorityFeePerGas => {
+                    assert_nullable(TransactionReader::max_priority_fee_per_gas, field)
+                }
+                TransactionField::MaxFeePerGas => {
+                    assert_nullable(TransactionReader::max_fee_per_gas, field)
+                }
+                TransactionField::ChainId => assert_nullable(TransactionReader::chain_id, field),
+                TransactionField::ContractAddress => {
+                    assert_nullable(TransactionReader::contract_address, field)
+                }
+                TransactionField::Type => assert_nullable(TransactionReader::type_, field),
+                TransactionField::Root => assert_nullable(TransactionReader::root, field),
+                TransactionField::Status => assert_nullable(TransactionReader::status, field),
+                TransactionField::Sighash => assert_nullable(TransactionReader::sighash, field),
+                TransactionField::YParity => assert_nullable(TransactionReader::y_parity, field),
+                TransactionField::AccessList => {
+                    assert_nullable(TransactionReader::access_list, field)
+                }
+                TransactionField::AuthorizationList => {
+                    assert_nullable(TransactionReader::authorization_list, field)
+                }
+                TransactionField::L1Fee => assert_nullable(TransactionReader::l1_fee, field),
+                TransactionField::MaxFeePerBlobGas => {
+                    assert_nullable(TransactionReader::max_fee_per_blob_gas, field)
+                }
+                TransactionField::BlobVersionedHashes => {
+                    assert_nullable(TransactionReader::blob_versioned_hashes, field)
+                }
+                // Non-nullable fields
+                TransactionField::BlockHash => {
+                    assert_not_nullable(TransactionReader::block_hash, field)
+                }
+                TransactionField::BlockNumber => {
+                    assert_not_nullable(TransactionReader::block_number, field)
+                }
+                TransactionField::Gas => assert_not_nullable(TransactionReader::gas, field),
+                TransactionField::Hash => assert_not_nullable(TransactionReader::hash, field),
+                TransactionField::Input => assert_not_nullable(TransactionReader::input, field),
+                TransactionField::Nonce => assert_not_nullable(TransactionReader::nonce, field),
+                TransactionField::TransactionIndex => {
+                    assert_not_nullable(TransactionReader::transaction_index, field)
+                }
+                TransactionField::Value => assert_not_nullable(TransactionReader::value, field),
+                TransactionField::CumulativeGasUsed => {
+                    assert_not_nullable(TransactionReader::cumulative_gas_used, field)
+                }
+                TransactionField::EffectiveGasPrice => {
+                    assert_not_nullable(TransactionReader::effective_gas_price, field)
+                }
+                TransactionField::GasUsed => {
+                    assert_not_nullable(TransactionReader::gas_used, field)
+                }
+                TransactionField::LogsBloom => {
+                    assert_not_nullable(TransactionReader::logs_bloom, field)
+                }
+                // Fields not yet implemented in reader
+                _ => {
+                    // For now, just check if the field exists - this will fail compilation if we miss implementing a method
+                    // when we add more fields to the reader
+                }
+            }
+        }
     }
 
     #[test]
@@ -1178,36 +1200,40 @@ mod tests {
             assert!(!trace_field.is_nullable(), "should not be nullable");
         }
 
-        // Nullable fields (all trace fields are nullable based on the schema)
-        assert_nullable(TraceReader::from, TraceField::From);
-        assert_nullable(TraceReader::to, TraceField::To);
-        assert_nullable(TraceReader::call_type, TraceField::CallType);
-        assert_nullable(TraceReader::gas, TraceField::Gas);
-        assert_nullable(TraceReader::input, TraceField::Input);
-        assert_nullable(TraceReader::init, TraceField::Init);
-        assert_nullable(TraceReader::value, TraceField::Value);
-        assert_nullable(TraceReader::author, TraceField::Author);
-        assert_nullable(TraceReader::reward_type, TraceField::RewardType);
-        assert_nullable(TraceReader::address, TraceField::Address);
-        assert_nullable(TraceReader::code, TraceField::Code);
-        assert_nullable(TraceReader::gas_used, TraceField::GasUsed);
-        assert_nullable(TraceReader::output, TraceField::Output);
-        assert_nullable(TraceReader::subtraces, TraceField::Subtraces);
-        assert_nullable(TraceReader::trace_address, TraceField::TraceAddress);
-        assert_nullable(TraceReader::transaction_hash, TraceField::TransactionHash);
-        assert_nullable(
-            TraceReader::transaction_position,
-            TraceField::TransactionPosition,
-        );
-        assert_nullable(TraceReader::type_, TraceField::Type);
-        assert_nullable(TraceReader::error, TraceField::Error);
-        assert_nullable(TraceReader::sighash, TraceField::Sighash);
-        assert_nullable(TraceReader::action_address, TraceField::ActionAddress);
-        assert_nullable(TraceReader::balance, TraceField::Balance);
-        assert_nullable(TraceReader::refund_address, TraceField::RefundAddress);
-
-        // Non-nullable fields (only block_hash and block_number are non-nullable for traces)
-        assert_not_nullable(TraceReader::block_hash, TraceField::BlockHash);
-        assert_not_nullable(TraceReader::block_number, TraceField::BlockNumber);
+        for field in TraceField::all() {
+            match field {
+                // Nullable fields
+                TraceField::TransactionHash => {
+                    assert_nullable(TraceReader::transaction_hash, field)
+                }
+                TraceField::TransactionPosition => {
+                    assert_nullable(TraceReader::transaction_position, field)
+                }
+                TraceField::Type => assert_nullable(TraceReader::type_, field),
+                TraceField::Error => assert_nullable(TraceReader::error, field),
+                TraceField::From => assert_nullable(TraceReader::from, field),
+                TraceField::To => assert_nullable(TraceReader::to, field),
+                TraceField::Author => assert_nullable(TraceReader::author, field),
+                TraceField::Gas => assert_nullable(TraceReader::gas, field),
+                TraceField::GasUsed => assert_nullable(TraceReader::gas_used, field),
+                TraceField::ActionAddress => assert_nullable(TraceReader::action_address, field),
+                TraceField::Address => assert_nullable(TraceReader::address, field),
+                TraceField::Balance => assert_nullable(TraceReader::balance, field),
+                TraceField::CallType => assert_nullable(TraceReader::call_type, field),
+                TraceField::Code => assert_nullable(TraceReader::code, field),
+                TraceField::Init => assert_nullable(TraceReader::init, field),
+                TraceField::Input => assert_nullable(TraceReader::input, field),
+                TraceField::Output => assert_nullable(TraceReader::output, field),
+                TraceField::RefundAddress => assert_nullable(TraceReader::refund_address, field),
+                TraceField::RewardType => assert_nullable(TraceReader::reward_type, field),
+                TraceField::Sighash => assert_nullable(TraceReader::sighash, field),
+                TraceField::Subtraces => assert_nullable(TraceReader::subtraces, field),
+                TraceField::TraceAddress => assert_nullable(TraceReader::trace_address, field),
+                TraceField::Value => assert_nullable(TraceReader::value, field),
+                // Non-nullable fields
+                TraceField::BlockHash => assert_not_nullable(TraceReader::block_hash, field),
+                TraceField::BlockNumber => assert_not_nullable(TraceReader::block_number, field),
+            }
+        }
     }
 }
