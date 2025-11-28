@@ -148,3 +148,47 @@ impl<'a> LogReader<'a> {
         Ok(Data::from(value))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+    use hypersync_format::Hex;
+
+    /// Compile-time tests that ensure the correct return types
+    #[test]
+    fn test_nullability_matches_schema() {
+        fn assert_nullable<'a, T, F>(_: F, log_field: LogField)
+        where
+            F: FnOnce(&LogReader<'a>) -> Result<Option<T>>,
+        {
+            assert!(log_field.is_nullable(), "Optional type should be nullable");
+        }
+
+        fn assert_not_nullable<'a, T, F>(_: F, log_field: LogField)
+        where
+            F: FnOnce(&LogReader<'a>) -> Result<T>,
+            // just to make sure its an inner type and not an Option
+            T: Hex,
+        {
+            assert!(!log_field.is_nullable(), "should not be nullable");
+        }
+        // This test will fail to compile if the return types are wrong
+
+        assert_nullable(LogReader::removed, LogField::Removed);
+        assert_nullable(LogReader::topic0, LogField::Topic0);
+        assert_nullable(LogReader::topic1, LogField::Topic1);
+        assert_nullable(LogReader::topic2, LogField::Topic2);
+        assert_nullable(LogReader::topic3, LogField::Topic3);
+
+        assert_not_nullable(LogReader::log_index, LogField::LogIndex);
+        assert_not_nullable(LogReader::log_index, LogField::LogIndex);
+        assert_not_nullable(LogReader::transaction_index, LogField::TransactionIndex);
+        assert_not_nullable(LogReader::transaction_hash, LogField::TransactionHash);
+        assert_not_nullable(LogReader::block_hash, LogField::BlockHash);
+        assert_not_nullable(LogReader::block_number, LogField::BlockNumber);
+        assert_not_nullable(LogReader::address, LogField::Address);
+        assert_not_nullable(LogReader::data, LogField::Data);
+    }
+}
+
