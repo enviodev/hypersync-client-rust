@@ -74,6 +74,15 @@ impl<'a> ExactSizeIterator for LogIterator<'a> {
     }
 }
 
+impl<'a> IntoIterator for &'a ArrowBatch {
+    type Item = LogReader<'a>;
+    type IntoIter = LogIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        LogIterator::new(self)
+    }
+}
+
 impl<'a> LogReader<'a> {
     /// Create an iterator over all rows in the batch.
     pub fn iter(batch: &'a ArrowBatch) -> LogIterator<'a> {
