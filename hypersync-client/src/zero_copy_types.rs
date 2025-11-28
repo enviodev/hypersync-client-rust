@@ -23,7 +23,62 @@ pub struct LogReader<'a> {
     row_idx: usize,
 }
 
+/// Iterator over log rows in an ArrowBatch.
+pub struct LogIterator<'a> {
+    batch: &'a ArrowBatch,
+    current_idx: usize,
+    len: usize,
+}
+
+impl<'a> LogIterator<'a> {
+    /// Create a new iterator for the given batch.
+    pub fn new(batch: &'a ArrowBatch) -> Self {
+        let len = if let Some(first_column) = batch.chunk.columns().first() {
+            first_column.len()
+        } else {
+            0
+        };
+        Self {
+            batch,
+            current_idx: 0,
+            len,
+        }
+    }
+}
+
+impl<'a> Iterator for LogIterator<'a> {
+    type Item = LogReader<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_idx < self.len {
+            let reader = LogReader {
+                batch: self.batch,
+                row_idx: self.current_idx,
+            };
+            self.current_idx += 1;
+            Some(reader)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len - self.current_idx;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> ExactSizeIterator for LogIterator<'a> {
+    fn len(&self) -> usize {
+        self.len - self.current_idx
+    }
+}
+
 impl<'a> LogReader<'a> {
+    /// Create an iterator over all rows in the batch.
+    pub fn iter(batch: &'a ArrowBatch) -> LogIterator<'a> {
+        LogIterator::new(batch)
+    }
     /// The boolean value indicating if the event was removed from the blockchain due
     /// to a chain reorganization. True if the log was removed. False if it is a valid log.
     pub fn removed(&self) -> Result<Option<bool>> {
