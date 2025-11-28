@@ -53,7 +53,6 @@ impl MemoryTracker {
 
     #[inline]
     fn on_alloc(&self, size: usize) {
-        let size = size as usize;
         let new_total = self.total.fetch_add(size, Ordering::Relaxed) + size;
 
         // compute "current since baseline"
@@ -77,7 +76,6 @@ impl MemoryTracker {
 
     #[inline]
     fn on_dealloc(&self, size: usize) {
-        let size = size as usize;
         // We don't touch peak here; just move total down.
         self.total.fetch_sub(size, Ordering::Relaxed);
     }
@@ -215,7 +213,7 @@ async fn main() -> Result<()> {
                 .column::<BinaryArray<i32>>("gas_used")
                 .expect("gas_used incorrect");
             for gu in gas_used_col.iter() {
-                total_gas_used += Uint::from_be_slice(&gu.expect("gas_used not found"));
+                total_gas_used += Uint::from_be_slice(gu.expect("gas_used not found"));
             }
         }
         total_gas_used
@@ -264,4 +262,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-
