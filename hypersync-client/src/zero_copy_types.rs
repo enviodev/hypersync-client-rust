@@ -74,20 +74,13 @@ impl<'a> ExactSizeIterator for LogIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a ArrowBatch {
-    type Item = LogReader<'a>;
-    type IntoIter = LogIterator<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        LogIterator::new(self)
-    }
-}
 
 impl<'a> LogReader<'a> {
     /// Create an iterator over all rows in the batch.
     pub fn iter(batch: &'a ArrowBatch) -> LogIterator<'a> {
         LogIterator::new(batch)
     }
+
     /// The boolean value indicating if the event was removed from the blockchain due
     /// to a chain reorganization. True if the log was removed. False if it is a valid log.
     pub fn removed(&self) -> Result<Option<bool>> {
@@ -224,7 +217,62 @@ pub struct BlockReader<'a> {
     row_idx: usize,
 }
 
+/// Iterator over block rows in an ArrowBatch.
+pub struct BlockIterator<'a> {
+    batch: &'a ArrowBatch,
+    current_idx: usize,
+    len: usize,
+}
+
+impl<'a> BlockIterator<'a> {
+    /// Create a new iterator for the given batch.
+    pub fn new(batch: &'a ArrowBatch) -> Self {
+        let len = if let Some(first_column) = batch.chunk.columns().first() {
+            first_column.len()
+        } else {
+            0
+        };
+        Self {
+            batch,
+            current_idx: 0,
+            len,
+        }
+    }
+}
+
+impl<'a> Iterator for BlockIterator<'a> {
+    type Item = BlockReader<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_idx < self.len {
+            let reader = BlockReader {
+                batch: self.batch,
+                row_idx: self.current_idx,
+            };
+            self.current_idx += 1;
+            Some(reader)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len - self.current_idx;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> ExactSizeIterator for BlockIterator<'a> {
+    fn len(&self) -> usize {
+        self.len - self.current_idx
+    }
+}
+
 impl<'a> BlockReader<'a> {
+    /// Create an iterator over all rows in the batch.
+    pub fn iter(batch: &'a ArrowBatch) -> BlockIterator<'a> {
+        BlockIterator::new(batch)
+    }
     /// The block number.
     pub fn number(&self) -> Result<BlockNumber> {
         let array = self
@@ -503,7 +551,62 @@ pub struct TransactionReader<'a> {
     row_idx: usize,
 }
 
+/// Iterator over transaction rows in an ArrowBatch.
+pub struct TransactionIterator<'a> {
+    batch: &'a ArrowBatch,
+    current_idx: usize,
+    len: usize,
+}
+
+impl<'a> TransactionIterator<'a> {
+    /// Create a new iterator for the given batch.
+    pub fn new(batch: &'a ArrowBatch) -> Self {
+        let len = if let Some(first_column) = batch.chunk.columns().first() {
+            first_column.len()
+        } else {
+            0
+        };
+        Self {
+            batch,
+            current_idx: 0,
+            len,
+        }
+    }
+}
+
+impl<'a> Iterator for TransactionIterator<'a> {
+    type Item = TransactionReader<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_idx < self.len {
+            let reader = TransactionReader {
+                batch: self.batch,
+                row_idx: self.current_idx,
+            };
+            self.current_idx += 1;
+            Some(reader)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len - self.current_idx;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> ExactSizeIterator for TransactionIterator<'a> {
+    fn len(&self) -> usize {
+        self.len - self.current_idx
+    }
+}
+
 impl<'a> TransactionReader<'a> {
+    /// Create an iterator over all rows in the batch.
+    pub fn iter(batch: &'a ArrowBatch) -> TransactionIterator<'a> {
+        TransactionIterator::new(batch)
+    }
     /// The hash of the block in which this transaction was included.
     pub fn block_hash(&self) -> Result<Hash> {
         let array = self
@@ -817,7 +920,62 @@ pub struct TraceReader<'a> {
     row_idx: usize,
 }
 
+/// Iterator over trace rows in an ArrowBatch.
+pub struct TraceIterator<'a> {
+    batch: &'a ArrowBatch,
+    current_idx: usize,
+    len: usize,
+}
+
+impl<'a> TraceIterator<'a> {
+    /// Create a new iterator for the given batch.
+    pub fn new(batch: &'a ArrowBatch) -> Self {
+        let len = if let Some(first_column) = batch.chunk.columns().first() {
+            first_column.len()
+        } else {
+            0
+        };
+        Self {
+            batch,
+            current_idx: 0,
+            len,
+        }
+    }
+}
+
+impl<'a> Iterator for TraceIterator<'a> {
+    type Item = TraceReader<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_idx < self.len {
+            let reader = TraceReader {
+                batch: self.batch,
+                row_idx: self.current_idx,
+            };
+            self.current_idx += 1;
+            Some(reader)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.len - self.current_idx;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> ExactSizeIterator for TraceIterator<'a> {
+    fn len(&self) -> usize {
+        self.len - self.current_idx
+    }
+}
+
 impl<'a> TraceReader<'a> {
+    /// Create an iterator over all rows in the batch.
+    pub fn iter(batch: &'a ArrowBatch) -> TraceIterator<'a> {
+        TraceIterator::new(batch)
+    }
     /// The hash of the block in which this trace occurred.
     pub fn block_hash(&self) -> Result<Hash> {
         let array = self
