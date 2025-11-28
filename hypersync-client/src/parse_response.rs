@@ -1,27 +1,18 @@
-use std::{io::Cursor, sync::Arc};
+use std::io::Cursor;
 
-use crate::{types::ArrowResponse, ArrowBatch, ArrowResponseData, QueryResponse};
+use crate::{types::ArrowResponse, ArrowResponseData, QueryResponse};
 use anyhow::{Context, Result};
+use arrow::{array::RecordBatch, ipc};
 use hypersync_net_types::{hypersync_net_types_capnp, RollbackGuard};
-use polars_arrow::io::ipc;
 
-fn read_chunks(bytes: &[u8]) -> Result<Vec<ArrowBatch>> {
-    let mut reader = Cursor::new(bytes);
+fn read_chunks(bytes: &[u8]) -> Result<Vec<RecordBatch>> {
+    let reader = Cursor::new(bytes);
 
-    let metadata = ipc::read::read_file_metadata(&mut reader).context("read metadata")?;
-
-    let schema = metadata.schema.clone();
-
-    let reader = ipc::read::FileReader::new(reader, metadata, None, None);
+    let reader = ipc::reader::FileReader::try_new(reader, None).context("create reader")?;
 
     let chunks = reader
-        .map(|chunk| {
-            chunk.context("read chunk").map(|chunk| ArrowBatch {
-                chunk: Arc::new(chunk),
-                schema: schema.clone(),
-            })
-        })
-        .collect::<Result<Vec<ArrowBatch>>>()?;
+        .map(|chunk| chunk.context("read chunk"))
+        .collect::<Result<Vec<RecordBatch>>>()?;
 
     Ok(chunks)
 }

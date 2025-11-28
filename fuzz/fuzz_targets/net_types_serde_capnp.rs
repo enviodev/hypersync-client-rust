@@ -36,9 +36,13 @@ fuzz_target!(|data: Query| {
 
     let query_id = QueryId::from_query(&data).unwrap();
     let read_query_id = QueryId::from_query(&read_query).unwrap();
-    assert_eq!(query_id, read_query_id, "query id should match built from reconstructed query");
     assert_eq!(
-        query_id.0.as_slice(), bytes,
+        query_id, read_query_id,
+        "query id should match built from reconstructed query"
+    );
+    assert_eq!(
+        query_id.0.as_slice(),
+        bytes,
         "query id bytes in capnp body should match constructed query id"
     );
 });

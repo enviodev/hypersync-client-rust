@@ -14,3 +14,7 @@ members = [
   "examples/call_decode_output",
   "examples/height_stream",
 ]
+
+[workspace.dependencies]
+arrow = "57"
+parquet = "57"

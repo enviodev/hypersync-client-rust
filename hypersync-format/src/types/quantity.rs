@@ -24,50 +24,6 @@ impl From<Vec<u8>> for Quantity {
     }
 }
 
-#[cfg(feature = "ethers")]
-impl From<ethabi::ethereum_types::U256> for Quantity {
-    fn from(value: ethabi::ethereum_types::U256) -> Self {
-        let mut buf = Box::new([]);
-        value.to_big_endian(buf.as_mut());
-        Self(buf)
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl TryFrom<Quantity> for ethabi::ethereum_types::U256 {
-    type Error = ();
-
-    fn try_from(value: Quantity) -> StdResult<Self, Self::Error> {
-        // Comparison comes from assert!($n_words * 8 >= slice.len());
-        if value.0.len() > 32 {
-            return Err(());
-        }
-        Ok(ethabi::ethereum_types::U256::from_big_endian(&value.0))
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl From<ethabi::ethereum_types::U64> for Quantity {
-    fn from(value: ethabi::ethereum_types::U64) -> Self {
-        let mut buf = Box::new([]);
-        value.to_big_endian(buf.as_mut());
-        Self(buf)
-    }
-}
-
-#[cfg(feature = "ethers")]
-impl TryFrom<Quantity> for ethabi::ethereum_types::U64 {
-    type Error = ();
-
-    fn try_from(value: Quantity) -> StdResult<Self, Self::Error> {
-        // Comparison comes from assert!($n_words * 8 >= slice.len());
-        if value.0.len() > 32 {
-            return Err(());
-        }
-        Ok(ethabi::ethereum_types::U64::from_big_endian(&value.0))
-    }
-}
-
 impl From<&[u8]> for Quantity {
     fn from(buf: &[u8]) -> Self {
         assert!(!buf.is_empty());
@@ -86,6 +42,26 @@ impl Default for Quantity {
 impl<const N: usize> From<[u8; N]> for Quantity {
     fn from(buf: [u8; N]) -> Self {
         Self(buf.into())
+    }
+}
+
+impl TryFrom<i64> for Quantity {
+    type Error = Error;
+
+    fn try_from(value: i64) -> Result<Self> {
+        if value < 0 {
+            return Err(Error::UnexpectedQuantity(value.to_string()));
+        }
+
+        Ok(Quantity::from(canonicalize_bytes(
+            value.to_be_bytes().as_slice().to_vec(),
+        )))
+    }
+}
+
+impl From<u64> for Quantity {
+    fn from(value: u64) -> Self {
+        Quantity::from(canonicalize_bytes(value.to_be_bytes().as_slice().to_vec()))
     }
 }
 
@@ -111,23 +87,19 @@ impl Visitor<'_> for QuantityVisitor {
     where
         E: de::Error,
     {
-        if value < 0 {
-            return Err(serde::de::Error::custom(
+        match Quantity::try_from(value) {
+            Ok(v) => Ok(v),
+            Err(_) => Err(serde::de::Error::custom(
                 "negative int quantity not allowed",
-            ));
+            )),
         }
-        Ok(Quantity::from(canonicalize_bytes(
-            value.to_be_bytes().as_slice().to_vec(),
-        )))
     }
 
     fn visit_u64<E>(self, value: u64) -> StdResult<Self::Value, E>
     where
         E: de::Error,
     {
-        Ok(Quantity::from(canonicalize_bytes(
-            value.to_be_bytes().as_slice().to_vec(),
-        )))
+        Ok(Quantity::from(value))
     }
 }
 

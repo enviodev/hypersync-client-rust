@@ -3,7 +3,7 @@ use anyhow::Context;
 use hypersync_client::{
     net_types::{Query, TraceField, TraceFilter},
     simple_types::Trace,
-    ArrowResponseData, CallDecoder, Client, FromArrow, StreamConfig,
+    ArrowResponseData, CallDecoder, Client, StreamConfig,
 };
 
 const BALANCE_OF_SIGNATURE: &str =

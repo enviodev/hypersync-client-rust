@@ -1,28 +1,22 @@
-use std::sync::Arc;
-
-use crate::{
-    simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction},
-    ArrowChunk, FromArrow,
-};
-use anyhow::{anyhow, Context, Result};
+use crate::simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction};
+use arrow::array::RecordBatch;
 use hypersync_net_types::RollbackGuard;
-use polars_arrow::datatypes::SchemaRef;
 
 /// Query response in Arrow format
 #[derive(Default, Debug, Clone)]
 pub struct ArrowResponseData {
     /// Query blocks response
-    pub blocks: Vec<ArrowBatch>,
+    pub blocks: Vec<RecordBatch>,
     /// Query transactions response
-    pub transactions: Vec<ArrowBatch>,
+    pub transactions: Vec<RecordBatch>,
     /// Query logs response
-    pub logs: Vec<ArrowBatch>,
+    pub logs: Vec<RecordBatch>,
     /// Query traces response
-    pub traces: Vec<ArrowBatch>,
+    pub traces: Vec<RecordBatch>,
     /// Query decoded_logs response.
     ///
     /// Populated only if event_signature is present.
-    pub decoded_logs: Vec<ArrowBatch>,
+    pub decoded_logs: Vec<RecordBatch>,
 }
 
 /// Query response data in Rust native format
@@ -119,47 +113,3 @@ pub struct QueryResponse<T = ResponseData> {
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
 /// Alias for Event oriented, vectorized QueryResponse
 pub type EventResponse = QueryResponse<Vec<Event>>;
-
-/// Arrow chunk with schema
-#[derive(Debug, Clone)]
-pub struct ArrowBatch {
-    /// Reference to array chunk
-    pub chunk: Arc<ArrowChunk>,
-    /// Schema reference for the chunk
-    pub schema: SchemaRef,
-}
-
-impl ArrowBatch {
-    /// Extract column from chunk by name if the name exists in the schema
-    pub fn optional_column<T: 'static>(&self, name: &str) -> Result<Option<&T>> {
-        match self
-            .schema
-            .fields
-            .iter()
-            .enumerate()
-            .find(|(_, f)| f.name == name)
-        {
-            Some((idx, _)) => {
-                let col = self
-                    .chunk
-                    .columns()
-                    .get(idx)
-                    .context("get column using index")?;
-                let col = col.as_any().downcast_ref::<T>().with_context(|| {
-                    anyhow!(
-                        "cast type of column '{}', it was {:?}",
-                        name,
-                        col.data_type()
-                    )
-                })?;
-                Ok(Some(col))
-            }
-            None => Ok(None),
-        }
-    }
-    /// Extract column from chunk by name
-    pub fn column<T: 'static>(&self, name: &str) -> Result<&T> {
-        self.optional_column(name)?
-            .with_context(|| anyhow!("field {} not found in schema", name))
-    }
-}

@@ -3,14 +3,14 @@
 
 use std::time::Instant;
 
+use arrow::{
+    array::{Array, AsArray},
+    compute,
+    datatypes::Float64Type,
+};
 use hypersync_client::{
     net_types::{LogField, LogFilter, Query},
     Client, ColumnMapping, DataType, SerializationFormat, StreamConfig,
-};
-use polars_arrow::{
-    array::{Array, Float64Array},
-    compute,
-    scalar::PrimitiveScalar,
 };
 
 #[tokio::main]
@@ -84,18 +84,15 @@ async fn main() -> anyhow::Result<()> {
 
         for batch in res.data.decoded_logs {
             // get amount array so we can sum/count
-            let amount = batch.column::<Float64Array>("amount").unwrap();
+            let amount = batch
+                .column_by_name("amount")
+                .unwrap()
+                .as_primitive::<Float64Type>();
 
             // exclude null rows to avoid counting invalid logs
             num_transfers += amount.len() - amount.null_count();
 
-            total_amount += compute::aggregate::sum(amount)
-                .unwrap()
-                .as_any()
-                .downcast_ref::<PrimitiveScalar<f64>>()
-                .unwrap()
-                .value()
-                .unwrap_or_default();
+            total_amount += compute::sum::<Float64Type>(amount).unwrap_or_default()
         }
 
         println!(
