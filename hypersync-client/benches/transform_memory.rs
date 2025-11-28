@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
-use hypersync_client::{simple_types, Client, FromArrow};
+use hypersync_client::{simple_types, zero_copy_types::TransactionReader, Client, FromArrow};
 use hypersync_net_types::{
     BlockField, LogField, LogFilter, Query, TransactionField, TransactionFilter,
 };
@@ -186,6 +186,7 @@ async fn main() -> Result<()> {
         .select_log_fields(LogField::all())
         .select_block_fields(BlockField::all())
         .select_transaction_fields(TransactionField::all());
+    // .select_transaction_fields([TransactionField::GasUsed, TransactionField::Hash]);
 
     println!("Querying data ...");
     let res = client.collect_arrow(query, Default::default()).await?;
@@ -206,14 +207,12 @@ async fn main() -> Result<()> {
     bench.print();
 
     let transactions = res.data.transactions.clone();
-    let (gas_used_2, bench) = benchmark_memory("tally tx gas used from arrow", || {
+    let (gas_used_2, bench) = benchmark_memory("tally tx gas used from zero copy", || {
         let mut total_gas_used: Uint<256, 4> = Uint::ZERO;
         for tx_batch in transactions {
-            let gas_used_col = tx_batch
-                .column::<BinaryArray<i32>>("gas_used")
-                .expect("gas_used incorrect");
-            for gu in gas_used_col.iter() {
-                total_gas_used += Uint::from_be_slice(gu.expect("gas_used not found"));
+            for tx_reader in TransactionReader::iter(&tx_batch) {
+                total_gas_used +=
+                    Uint::from_be_slice(&tx_reader.gas_used().expect("gas_used not found"));
             }
         }
         total_gas_used
@@ -221,6 +220,22 @@ async fn main() -> Result<()> {
     bench.print();
 
     assert_eq!(gas_used_1, gas_used_2);
+    // let transactions = res.data.transactions.clone();
+    // let (gas_used_2, bench) = benchmark_memory("tally tx gas used from arrow", || {
+    //     let mut total_gas_used: Uint<256, 4> = Uint::ZERO;
+    //     for tx_batch in transactions {
+    //         let gas_used_col = tx_batch
+    //             .column::<BinaryArray<i32>>("gas_used")
+    //             .expect("gas_used incorrect");
+    //         for gu in gas_used_col.iter() {
+    //             total_gas_used += Uint::from_be_slice(gu.expect("gas_used not found"));
+    //         }
+    //     }
+    //     total_gas_used
+    // });
+    // bench.print();
+    //
+    // assert_eq!(gas_used_1, gas_used_2);
     let ((num_txs, num_blocks, numb_logs, _), bench) =
         benchmark_memory("convert all types", || {
             let mut num_txs = 0;
