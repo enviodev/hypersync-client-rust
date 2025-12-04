@@ -4,36 +4,41 @@
 //! without copying or allocating new memory for individual field access.
 
 use anyhow::{Context, Result};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array, UInt8Array,
+};
 use hypersync_format::{
     Address, BlockNumber, Data, FixedSizeData, Hash, LogIndex, Quantity, TransactionIndex,
 };
 use hypersync_net_types::{BlockField, LogField, TraceField, TransactionField};
-use polars_arrow::array::{
-    BinaryArray, BooleanArray, StaticArray, UInt64Array, UInt8Array, Utf8Array,
-};
 
-use crate::ArrowBatch;
+fn column_as<'a, T: 'static>(batch: &'a RecordBatch, col_name: &str) -> Option<&'a T> {
+    match batch.column_by_name(col_name) {
+        None => None,
+        Some(c) => c.as_any().downcast_ref::<T>(),
+    }
+}
 
 /// Zero-copy reader for log data from Arrow batches.
 ///
 /// Provides efficient access to log fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
 pub struct LogReader<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     row_idx: usize,
 }
 
-/// Iterator over log rows in an ArrowBatch.
+/// Iterator over log rows in an RecordBatch.
 pub struct LogIterator<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     current_idx: usize,
     len: usize,
 }
 
 impl<'a> LogIterator<'a> {
     /// Create a new iterator for the given batch.
-    pub fn new(batch: &'a ArrowBatch) -> Self {
-        let len = if let Some(first_column) = batch.chunk.columns().first() {
+    pub fn new(batch: &'a RecordBatch) -> Self {
+        let len = if let Some(first_column) = batch.columns().first() {
             first_column.len()
         } else {
             0
@@ -76,133 +81,147 @@ impl<'a> ExactSizeIterator for LogIterator<'a> {
 
 impl<'a> LogReader<'a> {
     /// Create an iterator over all rows in the batch.
-    pub fn iter(batch: &'a ArrowBatch) -> LogIterator<'a> {
+    pub fn iter(batch: &'a RecordBatch) -> LogIterator<'a> {
         LogIterator::new(batch)
     }
 
     /// The boolean value indicating if the event was removed from the blockchain due
     /// to a chain reorganization. True if the log was removed. False if it is a valid log.
     pub fn removed(&self) -> Result<Option<bool>> {
-        let array = self
-            .batch
-            .column::<BooleanArray>(LogField::Removed.as_ref())?;
-        Ok(array.get(self.row_idx))
+        let array = column_as::<BooleanArray>(self.batch, LogField::Removed.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx))
+        } else {
+            None
+        })
     }
 
     /// The integer identifying the index of the event within the block's list of events.
     pub fn log_index(&self) -> Result<LogIndex> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(LogField::LogIndex.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, LogField::LogIndex.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The integer index of the transaction within the block's list of transactions.
     pub fn transaction_index(&self) -> Result<TransactionIndex> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(LogField::TransactionIndex.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, LogField::TransactionIndex.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The hash of the transaction that triggered the event.
     pub fn transaction_hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::TransactionHash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, LogField::TransactionHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The hash of the block in which the event was included.
     pub fn block_hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::BlockHash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, LogField::BlockHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("Invalid hash format")
     }
 
     /// The block number in which the event was included.
     pub fn block_number(&self) -> Result<BlockNumber> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(LogField::BlockNumber.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, LogField::BlockNumber.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The contract address from which the event originated.
     pub fn address(&self) -> Result<Address> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Address.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, LogField::Address.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Address::try_from(value).context("Invalid address format")
     }
 
     /// The first topic of the event (topic0).
     pub fn topic0(&self) -> Result<Option<FixedSizeData<32>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Topic0.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<32>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, LogField::Topic0.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<32>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The second topic of the event (topic1).
     pub fn topic1(&self) -> Result<Option<FixedSizeData<32>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Topic1.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<32>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, LogField::Topic1.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<32>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The third topic of the event (topic2).
     pub fn topic2(&self) -> Result<Option<FixedSizeData<32>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Topic2.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<32>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, LogField::Topic2.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<32>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The fourth topic of the event (topic3).
     pub fn topic3(&self) -> Result<Option<FixedSizeData<32>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Topic3.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<32>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, LogField::Topic3.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<32>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The non-indexed data that was emitted along with the event.
     pub fn data(&self) -> Result<Data> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(LogField::Data.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, LogField::Data.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Data::from(value))
     }
 }
@@ -212,21 +231,21 @@ impl<'a> LogReader<'a> {
 /// Provides efficient access to block fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
 pub struct BlockReader<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     row_idx: usize,
 }
 
-/// Iterator over block rows in an ArrowBatch.
+/// Iterator over block rows in an RecordBatch.
 pub struct BlockIterator<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     current_idx: usize,
     len: usize,
 }
 
 impl<'a> BlockIterator<'a> {
     /// Create a new iterator for the given batch.
-    pub fn new(batch: &'a ArrowBatch) -> Self {
-        let len = if let Some(first_column) = batch.chunk.columns().first() {
+    pub fn new(batch: &'a RecordBatch) -> Self {
+        let len = if let Some(first_column) = batch.columns().first() {
             first_column.len()
         } else {
             0
@@ -269,275 +288,330 @@ impl<'a> ExactSizeIterator for BlockIterator<'a> {
 
 impl<'a> BlockReader<'a> {
     /// Create an iterator over all rows in the batch.
-    pub fn iter(batch: &'a ArrowBatch) -> BlockIterator<'a> {
+    pub fn iter(batch: &'a RecordBatch) -> BlockIterator<'a> {
         BlockIterator::new(batch)
     }
     /// The block number.
     pub fn number(&self) -> Result<BlockNumber> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(BlockField::Number.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, BlockField::Number.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The block hash.
     pub fn hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Hash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Hash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The parent block hash.
     pub fn parent_hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::ParentHash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::ParentHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The block nonce.
     pub fn nonce(&self) -> Result<Option<FixedSizeData<8>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Nonce.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<8>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Nonce.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<8>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The SHA3 hash of the uncles.
     pub fn sha3_uncles(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Sha3Uncles.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Sha3Uncles.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The Bloom filter for the logs of the block.
     pub fn logs_bloom(&self) -> Result<Data> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::LogsBloom.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::LogsBloom.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Data::from(value))
     }
 
     /// The root of the transaction trie of the block.
     pub fn transactions_root(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::TransactionsRoot.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::TransactionsRoot.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The root of the final state trie of the block.
     pub fn state_root(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::StateRoot.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::StateRoot.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The root of the receipts trie of the block.
     pub fn receipts_root(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::ReceiptsRoot.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::ReceiptsRoot.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The address of the beneficiary to whom the mining rewards were given.
     pub fn miner(&self) -> Result<Address> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Miner.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Miner.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Address::try_from(value).context("invalid address format")
     }
 
     /// The difficulty of the block.
     pub fn difficulty(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Difficulty.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Difficulty.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The total difficulty of the chain until this block.
     pub fn total_difficulty(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::TotalDifficulty.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::TotalDifficulty.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The "extra data" field of this block.
     pub fn extra_data(&self) -> Result<Data> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::ExtraData.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::ExtraData.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Data::from(value))
     }
 
     /// The size of this block in bytes.
     pub fn size(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Size.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Size.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The maximum gas allowed in this block.
     pub fn gas_limit(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::GasLimit.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::GasLimit.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The total used gas by all transactions in this block.
     pub fn gas_used(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::GasUsed.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::GasUsed.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The unix timestamp for when the block was collated.
     pub fn timestamp(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Timestamp.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Timestamp.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// Array of uncle hashes.
     pub fn uncles(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Uncles.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Uncles.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The base fee per gas.
     pub fn base_fee_per_gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::BaseFeePerGas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::BaseFeePerGas.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The total amount of blob gas consumed by the transactions in the block.
     pub fn blob_gas_used(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::BlobGasUsed.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::BlobGasUsed.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// A running total of blob gas consumed in excess of the target.
     pub fn excess_blob_gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::ExcessBlobGas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::ExcessBlobGas.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The hash of the parent beacon block.
     pub fn parent_beacon_block_root(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::ParentBeaconBlockRoot.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array =
+            column_as::<BinaryArray>(self.batch, BlockField::ParentBeaconBlockRoot.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The root of the withdrawal trie.
     pub fn withdrawals_root(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::WithdrawalsRoot.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::WithdrawalsRoot.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The withdrawals in the block.
     pub fn withdrawals(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::Withdrawals.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::Withdrawals.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The L1 block number.
     pub fn l1_block_number(&self) -> Result<Option<BlockNumber>> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(BlockField::L1BlockNumber.as_ref())?;
-        Ok(array.get(self.row_idx).map(|v| v.into()))
+        let array = column_as::<UInt64Array>(self.batch, BlockField::L1BlockNumber.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx).into())
+        } else {
+            None
+        })
     }
 
     /// The send count.
     pub fn send_count(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::SendCount.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::SendCount.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The send root.
     pub fn send_root(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::SendRoot.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::SendRoot.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The mix hash.
     pub fn mix_hash(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(BlockField::MixHash.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, BlockField::MixHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 }
 
@@ -546,21 +620,21 @@ impl<'a> BlockReader<'a> {
 /// Provides efficient access to transaction fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
 pub struct TransactionReader<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     row_idx: usize,
 }
 
-/// Iterator over transaction rows in an ArrowBatch.
+/// Iterator over transaction rows in an RecordBatch.
 pub struct TransactionIterator<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     current_idx: usize,
     len: usize,
 }
 
 impl<'a> TransactionIterator<'a> {
     /// Create a new iterator for the given batch.
-    pub fn new(batch: &'a ArrowBatch) -> Self {
-        let len = if let Some(first_column) = batch.chunk.columns().first() {
+    pub fn new(batch: &'a RecordBatch) -> Self {
+        let len = if let Some(first_column) = batch.columns().first() {
             first_column.len()
         } else {
             0
@@ -603,283 +677,344 @@ impl<'a> ExactSizeIterator for TransactionIterator<'a> {
 
 impl<'a> TransactionReader<'a> {
     /// Create an iterator over all rows in the batch.
-    pub fn iter(batch: &'a ArrowBatch) -> TransactionIterator<'a> {
+    pub fn iter(batch: &'a RecordBatch) -> TransactionIterator<'a> {
         TransactionIterator::new(batch)
     }
     /// The hash of the block in which this transaction was included.
     pub fn block_hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::BlockHash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::BlockHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The number of the block in which this transaction was included.
     pub fn block_number(&self) -> Result<BlockNumber> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(TransactionField::BlockNumber.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, TransactionField::BlockNumber.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The address of the sender.
     pub fn from(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::From.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::From.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The gas limit provided by the sender.
     pub fn gas(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Gas.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Gas.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The gas price willing to be paid by the sender.
     pub fn gas_price(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::GasPrice.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::GasPrice.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The hash of this transaction.
     pub fn hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Hash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Hash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The data sent along with the transaction.
     pub fn input(&self) -> Result<Data> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Input.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Input.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Data::from(value))
     }
 
     /// The number of transactions made by the sender prior to this one.
     pub fn nonce(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Nonce.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Nonce.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The address of the receiver.
     pub fn to(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::To.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::To.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The index of the transaction in the block.
     pub fn transaction_index(&self) -> Result<TransactionIndex> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(TransactionField::TransactionIndex.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array =
+            column_as::<UInt64Array>(self.batch, TransactionField::TransactionIndex.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The value transferred.
     pub fn value(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Value.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Value.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// ECDSA recovery id.
     pub fn v(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::V.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::V.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// ECDSA signature r.
     pub fn r(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::R.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::R.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// ECDSA signature s.
     pub fn s(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::S.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::S.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// Maximum fee per gas the sender is willing to pay for priority.
     pub fn max_priority_fee_per_gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::MaxPriorityFeePerGas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::MaxPriorityFeePerGas.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// Maximum total fee per gas the sender is willing to pay.
     pub fn max_fee_per_gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::MaxFeePerGas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::MaxFeePerGas.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The chain id of the transaction.
     pub fn chain_id(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::ChainId.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::ChainId.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The total amount of gas used when this transaction was executed in the block.
     pub fn cumulative_gas_used(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::CumulativeGasUsed.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::CumulativeGasUsed.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The sum of the base fee and tip paid per unit of gas.
     pub fn effective_gas_price(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::EffectiveGasPrice.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::EffectiveGasPrice.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The amount of gas used by this transaction.
     pub fn gas_used(&self) -> Result<Quantity> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::GasUsed.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::GasUsed.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Quantity::from(value))
     }
 
     /// The contract address created, if the transaction was a contract creation.
     pub fn contract_address(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::ContractAddress.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::ContractAddress.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The Bloom filter for the logs of the transaction.
     pub fn logs_bloom(&self) -> Result<Data> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::LogsBloom.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::LogsBloom.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(Data::from(value))
     }
 
     /// The type of the transaction.
     pub fn type_(&self) -> Result<Option<u8>> {
-        let array = self
-            .batch
-            .column::<UInt8Array>(TransactionField::Type.as_ref())?;
-        Ok(array.get(self.row_idx))
+        let array = column_as::<UInt8Array>(self.batch, TransactionField::Type.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx))
+        } else {
+            None
+        })
     }
 
     /// The post-transaction stateroot.
     pub fn root(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Root.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Root.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// Either 1 (success) or 0 (failure).
     pub fn status(&self) -> Result<Option<u8>> {
-        let array = self
-            .batch
-            .column::<UInt8Array>(TransactionField::Status.as_ref())?;
-        Ok(array.get(self.row_idx))
+        let array = column_as::<UInt8Array>(self.batch, TransactionField::Status.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx))
+        } else {
+            None
+        })
     }
 
     /// The first 4 bytes of the transaction input data.
     pub fn sighash(&self) -> Result<Option<FixedSizeData<4>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::Sighash.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<4>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::Sighash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<4>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The y parity of the signature.
     pub fn y_parity(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::YParity.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::YParity.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The access list.
     pub fn access_list(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::AccessList.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::AccessList.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The authorization list.
     pub fn authorization_list(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::AuthorizationList.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::AuthorizationList.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     // Additional L1/L2 and blob-related fields would go here...
@@ -887,26 +1022,37 @@ impl<'a> TransactionReader<'a> {
 
     /// The L1 fee for L2 transactions.
     pub fn l1_fee(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::L1Fee.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TransactionField::L1Fee.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The maximum fee per blob gas.
     pub fn max_fee_per_blob_gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::MaxFeePerBlobGas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::MaxFeePerBlobGas.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The blob versioned hashes.
     pub fn blob_versioned_hashes(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TransactionField::BlobVersionedHashes.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array =
+            column_as::<BinaryArray>(self.batch, TransactionField::BlobVersionedHashes.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 }
 
@@ -915,21 +1061,21 @@ impl<'a> TransactionReader<'a> {
 /// Provides efficient access to trace fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
 pub struct TraceReader<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     row_idx: usize,
 }
 
-/// Iterator over trace rows in an ArrowBatch.
+/// Iterator over trace rows in an RecordBatch.
 pub struct TraceIterator<'a> {
-    batch: &'a ArrowBatch,
+    batch: &'a RecordBatch,
     current_idx: usize,
     len: usize,
 }
 
 impl<'a> TraceIterator<'a> {
     /// Create a new iterator for the given batch.
-    pub fn new(batch: &'a ArrowBatch) -> Self {
-        let len = if let Some(first_column) = batch.chunk.columns().first() {
+    pub fn new(batch: &'a RecordBatch) -> Self {
+        let len = if let Some(first_column) = batch.columns().first() {
             first_column.len()
         } else {
             0
@@ -972,227 +1118,284 @@ impl<'a> ExactSizeIterator for TraceIterator<'a> {
 
 impl<'a> TraceReader<'a> {
     /// Create an iterator over all rows in the batch.
-    pub fn iter(batch: &'a ArrowBatch) -> TraceIterator<'a> {
+    pub fn iter(batch: &'a RecordBatch) -> TraceIterator<'a> {
         TraceIterator::new(batch)
     }
     /// The hash of the block in which this trace occurred.
     pub fn block_hash(&self) -> Result<Hash> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::BlockHash.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<BinaryArray>(self.batch, TraceField::BlockHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Hash::try_from(value).context("invalid hash format")
     }
 
     /// The number of the block in which this trace occurred.
     pub fn block_number(&self) -> Result<BlockNumber> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(TraceField::BlockNumber.as_ref())?;
-        let value = array
-            .get(self.row_idx)
-            .context("value should not be null")?;
+        let array = column_as::<UInt64Array>(self.batch, TraceField::BlockNumber.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        let value = if array.is_valid(self.row_idx) {
+            array.value(self.row_idx)
+        } else {
+            return Err(anyhow::anyhow!("value should not be null"));
+        };
         Ok(value.into())
     }
 
     /// The address from which the trace originated.
     pub fn from(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::From.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::From.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The address to which the trace was sent.
     pub fn to(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::To.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::To.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The type of call.
     pub fn call_type(&self) -> Result<Option<String>> {
-        let array = self
-            .batch
-            .column::<Utf8Array<i32>>(TraceField::CallType.as_ref())?;
-        Ok(array.get(self.row_idx).map(|s| s.to_string()))
+        let array = column_as::<StringArray>(self.batch, TraceField::CallType.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx).to_string())
+        } else {
+            None
+        })
     }
 
     /// The amount of gas provided to the trace.
     pub fn gas(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Gas.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Gas.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The input data.
     pub fn input(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Input.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Input.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The init data for contract creation traces.
     pub fn init(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Init.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Init.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The value transferred.
     pub fn value(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Value.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Value.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The address of the author (miner).
     pub fn author(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Author.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Author.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The type of reward.
     pub fn reward_type(&self) -> Result<Option<String>> {
-        let array = self
-            .batch
-            .column::<Utf8Array<i32>>(TraceField::RewardType.as_ref())?;
-        Ok(array.get(self.row_idx).map(|s| s.to_string()))
+        let array = column_as::<StringArray>(self.batch, TraceField::RewardType.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx).to_string())
+        } else {
+            None
+        })
     }
 
     /// The address involved in the trace.
     pub fn address(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Address.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Address.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The bytecode.
     pub fn code(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Code.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Code.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The amount of gas used by the trace.
     pub fn gas_used(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::GasUsed.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::GasUsed.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The output data.
     pub fn output(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Output.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Output.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The number of sub-traces.
     pub fn subtraces(&self) -> Result<Option<u64>> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(TraceField::Subtraces.as_ref())?;
-        Ok(array.get(self.row_idx))
+        let array = column_as::<UInt64Array>(self.batch, TraceField::Subtraces.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx))
+        } else {
+            None
+        })
     }
 
     /// The trace address.
     pub fn trace_address(&self) -> Result<Option<Data>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::TraceAddress.as_ref())?;
-        Ok(array.get(self.row_idx).map(Data::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::TraceAddress.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Data::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The hash of the transaction this trace belongs to.
     pub fn transaction_hash(&self) -> Result<Option<Hash>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::TransactionHash.as_ref())?;
-        Ok(array.get(self.row_idx).and_then(|v| Hash::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::TransactionHash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Hash::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The position of the transaction in the block.
     pub fn transaction_position(&self) -> Result<Option<u64>> {
-        let array = self
-            .batch
-            .column::<UInt64Array>(TraceField::TransactionPosition.as_ref())?;
-        Ok(array.get(self.row_idx))
+        let array = column_as::<UInt64Array>(self.batch, TraceField::TransactionPosition.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx))
+        } else {
+            None
+        })
     }
 
     /// The type of trace.
     pub fn type_(&self) -> Result<Option<String>> {
-        let array = self
-            .batch
-            .column::<Utf8Array<i32>>(TraceField::Type.as_ref())?;
-        Ok(array.get(self.row_idx).map(|s| s.to_string()))
+        let array = column_as::<StringArray>(self.batch, TraceField::Type.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx).to_string())
+        } else {
+            None
+        })
     }
 
     /// The error message, if any.
     pub fn error(&self) -> Result<Option<String>> {
-        let array = self
-            .batch
-            .column::<Utf8Array<i32>>(TraceField::Error.as_ref())?;
-        Ok(array.get(self.row_idx).map(|s| s.to_string()))
+        let array = column_as::<StringArray>(self.batch, TraceField::Error.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(array.value(self.row_idx).to_string())
+        } else {
+            None
+        })
     }
 
     /// The first 4 bytes of the input data.
     pub fn sighash(&self) -> Result<Option<FixedSizeData<4>>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Sighash.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| FixedSizeData::<4>::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Sighash.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            FixedSizeData::<4>::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The action address.
     pub fn action_address(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::ActionAddress.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::ActionAddress.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 
     /// The balance.
     pub fn balance(&self) -> Result<Option<Quantity>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::Balance.as_ref())?;
-        Ok(array.get(self.row_idx).map(Quantity::from))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::Balance.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Some(Quantity::from(array.value(self.row_idx)))
+        } else {
+            None
+        })
     }
 
     /// The refund address.
     pub fn refund_address(&self) -> Result<Option<Address>> {
-        let array = self
-            .batch
-            .column::<BinaryArray<i32>>(TraceField::RefundAddress.as_ref())?;
-        Ok(array
-            .get(self.row_idx)
-            .and_then(|v| Address::try_from(v).ok()))
+        let array = column_as::<BinaryArray>(self.batch, TraceField::RefundAddress.as_ref())
+            .ok_or_else(|| anyhow::anyhow!("column not found or wrong type"))?;
+        Ok(if array.is_valid(self.row_idx) {
+            Address::try_from(array.value(self.row_idx)).ok()
+        } else {
+            None
+        })
     }
 }
 
