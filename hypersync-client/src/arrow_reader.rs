@@ -74,7 +74,6 @@ impl<'a> ExactSizeIterator for LogIterator<'a> {
     }
 }
 
-
 impl<'a> LogReader<'a> {
     /// Create an iterator over all rows in the batch.
     pub fn iter(batch: &'a ArrowBatch) -> LogIterator<'a> {

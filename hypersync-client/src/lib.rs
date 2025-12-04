@@ -81,6 +81,7 @@ use reqwest::{header, Method};
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
 
+pub mod arrow_reader;
 mod column_mapping;
 mod config;
 mod decode;
@@ -94,7 +95,6 @@ pub mod simple_types;
 mod stream;
 mod types;
 mod util;
-pub mod zero_copy_types;
 
 pub use hypersync_format as format;
 pub use hypersync_net_types as net_types;
