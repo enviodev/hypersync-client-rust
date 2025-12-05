@@ -81,6 +81,7 @@ use reqwest::{header, Method};
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
 
+pub mod arrow_reader;
 mod column_mapping;
 mod config;
 mod decode;
