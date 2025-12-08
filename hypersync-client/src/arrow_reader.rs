@@ -12,8 +12,8 @@ use arrow::{
     datatypes::DataType,
 };
 use hypersync_format::{
-    Address, BlockNumber, Data, FixedSizeData, Hash, LogIndex, Quantity, TransactionIndex,
-    Withdrawal,
+    AccessList, Address, Authorization, BlockNumber, Data, FixedSizeData, Hash, LogIndex, Quantity,
+    TransactionIndex, TransactionStatus, TransactionType, Withdrawal,
 };
 use hypersync_net_types::{BlockField, LogField, TraceField, TransactionField};
 
@@ -705,9 +705,11 @@ impl<'a> TransactionReader<'a> {
     }
 
     /// The type of the transaction.
-    pub fn type_(&self) -> Result<Option<u8>, ReadError> {
-        self.inner
-            .get_nullable::<UInt8Array, u8>(TransactionField::Type.as_ref())
+    pub fn type_(&self) -> Result<Option<TransactionType>, ReadError> {
+        let type_ = self
+            .inner
+            .get_nullable::<UInt8Array, u8>(TransactionField::Type.as_ref())?;
+        Ok(type_.map(TransactionType::from))
     }
 
     /// The post-transaction stateroot.
@@ -717,15 +719,23 @@ impl<'a> TransactionReader<'a> {
     }
 
     /// Either 1 (success) or 0 (failure).
-    pub fn status(&self) -> Result<Option<u8>, ReadError> {
-        self.inner
-            .get_nullable::<UInt8Array, u8>(TransactionField::Status.as_ref())
+    pub fn status(&self) -> Result<Option<TransactionStatus>, ReadError> {
+        let status = self
+            .inner
+            .get_nullable::<UInt8Array, u8>(TransactionField::Status.as_ref())?;
+        let Some(status) = status else {
+            return Ok(None);
+        };
+        let status = TransactionStatus::from_u8(status)
+            .context("convert u8 to transaction status")
+            .map_err(ReadError::ConversionError)?;
+        Ok(Some(status))
     }
 
     /// The first 4 bytes of the transaction input data.
-    pub fn sighash(&self) -> Result<Option<FixedSizeData<4>>, ReadError> {
+    pub fn sighash(&self) -> Result<Option<Data>, ReadError> {
         self.inner
-            .get_nullable::<BinaryArray, FixedSizeData<4>>(TransactionField::Sighash.as_ref())
+            .get_nullable::<BinaryArray, _>(TransactionField::Sighash.as_ref())
     }
 
     /// The y parity of the signature.
@@ -735,15 +745,31 @@ impl<'a> TransactionReader<'a> {
     }
 
     /// The access list.
-    pub fn access_list(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(TransactionField::AccessList.as_ref())
+    pub fn access_list(&self) -> Result<Option<Vec<AccessList>>, ReadError> {
+        let bin = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(TransactionField::AccessList.as_ref())?;
+        let Some(bin) = bin else {
+            return Ok(None);
+        };
+        let deser = bincode::deserialize(&bin)
+            .context("deserialize access list")
+            .map_err(ReadError::ConversionError)?;
+        Ok(Some(deser))
     }
 
     /// The authorization list.
-    pub fn authorization_list(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(TransactionField::AuthorizationList.as_ref())
+    pub fn authorization_list(&self) -> Result<Option<Vec<Authorization>>, ReadError> {
+        let bin = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(TransactionField::AuthorizationList.as_ref())?;
+        let Some(bin) = bin else {
+            return Ok(None);
+        };
+        let deser = bincode::deserialize(&bin)
+            .context("deserialize authorization list")
+            .map_err(ReadError::ConversionError)?;
+        Ok(Some(deser))
     }
 
     // Additional L1/L2 and blob-related fields would go here...
@@ -762,9 +788,21 @@ impl<'a> TransactionReader<'a> {
     }
 
     /// The blob versioned hashes.
-    pub fn blob_versioned_hashes(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(TransactionField::BlobVersionedHashes.as_ref())
+    pub fn blob_versioned_hashes(&self) -> Result<Option<Vec<Hash>>, ReadError> {
+        let bin = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(TransactionField::BlobVersionedHashes.as_ref())?;
+        let Some(bin) = bin else {
+            return Ok(None);
+        };
+        let mut hashes = Vec::new();
+        for hash_bytes in bin.chunks(32) {
+            let hash = Hash::try_from(hash_bytes)
+                .context("convert blob versioned hash bytes to hash")
+                .map_err(ReadError::ConversionError)?;
+            hashes.push(hash);
+        }
+        Ok(Some(hashes))
     }
 
     /// The L1 gas price for L2 transactions.
@@ -780,9 +818,23 @@ impl<'a> TransactionReader<'a> {
     }
 
     /// The L1 fee scalar for L2 transactions.
-    pub fn l1_fee_scalar(&self) -> Result<Option<Quantity>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Quantity>(TransactionField::L1FeeScalar.as_ref())
+    pub fn l1_fee_scalar(&self) -> Result<Option<f64>, ReadError> {
+        let scalar = self
+            .inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::L1FeeScalar.as_ref())?;
+        let Some(scalar_utf8) = scalar else {
+            return Ok(None);
+        };
+        // stored as a string of float eg 0.69 (utf8 encoded)
+        let scalar_str = std::str::from_utf8(&scalar_utf8)
+            .context("convert l1 fee scalar to string")
+            .map_err(ReadError::ConversionError)?;
+
+        let scalar_f64: f64 = scalar_str
+            .parse()
+            .context("parse l1 fee scalar as f64")
+            .map_err(ReadError::ConversionError)?;
+        Ok(Some(scalar_f64))
     }
 
     /// The gas used for L1 for L2 transactions.

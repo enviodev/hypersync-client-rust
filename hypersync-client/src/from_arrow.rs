@@ -246,10 +246,9 @@ impl TryFrom<TransactionReader<'_>> for Transaction {
         let max_fee_per_gas =
             to_nested_opt(reader.max_fee_per_gas()).context("read field max_fee_per_gas")?;
         let chain_id = to_nested_opt(reader.chain_id()).context("read field chain_id")?;
-        // TODO: access_list requires additional conversion
-        let access_list = None; // to_nested_opt(reader.access_list()).context("read field access_list")?;
-                                // TODO: authorization_list requires additional conversion
-        let authorization_list = None; // to_nested_opt(reader.authorization_list()).context("read field authorization_list")?;
+        let access_list = to_nested_opt(reader.access_list()).context("read field access_list")?;
+        let authorization_list =
+            to_nested_opt(reader.authorization_list()).context("read field authorization_list")?;
         let max_fee_per_blob_gas = to_nested_opt(reader.max_fee_per_blob_gas())
             .context("read field max_fee_per_blob_gas")?;
         let blob_versioned_hashes = to_nested_opt(reader.blob_versioned_hashes())
