@@ -1,4 +1,4 @@
-//! Zero-copy types for reading Arrow data without allocation.
+//! Reader types for reading Arrow record batch data as native Rust types.
 //!
 //! This module provides zero-copy readers that access Arrow columnar data directly
 //! without copying or allocating new memory for individual field access.
@@ -219,7 +219,7 @@ impl<'a, R: From<ArrowRowReader<'a>>> ExactSizeIterator for ArrowRowIterator<'a,
     }
 }
 
-/// Zero-copy reader for log data from Arrow batches.
+/// Reader for log data from Arrow batches.
 ///
 /// Provides efficient access to log fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
@@ -321,7 +321,7 @@ impl<'a> LogReader<'a> {
     }
 }
 
-/// Zero-copy reader for block data from Arrow batches.
+/// Reader for block data from Arrow batches.
 ///
 /// Provides efficient access to block fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
@@ -542,7 +542,7 @@ impl<'a> BlockReader<'a> {
     }
 }
 
-/// Zero-copy reader for transaction data from Arrow batches.
+/// Reader for transaction data from Arrow batches.
 ///
 /// Provides efficient access to transaction fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
@@ -904,7 +904,7 @@ impl<'a> TransactionReader<'a> {
     }
 }
 
-/// Zero-copy reader for trace data from Arrow batches.
+/// Reader for trace data from Arrow batches.
 ///
 /// Provides efficient access to trace fields without copying data from the underlying
 /// Arrow columnar format. Each reader is bound to a specific row in the batch.
