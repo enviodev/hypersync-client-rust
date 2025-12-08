@@ -1,12 +1,61 @@
 use std::fmt::Debug;
 
+use anyhow::Context;
 use arrayvec::ArrayVec;
 use arrow::array::{
     Array, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array, UInt8Array,
 };
 use hypersync_format::{TransactionStatus, TransactionType, UInt};
 
-use crate::simple_types::{Block, Log, Trace, Transaction};
+use crate::{
+    arrow_reader::{self, LogReader},
+    simple_types::{Block, Log, Trace, Transaction},
+};
+
+fn to_opt<T>(val: Result<T, arrow_reader::ReadError>) -> anyhow::Result<Option<T>> {
+    match val {
+        Ok(val) => Ok(Some(val)),
+        Err(arrow_reader::ReadError::UnexpectedNull) => Ok(None),
+        Err(e) => Err(anyhow::Error::new(e)),
+    }
+}
+
+impl TryFrom<LogReader<'_>> for Log {
+    type Error = anyhow::Error;
+
+    fn try_from(reader: LogReader<'_>) -> Result<Self, Self::Error> {
+        let removed = reader.removed().context("read field removed")?;
+        let log_index = to_opt(reader.log_index()).context("read field log_index")?;
+        let transaction_index =
+            to_opt(reader.transaction_index()).context("read field transaction_index")?;
+        let transaction_hash =
+            to_opt(reader.transaction_hash()).context("read field transaction_hash")?;
+        let block_hash = to_opt(reader.block_hash()).context("read field block_hash")?;
+        let block_number = to_opt(reader.block_number()).context("read field block_number")?;
+        let address = to_opt(reader.address()).context("read field address")?;
+        let data = to_opt(reader.data()).context("read field data")?;
+        let mut topics = ArrayVec::new();
+        let topic0 = reader.topic0().context("read field topic0")?;
+        topics.push(topic0);
+        let topic1 = reader.topic1().context("read field topic1")?;
+        topics.push(topic1);
+        let topic2 = reader.topic2().context("read field topic2")?;
+        topics.push(topic2);
+        let topic3 = reader.topic3().context("read field topic3")?;
+        topics.push(topic3);
+        Ok(Self {
+            removed,
+            log_index,
+            transaction_index,
+            transaction_hash,
+            block_hash,
+            block_number,
+            address,
+            data,
+            topics,
+        })
+    }
+}
 
 fn get_str<'a, T: From<&'a str>>(array: Option<&'a StringArray>, index: usize) -> Option<T> {
     match array {
@@ -265,42 +314,12 @@ impl Transaction {
 
 impl Log {
     /// Convert an arrow RecordBatch into a vector of Log structs
-    pub fn from_arrow(batch: &RecordBatch) -> Vec<Self> {
-        let removed = column_as::<BooleanArray>(batch, "removed");
-        let log_index = column_as::<UInt64Array>(batch, "log_index");
-        let transaction_index = column_as::<UInt64Array>(batch, "transaction_index");
-        let transaction_hash = column_as::<BinaryArray>(batch, "transaction_hash");
-        let block_hash = column_as::<BinaryArray>(batch, "block_hash");
-        let block_number = column_as::<UInt64Array>(batch, "block_number");
-        let address = column_as::<BinaryArray>(batch, "address");
-        let data = column_as::<BinaryArray>(batch, "data");
-        let topic0 = column_as::<BinaryArray>(batch, "topic0");
-        let topic1 = column_as::<BinaryArray>(batch, "topic1");
-        let topic2 = column_as::<BinaryArray>(batch, "topic2");
-        let topic3 = column_as::<BinaryArray>(batch, "topic3");
-
-        (0..batch.num_rows())
-            .map(|idx| Self {
-                removed: get_bool(removed, idx),
-                log_index: get_u64(log_index, idx).map(UInt::from),
-                transaction_index: get_u64(transaction_index, idx).map(UInt::from),
-                transaction_hash: get_binary(transaction_hash, idx),
-                block_hash: get_binary(block_hash, idx),
-                block_number: get_u64(block_number, idx).map(UInt::from),
-                address: get_binary(address, idx),
-                data: get_binary(data, idx),
-                topics: {
-                    let mut arr = ArrayVec::new();
-
-                    arr.push(get_binary(topic0, idx));
-                    arr.push(get_binary(topic1, idx));
-                    arr.push(get_binary(topic2, idx));
-                    arr.push(get_binary(topic3, idx));
-
-                    arr
-                },
-            })
-            .collect()
+    pub fn from_arrow(batch: &RecordBatch) -> anyhow::Result<Vec<Self>> {
+        let mut logs = Vec::new();
+        for log_reader in LogReader::iter(batch) {
+            logs.push(log_reader.try_into().context("convert log reader to log")?);
+        }
+        Ok(logs)
     }
 }
 
