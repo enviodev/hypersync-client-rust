@@ -1,15 +1,10 @@
-use std::fmt::Debug;
-
-use anyhow::Context;
-use arrayvec::ArrayVec;
-use arrow::array::{
-    Array, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array, UInt8Array,
-};
-
 use crate::{
     arrow_reader::{self, BlockReader, LogReader, TraceReader, TransactionReader},
     simple_types::{Block, Log, Trace, Transaction},
 };
+use anyhow::Context;
+use arrayvec::ArrayVec;
+use arrow::array::RecordBatch;
 
 fn to_opt<T>(val: Result<T, arrow_reader::ReadError>) -> anyhow::Result<Option<T>> {
     match val {
@@ -142,81 +137,6 @@ impl TryFrom<BlockReader<'_>> for Block {
             send_root,
             mix_hash,
         })
-    }
-}
-
-fn get_str<'a, T: From<&'a str>>(array: Option<&'a StringArray>, index: usize) -> Option<T> {
-    match array {
-        None => None,
-        Some(a) => {
-            if a.is_valid(index) {
-                Some(a.value(index).into())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn get_binary<'a, T: TryFrom<&'a [u8]>>(array: Option<&'a BinaryArray>, index: usize) -> Option<T>
-where
-    <T as TryFrom<&'a [u8]>>::Error: Debug,
-{
-    match array {
-        None => None,
-        Some(a) => {
-            if a.is_valid(index) {
-                Some(a.value(index).try_into().unwrap())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn get_bool(array: Option<&BooleanArray>, index: usize) -> Option<bool> {
-    match array {
-        None => None,
-        Some(a) => {
-            if a.is_valid(index) {
-                Some(a.value(index))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn get_u8(array: Option<&UInt8Array>, index: usize) -> Option<u8> {
-    match array {
-        None => None,
-        Some(a) => {
-            if a.is_valid(index) {
-                Some(a.value(index))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn get_u64(array: Option<&UInt64Array>, index: usize) -> Option<u64> {
-    match array {
-        None => None,
-        Some(a) => {
-            if a.is_valid(index) {
-                Some(a.value(index))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn column_as<'a, T: 'static>(batch: &'a RecordBatch, col_name: &str) -> Option<&'a T> {
-    match batch.column_by_name(col_name) {
-        None => None,
-        Some(c) => c.as_any().downcast_ref::<T>(),
     }
 }
 

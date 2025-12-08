@@ -274,7 +274,8 @@ impl Client {
 
         while let Some(res) = recv.recv().await {
             let res = res.context("get response")?;
-            let res: QueryResponse = QueryResponse::from(&res);
+            let res: QueryResponse =
+                QueryResponse::try_from(&res).context("convert arrow response")?;
 
             for batch in res.data.blocks {
                 data.blocks.push(batch);
@@ -361,7 +362,8 @@ impl Client {
 
         while let Some(res) = recv.recv().await {
             let res = res.context("get response")?;
-            let res: QueryResponse = QueryResponse::from(&res);
+            let res: QueryResponse =
+                QueryResponse::try_from(&res).context("convert arrow response")?;
             let events = event_join_strategy.join_from_response_data(res.data);
 
             data.extend(events);
@@ -714,7 +716,9 @@ impl Client {
     /// ```
     pub async fn get(&self, query: &Query) -> Result<QueryResponse> {
         let arrow_response = self.get_arrow(query).await.context("get data")?;
-        Ok(QueryResponse::from(&arrow_response))
+        let converted =
+            QueryResponse::try_from(&arrow_response).context("convert arrow response")?;
+        Ok(converted)
     }
 
     /// Add block, transaction and log fields selection to the query, executes it with retries
@@ -753,10 +757,7 @@ impl Client {
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
         event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
         let arrow_response = self.get_arrow(&query).await.context("get data")?;
-        Ok(EventResponse::from_arrow_response(
-            &arrow_response,
-            &event_join_strategy,
-        ))
+        EventResponse::try_from_arrow_response(&arrow_response, &event_join_strategy)
     }
 
     /// Executes query once and returns the result in (Arrow, size) format using JSON serialization.
@@ -1012,13 +1013,11 @@ impl Client {
 
         tokio::spawn(async move {
             while let Some(resp) = inner_rx.recv().await {
-                let is_err = resp.is_err();
-                if tx
-                    .send(resp.map(|r| QueryResponse::from(&r)))
-                    .await
-                    .is_err()
-                    || is_err
-                {
+                let msg = resp
+                    .context("inner receiver")
+                    .and_then(|r| QueryResponse::try_from(&r));
+                let is_err = msg.is_err();
+                if tx.send(msg).await.is_err() || is_err {
                     return;
                 }
             }
@@ -1082,15 +1081,11 @@ impl Client {
 
         tokio::spawn(async move {
             while let Some(resp) = inner_rx.recv().await {
-                let is_err = resp.is_err();
-                if tx
-                    .send(
-                        resp.map(|r| EventResponse::from_arrow_response(&r, &event_join_strategy)),
-                    )
-                    .await
-                    .is_err()
-                    || is_err
-                {
+                let msg = resp
+                    .context("inner receiver")
+                    .and_then(|r| EventResponse::try_from_arrow_response(&r, &event_join_strategy));
+                let is_err = msg.is_err();
+                if tx.send(msg).await.is_err() || is_err {
                     return;
                 }
             }
