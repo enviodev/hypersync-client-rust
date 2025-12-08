@@ -1185,20 +1185,47 @@ mod tests {
                 TransactionField::LogsBloom => {
                     assert_not_nullable(TransactionReader::logs_bloom, field)
                 }
-                TransactionField::L1GasPrice => todo!(),
-                TransactionField::L1GasUsed => todo!(),
-                TransactionField::L1FeeScalar => todo!(),
-                TransactionField::GasUsedForL1 => todo!(),
-                TransactionField::BlobGasPrice => todo!(),
-                TransactionField::BlobGasUsed => todo!(),
-                TransactionField::DepositNonce => todo!(),
-                TransactionField::DepositReceiptVersion => todo!(),
-                TransactionField::L1BaseFeeScalar => todo!(),
-                TransactionField::L1BlobBaseFee => todo!(),
-                TransactionField::L1BlobBaseFeeScalar => todo!(),
-                TransactionField::L1BlockNumber => todo!(),
-                TransactionField::Mint => todo!(),
-                TransactionField::SourceHash => todo!(),
+                TransactionField::L1GasPrice => {
+                    assert_nullable(TransactionReader::l1_gas_price, field)
+                }
+                TransactionField::L1GasUsed => {
+                    assert_nullable(TransactionReader::l1_gas_used, field)
+                }
+                TransactionField::L1FeeScalar => {
+                    assert_nullable(TransactionReader::l1_fee_scalar, field)
+                }
+                TransactionField::GasUsedForL1 => {
+                    assert_nullable(TransactionReader::gas_used_for_l1, field)
+                }
+                TransactionField::BlobGasPrice => {
+                    assert_nullable(TransactionReader::blob_gas_price, field)
+                }
+                TransactionField::BlobGasUsed => {
+                    assert_nullable(TransactionReader::blob_gas_used, field)
+                }
+                TransactionField::DepositNonce => {
+                    assert_nullable(TransactionReader::deposit_nonce, field)
+                }
+                TransactionField::DepositReceiptVersion => {
+                    assert_nullable(TransactionReader::deposit_receipt_version, field)
+                }
+                TransactionField::L1BaseFeeScalar => {
+                    assert_nullable(TransactionReader::l1_base_fee_scalar, field)
+                }
+                TransactionField::L1BlobBaseFee => {
+                    assert_nullable(TransactionReader::l1_blob_base_fee, field)
+                }
+                TransactionField::L1BlobBaseFeeScalar => {
+                    assert_nullable(TransactionReader::l1_blob_base_fee_scalar, field)
+                }
+
+                TransactionField::L1BlockNumber => {
+                    assert_nullable(TransactionReader::l1_block_number, field)
+                }
+                TransactionField::Mint => assert_nullable(TransactionReader::mint, field),
+                TransactionField::SourceHash => {
+                    assert_nullable(TransactionReader::source_hash, field)
+                }
             }
         }
     }
