@@ -1265,6 +1265,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "integration test for returned schema"]
     async fn test_readers_integration() -> anyhow::Result<()> {
         use crate::{
             net_types::{LogField, LogFilter, TransactionField, TransactionFilter},
@@ -1278,7 +1279,7 @@ mod tests {
 
         let query = Query::new()
             .from_block(20_000_000)
-            .to_block_excl(20_000_010)
+            .to_block_excl(20_000_001)
             .include_all_blocks()
             .where_logs(LogFilter::all())
             .where_transactions(TransactionFilter::all())
@@ -1504,6 +1505,11 @@ mod tests {
         }
 
         println!("num_traces: {}", num_traces);
+
+        assert!(num_traces > 0, "no traces found");
+        assert!(num_logs > 0, "no logs found");
+        assert!(num_transactions > 0, "no transactions found");
+        assert!(num_blocks > 0, "no blocks found");
 
         Ok(())
     }
