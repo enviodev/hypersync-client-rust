@@ -3,6 +3,7 @@
 //! This module provides zero-copy readers that access Arrow columnar data directly
 //! without copying or allocating new memory for individual field access.
 
+use anyhow::Context;
 use arrow::{
     array::{
         Array, ArrayAccessor, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array,
@@ -12,6 +13,7 @@ use arrow::{
 };
 use hypersync_format::{
     Address, BlockNumber, Data, FixedSizeData, Hash, LogIndex, Quantity, TransactionIndex,
+    Withdrawal,
 };
 use hypersync_net_types::{BlockField, LogField, TraceField, TransactionField};
 
@@ -94,8 +96,8 @@ pub enum ReadError {
     #[error(transparent)]
     ColumnError(#[from] ColumnError),
     /// An error occurred during data type conversion.
-    #[error(transparent)]
-    ConversionError(#[from] anyhow::Error),
+    #[error("{0:?}")]
+    ConversionError(anyhow::Error),
 }
 
 /// A reader for accessing individual row data from an Arrow RecordBatch.
@@ -350,9 +352,9 @@ impl<'a> BlockReader<'a> {
     }
 
     /// The block number.
-    pub fn number(&self) -> Result<BlockNumber, ReadError> {
+    pub fn number(&self) -> Result<u64, ReadError> {
         self.inner
-            .get::<UInt64Array, BlockNumber>(BlockField::Number.as_ref())
+            .get::<UInt64Array, _>(BlockField::Number.as_ref())
     }
 
     /// The block hash.
@@ -452,9 +454,21 @@ impl<'a> BlockReader<'a> {
     }
 
     /// Array of uncle hashes.
-    pub fn uncles(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(BlockField::Uncles.as_ref())
+    pub fn uncles(&self) -> Result<Option<Vec<FixedSizeData<32>>>, ReadError> {
+        let all = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(BlockField::Uncles.as_ref())?;
+        let Some(data) = all else {
+            return Ok(None);
+        };
+        let mut uncles = Vec::new();
+        for uncle_bytes in data.chunks(32) {
+            let uncle = FixedSizeData::<32>::try_from(uncle_bytes)
+                .context("convert uncle bytes to uncle")
+                .map_err(ReadError::ConversionError)?;
+            uncles.push(uncle);
+        }
+        Ok(Some(uncles))
     }
 
     /// The base fee per gas.
@@ -488,9 +502,19 @@ impl<'a> BlockReader<'a> {
     }
 
     /// The withdrawals in the block.
-    pub fn withdrawals(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(BlockField::Withdrawals.as_ref())
+    pub fn withdrawals(&self) -> Result<Option<Vec<Withdrawal>>, ReadError> {
+        let withdrawals_bin = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(BlockField::Withdrawals.as_ref())?;
+        let Some(withdrawals_bin) = withdrawals_bin else {
+            return Ok(None);
+        };
+
+        let deser = bincode::deserialize(&withdrawals_bin)
+            .context("deserialize withdrawals")
+            .map_err(ReadError::ConversionError)?;
+
+        Ok(Some(deser))
     }
 
     /// The L1 block number.
