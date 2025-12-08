@@ -57,9 +57,3 @@ maplit = "1"
 hex-literal = "0.4"
 env_logger = "0.11"
 dotenvy = "0.15.7"
-bytesize = "2.3.1"
-
-
-[[bench]]
-name = "transform_memory"
-harness = false
