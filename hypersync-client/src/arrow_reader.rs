@@ -1097,7 +1097,14 @@ impl<'a> TraceReader<'a> {
 mod tests {
     use super::*;
     use anyhow::Context;
-    use hypersync_format::Hex;
+
+    trait NotOption {}
+
+    impl NotOption for hypersync_format::Quantity {}
+    impl NotOption for hypersync_format::Data {}
+    impl NotOption for hypersync_format::UInt {}
+    impl<const N: usize> NotOption for hypersync_format::FixedSizeData<N> {}
+    impl NotOption for u64 {}
 
     /// Compile-time tests that ensure the correct return types
     #[test]
@@ -1113,7 +1120,7 @@ mod tests {
         where
             F: FnOnce(&LogReader<'a>) -> Result<T, ReadError>,
             // just to make sure its an inner type and not an Option
-            T: Hex,
+            T: NotOption,
         {
             assert!(!log_field.is_nullable(), "should not be nullable");
         }
@@ -1156,7 +1163,7 @@ mod tests {
         fn assert_not_nullable<'a, T, F>(_: F, block_field: BlockField)
         where
             F: FnOnce(&BlockReader<'a>) -> Result<T, ReadError>,
-            T: Hex,
+            T: NotOption,
         {
             assert!(!block_field.is_nullable(), "should not be nullable");
         }
@@ -1220,7 +1227,7 @@ mod tests {
         fn assert_not_nullable<'a, T, F>(_: F, transaction_field: TransactionField)
         where
             F: FnOnce(&TransactionReader<'a>) -> Result<T, ReadError>,
-            T: Hex,
+            T: NotOption,
         {
             assert!(!transaction_field.is_nullable(), "should not be nullable");
         }
@@ -1347,7 +1354,7 @@ mod tests {
         fn assert_not_nullable<'a, T, F>(_: F, trace_field: TraceField)
         where
             F: FnOnce(&TraceReader<'a>) -> Result<T, ReadError>,
-            T: Hex,
+            T: NotOption,
         {
             assert!(!trace_field.is_nullable(), "should not be nullable");
         }

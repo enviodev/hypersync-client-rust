@@ -501,17 +501,18 @@ mod tests {
     #[test]
     fn nullable_fields() {
         use std::collections::HashMap;
-        
+
         let is_nullable_map: HashMap<_, _> = BlockField::all()
             .iter()
             .map(|f| (f.to_string(), f.is_nullable()))
             .collect();
         for field in hypersync_schema::block_header().fields.iter() {
-            let should_be_nullable = is_nullable_map.get(field.name.as_str()).unwrap();
+            let should_be_nullable = is_nullable_map.get(field.name().as_str()).unwrap();
             assert_eq!(
-                field.is_nullable, *should_be_nullable,
+                field.is_nullable(),
+                *should_be_nullable,
                 "field {} nullable mismatch",
-                field.name
+                field.name()
             );
         }
     }
