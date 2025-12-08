@@ -17,10 +17,13 @@ use hypersync_net_types::{BlockField, LogField, TraceField, TransactionField};
 
 type ColResult<T> = std::result::Result<T, ColumnError>;
 
+/// Error that occurs when trying to access a column in Arrow data.
 #[derive(Debug, thiserror::Error)]
 #[error("column {col_name} {err}")]
 pub struct ColumnError {
+    /// The name of the column that caused the error.
     pub col_name: &'static str,
+    /// The specific type of column error that occurred.
     pub err: ColumnErrorType,
 }
 
@@ -47,13 +50,18 @@ impl ColumnError {
     }
 }
 
+/// The specific type of error that can occur when accessing a column.
 #[derive(Debug, thiserror::Error)]
 pub enum ColumnErrorType {
+    /// The column was not found in the Arrow schema.
     #[error("not found")]
     NotFound,
+    /// The column exists but has a different type than expected.
     #[error("expected to be of type {expected_type} but found {actual_type}")]
     WrongType {
+        /// The expected Arrow data type.
         expected_type: &'static str,
+        /// The actual Arrow data type found in the schema.
         actual_type: DataType,
     },
 }
@@ -76,16 +84,24 @@ fn column_as<'a, T: 'static>(batch: &'a RecordBatch, col_name: &'static str) -> 
     }
 }
 
+/// Error that can occur when reading data from Arrow columns.
 #[derive(Debug, thiserror::Error)]
 pub enum ReadError {
+    /// A value was expected to be non-null but was null.
     #[error("value was unexpectedly null")]
     UnexpectedNull,
+    /// An error occurred while accessing a column.
     #[error(transparent)]
     ColumnError(#[from] ColumnError),
+    /// An error occurred during data type conversion.
     #[error(transparent)]
     ConversionError(#[from] anyhow::Error),
 }
 
+/// A reader for accessing individual row data from an Arrow RecordBatch.
+///
+/// This struct provides zero-copy access to columnar data in Arrow format,
+/// allowing efficient reading of specific fields from a single row.
 pub struct ArrowRowReader<'a> {
     batch: &'a RecordBatch,
     row_idx: usize,
@@ -94,7 +110,7 @@ pub struct ArrowRowReader<'a> {
 impl<'a> ArrowRowReader<'a> {
     /// Safely create a new reader for the given batch at row index and check
     /// that row_idx is within the bounds of the batch.
-    pub fn new(batch: &'a RecordBatch, row_idx: usize) -> anyhow::Result<Self> {
+    fn new(batch: &'a RecordBatch, row_idx: usize) -> anyhow::Result<Self> {
         let len = if let Some(first_column) = batch.columns().first() {
             first_column.len()
         } else {
@@ -107,16 +123,17 @@ impl<'a> ArrowRowReader<'a> {
         Ok(Self { batch, row_idx })
     }
 
-    fn get_nullable<A, T>(&self, col_name: &'static str) -> Result<Option<T>, ReadError>
+    /// Read and convert the value at col_name that could be null
+    fn get_nullable<Col, T>(&self, col_name: &'static str) -> Result<Option<T>, ReadError>
     where
-        A: 'static,
-        &'a A: ArrayAccessor,
+        Col: 'static,
+        &'a Col: ArrayAccessor,
 
-        <&'a A as ArrayAccessor>::Item: TryInto<T>,
-        <<&'a A as ArrayAccessor>::Item as TryInto<T>>::Error:
+        <&'a Col as ArrayAccessor>::Item: TryInto<T>,
+        <<&'a Col as ArrayAccessor>::Item as TryInto<T>>::Error:
             std::error::Error + Send + Sync + 'static,
     {
-        let arr = column_as::<A>(self.batch, col_name)?;
+        let arr = column_as::<Col>(self.batch, col_name)?;
 
         if arr.is_valid(self.row_idx) {
             let value = arr.value(self.row_idx);
@@ -129,16 +146,17 @@ impl<'a> ArrowRowReader<'a> {
         }
     }
 
-    fn get<A, T>(&self, col_name: &'static str) -> Result<T, ReadError>
+    /// Read and convert the value at col_name where it should not be null
+    fn get<Col, T>(&self, col_name: &'static str) -> Result<T, ReadError>
     where
-        A: 'static,
-        &'a A: ArrayAccessor,
+        Col: 'static,
+        &'a Col: ArrayAccessor,
 
-        <&'a A as ArrayAccessor>::Item: TryInto<T>,
-        <<&'a A as ArrayAccessor>::Item as TryInto<T>>::Error:
+        <&'a Col as ArrayAccessor>::Item: TryInto<T>,
+        <<&'a Col as ArrayAccessor>::Item as TryInto<T>>::Error:
             std::error::Error + Send + Sync + 'static,
     {
-        match self.get_nullable::<A, T>(col_name) {
+        match self.get_nullable::<Col, T>(col_name) {
             Ok(Some(val)) => Ok(val),
             Ok(None) => Err(ReadError::UnexpectedNull),
             Err(e) => Err(e),
