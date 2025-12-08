@@ -5,7 +5,6 @@ use arrayvec::ArrayVec;
 use arrow::array::{
     Array, BinaryArray, BooleanArray, RecordBatch, StringArray, UInt64Array, UInt8Array,
 };
-use hypersync_format::{TransactionStatus, TransactionType, UInt};
 
 use crate::{
     arrow_reader::{self, BlockReader, LogReader, TraceReader, TransactionReader},

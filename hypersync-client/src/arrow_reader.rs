@@ -941,9 +941,9 @@ impl<'a> TraceReader<'a> {
     }
 
     /// The number of the block in which this trace occurred.
-    pub fn block_number(&self) -> Result<BlockNumber, ReadError> {
+    pub fn block_number(&self) -> Result<u64, ReadError> {
         self.inner
-            .get::<UInt64Array, BlockNumber>(TraceField::BlockNumber.as_ref())
+            .get::<UInt64Array, _>(TraceField::BlockNumber.as_ref())
     }
 
     /// The address from which the trace originated.
@@ -1031,9 +1031,17 @@ impl<'a> TraceReader<'a> {
     }
 
     /// The trace address.
-    pub fn trace_address(&self) -> Result<Option<Data>, ReadError> {
-        self.inner
-            .get_nullable::<BinaryArray, Data>(TraceField::TraceAddress.as_ref())
+    pub fn trace_address(&self) -> Result<Option<Vec<u64>>, ReadError> {
+        let bin = self
+            .inner
+            .get_nullable::<BinaryArray, Data>(TraceField::TraceAddress.as_ref())?;
+        let Some(bin) = bin else {
+            return Ok(None);
+        };
+        let deser = bincode::deserialize(&bin)
+            .context("deserialize trace address")
+            .map_err(ReadError::ConversionError)?;
+        Ok(Some(deser))
     }
 
     /// The hash of the transaction this trace belongs to.
@@ -1061,9 +1069,9 @@ impl<'a> TraceReader<'a> {
     }
 
     /// The first 4 bytes of the input data.
-    pub fn sighash(&self) -> Result<Option<FixedSizeData<4>>, ReadError> {
+    pub fn sighash(&self) -> Result<Option<Data>, ReadError> {
         self.inner
-            .get_nullable::<BinaryArray, FixedSizeData<4>>(TraceField::Sighash.as_ref())
+            .get_nullable::<BinaryArray, _>(TraceField::Sighash.as_ref())
     }
 
     /// The action address.
