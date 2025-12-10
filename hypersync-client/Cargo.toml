@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-client"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2021"
 description = "client library for hypersync"
 license = "MPL-2.0"
@@ -40,9 +40,9 @@ bincode = "1"
 nohash-hasher = "0.2.0"
 alloy-primitives = "1.1"
 
-hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.2" }
-hypersync-format = { path = "../hypersync-format", version = "0.6.0" }
-hypersync-schema = { path = "../hypersync-schema", version = "0.3.1" }
+hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
+hypersync-format = { path = "../hypersync-format", version = "0.7.0" }
+hypersync-schema = { path = "../hypersync-schema", version = "0.4.0" }
 reqwest-eventsource = "0.6"
 uuid = { version = "1", features = ["v4"] }
 thiserror = "2.0.17"
