@@ -1,9 +1,9 @@
 use alloy_json_abi::Function;
 use anyhow::Context;
 use hypersync_client::{
+    arrow_reader::TraceReader,
     net_types::{Query, TraceField, TraceFilter},
-    simple_types::Trace,
-    ArrowResponseData, CallDecoder, Client, StreamConfig,
+    CallDecoder, Client, StreamConfig,
 };
 
 const BALANCE_OF_SIGNATURE: &str =
@@ -42,33 +42,26 @@ async fn main() -> anyhow::Result<()> {
 
     let mut rx = client.clone().stream_arrow(query, config).await?;
 
-    fn convert_traces(arrow_response_data: ArrowResponseData) -> Vec<Trace> {
-        arrow_response_data
-            .traces
-            .iter()
-            .flat_map(Trace::from_arrow)
-            .collect()
-    }
-
     while let Some(result) = rx.recv().await {
         match result {
             Ok(response) => {
                 println!("Received response");
-                let traces = convert_traces(response.data);
-                for trace in traces {
-                    if let (Some(input), Some(output)) = (trace.input, trace.output) {
-                        if let Some(args) = decoder
-                            .decode_input(&input)
-                            .context("Failed to decode input")?
-                        {
-                            let address = args[0].as_address().unwrap();
-                            if let Some(results) = decoder
-                                .decode_output(&output, BALANCE_OF_SIGNATURE)
-                                .context("Failed to decode output")?
+                for batch in response.data.traces {
+                    for trace in TraceReader::iter(&batch) {
+                        if let (Some(input), Some(output)) = (trace.input()?, trace.output()?) {
+                            if let Some(args) = decoder
+                                .decode_input(&input)
+                                .context("Failed to decode input")?
                             {
-                                if !results.is_empty() {
-                                    let (balance, _) = results[0].as_uint().unwrap();
-                                    println!("ADDRESS {address} : {balance} DAI");
+                                let address = args[0].as_address().unwrap();
+                                if let Some(results) = decoder
+                                    .decode_output(&output, BALANCE_OF_SIGNATURE)
+                                    .context("Failed to decode output")?
+                                {
+                                    if !results.is_empty() {
+                                        let (balance, _) = results[0].as_uint().unwrap();
+                                        println!("ADDRESS {address} : {balance} DAI");
+                                    }
                                 }
                             }
                         }

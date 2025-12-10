@@ -700,6 +700,35 @@ impl TraceField {
         Self::iter().collect()
     }
 
+    pub const fn is_nullable(&self) -> bool {
+        match self {
+            TraceField::From
+            | TraceField::To
+            | TraceField::CallType
+            | TraceField::Gas
+            | TraceField::Input
+            | TraceField::Init
+            | TraceField::Value
+            | TraceField::Author
+            | TraceField::RewardType
+            | TraceField::Address
+            | TraceField::Code
+            | TraceField::GasUsed
+            | TraceField::Output
+            | TraceField::Subtraces
+            | TraceField::TraceAddress
+            | TraceField::TransactionHash
+            | TraceField::TransactionPosition
+            | TraceField::Type
+            | TraceField::Error
+            | TraceField::Sighash
+            | TraceField::ActionAddress
+            | TraceField::Balance
+            | TraceField::RefundAddress => true,
+            TraceField::BlockHash | TraceField::BlockNumber => false,
+        }
+    }
+
     /// Convert TraceField to Cap'n Proto enum
     pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::TraceField {
         match self {
@@ -841,5 +870,24 @@ mod tests {
             .select_trace_fields(TraceField::all());
 
         test_query_serde(query, "trace selection with full values");
+    }
+
+    #[test]
+    fn nullable_fields() {
+        use std::collections::HashMap;
+
+        let is_nullable_map: HashMap<_, _> = TraceField::all()
+            .iter()
+            .map(|f| (f.to_string(), f.is_nullable()))
+            .collect();
+        for field in hypersync_schema::trace().fields.iter() {
+            let should_be_nullable = is_nullable_map.get(field.name().as_str()).unwrap();
+            assert_eq!(
+                field.is_nullable(),
+                *should_be_nullable,
+                "field {} nullable mismatch",
+                field.name()
+            );
+        }
     }
 }

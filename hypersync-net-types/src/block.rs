@@ -312,6 +312,39 @@ impl BlockField {
         Self::iter().collect()
     }
 
+    pub const fn is_nullable(&self) -> bool {
+        match self {
+            BlockField::Nonce
+            | BlockField::Difficulty
+            | BlockField::TotalDifficulty
+            | BlockField::Uncles
+            | BlockField::BaseFeePerGas
+            | BlockField::BlobGasUsed
+            | BlockField::ExcessBlobGas
+            | BlockField::ParentBeaconBlockRoot
+            | BlockField::WithdrawalsRoot
+            | BlockField::Withdrawals
+            | BlockField::L1BlockNumber
+            | BlockField::SendCount
+            | BlockField::SendRoot
+            | BlockField::MixHash => true,
+            BlockField::Number
+            | BlockField::Hash
+            | BlockField::ParentHash
+            | BlockField::Sha3Uncles
+            | BlockField::LogsBloom
+            | BlockField::TransactionsRoot
+            | BlockField::StateRoot
+            | BlockField::ReceiptsRoot
+            | BlockField::Miner
+            | BlockField::ExtraData
+            | BlockField::Size
+            | BlockField::GasLimit
+            | BlockField::GasUsed
+            | BlockField::Timestamp => false,
+        }
+    }
+
     /// Convert BlockField to Cap'n Proto enum
     pub fn to_capnp(&self) -> crate::hypersync_net_types_capnp::BlockField {
         match self {
@@ -463,5 +496,24 @@ mod tests {
         let block_field = BlockField::Number;
         let from_str = BlockField::from_str("number").unwrap();
         assert_eq!(block_field, from_str);
+    }
+
+    #[test]
+    fn nullable_fields() {
+        use std::collections::HashMap;
+
+        let is_nullable_map: HashMap<_, _> = BlockField::all()
+            .iter()
+            .map(|f| (f.to_string(), f.is_nullable()))
+            .collect();
+        for field in hypersync_schema::block_header().fields.iter() {
+            let should_be_nullable = is_nullable_map.get(field.name().as_str()).unwrap();
+            assert_eq!(
+                field.is_nullable(),
+                *should_be_nullable,
+                "field {} nullable mismatch",
+                field.name()
+            );
+        }
     }
 }

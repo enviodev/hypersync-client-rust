@@ -1,4 +1,5 @@
 use crate::simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction};
+use anyhow::Context;
 use arrow::array::RecordBatch;
 use hypersync_net_types::RollbackGuard;
 
@@ -34,49 +35,58 @@ pub struct ResponseData {
 
 impl EventResponse {
     /// Create EventResponse from ArrowResponse with the specified event join strategy
-    pub(crate) fn from_arrow_response(
+    pub(crate) fn try_from_arrow_response(
         arrow_response: &ArrowResponse,
         event_join_strategy: &InternalEventJoinStrategy,
-    ) -> Self {
-        let r: QueryResponse = arrow_response.into();
-        Self {
+    ) -> anyhow::Result<Self> {
+        let r: QueryResponse = arrow_response
+            .try_into()
+            .context("convert arrow response")?;
+        Ok(Self {
             archive_height: r.archive_height,
             next_block: r.next_block,
             total_execution_time: r.total_execution_time,
             data: event_join_strategy.join_from_response_data(r.data),
             rollback_guard: r.rollback_guard,
-        }
+        })
     }
 }
 
-impl From<&'_ ArrowResponse> for QueryResponse {
-    fn from(arrow_response: &ArrowResponse) -> Self {
+impl TryFrom<&'_ ArrowResponse> for QueryResponse {
+    type Error = anyhow::Error;
+    fn try_from(arrow_response: &ArrowResponse) -> Result<Self, Self::Error> {
         let blocks = arrow_response
             .data
             .blocks
             .iter()
             .map(Block::from_arrow)
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()
+            .context("convert blocks")?;
+
         let transactions = arrow_response
             .data
             .transactions
             .iter()
             .map(Transaction::from_arrow)
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()
+            .context("convert transactions")?;
+
         let logs = arrow_response
             .data
             .logs
             .iter()
             .map(Log::from_arrow)
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()
+            .context("convert logs")?;
         let traces = arrow_response
             .data
             .traces
             .iter()
             .map(Trace::from_arrow)
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()
+            .context("convert traces")?;
 
-        QueryResponse {
+        Ok(QueryResponse {
             archive_height: arrow_response.archive_height,
             next_block: arrow_response.next_block,
             total_execution_time: arrow_response.total_execution_time,
@@ -87,7 +97,7 @@ impl From<&'_ ArrowResponse> for QueryResponse {
                 traces,
             },
             rollback_guard: arrow_response.rollback_guard.clone(),
-        }
+        })
     }
 }
 
