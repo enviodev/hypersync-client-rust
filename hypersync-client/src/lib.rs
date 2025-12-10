@@ -77,7 +77,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
-use reqwest::{header, Method};
+use reqwest::Method;
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
 
@@ -115,15 +115,37 @@ pub use types::{ArrowResponse, ArrowResponseData, QueryResponse};
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
 
+#[derive(Debug)]
+struct HttpClientWrapper {
+    /// Initialized reqwest instance for client url.
+    client: reqwest::Client,
+    /// HyperSync server api token.
+    api_token: String,
+    /// Standard timeout for http requests.
+    timeout: Duration,
+}
+
+impl HttpClientWrapper {
+    fn request(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
+        self.client
+            .request(method, url)
+            .timeout(self.timeout)
+            .bearer_auth(&self.api_token)
+    }
+
+    fn request_no_timeout(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
+        self.client
+            .request(method, url)
+            .bearer_auth(&self.api_token)
+    }
+}
+
 /// Internal client state to handle http requests and retries.
 #[derive(Debug)]
 struct ClientInner {
-    /// Initialized reqwest instance for client url.
-    http_client: reqwest::Client,
+    http_client: HttpClientWrapper,
     /// HyperSync server URL.
     url: Url,
-    /// HyperSync server api token.
-    api_token: String,
     /// Number of retries to attempt before returning error.
     max_num_retries: usize,
     /// Milliseconds that would be used for retry backoff increasing.
@@ -193,12 +215,15 @@ impl Client {
 
     /// Internal constructor that takes both config and user agent.
     fn new_internal(cfg: ClientConfig, user_agent: String) -> Result<Self> {
-        let http_client = reqwest::Client::builder()
-            .no_gzip()
-            .timeout(Duration::from_millis(cfg.http_req_timeout_millis))
-            .user_agent(user_agent)
-            .build()
-            .unwrap();
+        let http_client = HttpClientWrapper {
+            client: reqwest::Client::builder()
+                .no_gzip()
+                .user_agent(user_agent)
+                .build()
+                .unwrap(),
+            api_token: cfg.api_token,
+            timeout: Duration::from_millis(cfg.http_req_timeout_millis),
+        };
 
         let url = Url::parse(&cfg.url).context("url is malformed")?;
 
@@ -206,7 +231,6 @@ impl Client {
             inner: Arc::new(ClientInner {
                 http_client,
                 url,
-                api_token: cfg.api_token,
                 max_num_retries: cfg.max_num_retries,
                 retry_backoff_ms: cfg.retry_backoff_ms,
                 retry_base_ms: cfg.retry_base_ms,
@@ -519,11 +543,7 @@ impl Client {
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("chain_id");
         std::mem::drop(segments);
-        let req = self
-            .inner
-            .http_client
-            .request(Method::GET, url)
-            .bearer_auth(&self.inner.api_token);
+        let req = self.inner.http_client.request(Method::GET, url);
 
         let res = req.send().await.context("execute http req")?;
 
@@ -543,12 +563,7 @@ impl Client {
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("height");
         std::mem::drop(segments);
-        let mut req = self
-            .inner
-            .http_client
-            .request(Method::GET, url)
-            .bearer_auth(&self.inner.api_token);
-
+        let mut req = self.inner.http_client.request(Method::GET, url);
         if let Some(http_timeout_override) = http_timeout_override {
             req = req.timeout(http_timeout_override);
         }
@@ -767,11 +782,7 @@ impl Client {
         segments.push("query");
         segments.push("arrow-ipc");
         std::mem::drop(segments);
-        let req = self
-            .inner
-            .http_client
-            .request(Method::POST, url)
-            .bearer_auth(&self.inner.api_token);
+        let req = self.inner.http_client.request(Method::POST, url);
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -827,11 +838,7 @@ impl Client {
                 query_with_id
             };
 
-            let mut req = self
-                .inner
-                .http_client
-                .request(Method::POST, url.clone())
-                .bearer_auth(&self.inner.api_token);
+            let mut req = self.inner.http_client.request(Method::POST, url.clone());
             req = req.header("content-type", "application/x-capnp");
 
             let res = req
@@ -886,11 +893,7 @@ impl Client {
             bytes
         };
 
-        let mut req = self
-            .inner
-            .http_client
-            .request(Method::POST, url)
-            .bearer_auth(&self.inner.api_token);
+        let mut req = self.inner.http_client.request(Method::POST, url);
         req = req.header("content-type", "application/x-capnp");
 
         let res = req
@@ -1449,9 +1452,8 @@ impl Client {
         let req = self
             .inner
             .http_client
-            .get(url)
-            .header(header::ACCEPT, "text/event-stream")
-            .bearer_auth(&self.inner.api_token);
+            // Don't set timeout for SSE stream
+            .request_no_timeout(Method::GET, url);
 
         // Configure exponential backoff for library-level retries
         let retry_policy = ExponentialBackoff::new(
