@@ -105,7 +105,11 @@ async fn test_uni_v2_pool_creations_eth_decode() {
             query,
             StreamConfig {
                 hex_output: HexOutput::Prefixed,
-                event_signature: Some("PairCreated (address indexed token0, address indexed token1, address pair, uint256 noname)".to_owned()),
+                event_signature: Some(
+                    "PairCreated (address indexed token0, address indexed token1, address pair, \
+                     uint256 noname)"
+                        .to_owned(),
+                ),
                 ..Default::default()
             },
         )
