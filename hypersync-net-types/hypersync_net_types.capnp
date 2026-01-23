@@ -1,10 +1,22 @@
 @0x9289a56a18f880c5;
 
 struct QueryResponseData {
-    blocks @0 :Data;
-    transactions @1 :Data;
-    logs @2 :Data;
-    traces @3 :Data;
+    blocks: union {
+        data @0 :Data;
+        chunks @4 :List(Data);
+    }
+    transactions: union {
+        data @1 :Data;
+        chunks @5 :List(Data);
+    }
+    logs: union {
+        data @2 :Data;
+        chunks @6 :List(Data);
+    }
+    traces: union {
+        data @3 :Data;
+        chunks @7 :List(Data);
+    }
 }
 
 struct RollbackGuard {
