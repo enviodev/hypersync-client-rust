@@ -8784,6 +8784,10 @@ pub mod query_body {
         pub fn has_max_num_traces(&self) -> bool {
             !self.reader.get_pointer_field(8).is_null()
         }
+        #[inline]
+        pub fn get_query_version(self) -> u16 {
+            self.reader.get_data_field::<u16>(2)
+        }
     }
 
     pub struct Builder<'a> {
@@ -9246,6 +9250,14 @@ pub mod query_body {
         pub fn has_max_num_traces(&self) -> bool {
             !self.builder.is_pointer_field_null(8)
         }
+        #[inline]
+        pub fn get_query_version(self) -> u16 {
+            self.builder.get_data_field::<u16>(2)
+        }
+        #[inline]
+        pub fn set_query_version(&mut self, value: u16) {
+            self.builder.set_data_field::<u16>(2, value);
+        }
     }
 
     pub struct Pipeline {
@@ -9284,7 +9296,7 @@ pub mod query_body {
         }
     }
     mod _private {
-        pub static ENCODED_NODE: [::capnp::Word; 258] = [
+        pub static ENCODED_NODE: [::capnp::Word; 274] = [
             ::capnp::word(0, 0, 0, 0, 5, 0, 6, 0),
             ::capnp::word(237, 135, 130, 51, 42, 10, 136, 130),
             ::capnp::word(26, 0, 0, 0, 1, 0, 1, 0),
@@ -9294,7 +9306,7 @@ pub mod query_body {
             ::capnp::word(21, 0, 0, 0, 34, 1, 0, 0),
             ::capnp::word(37, 0, 0, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(33, 0, 0, 0, 111, 2, 0, 0),
+            ::capnp::word(33, 0, 0, 0, 167, 2, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 121, 112, 101, 114, 115, 121, 110),
@@ -9303,84 +9315,91 @@ pub mod query_body {
             ::capnp::word(112, 58, 81, 117, 101, 114, 121, 66),
             ::capnp::word(111, 100, 121, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 1, 0, 1, 0),
-            ::capnp::word(44, 0, 0, 0, 3, 0, 4, 0),
+            ::capnp::word(48, 0, 0, 0, 3, 0, 4, 0),
             ::capnp::word(10, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(37, 1, 0, 0, 74, 0, 0, 0),
+            ::capnp::word(65, 1, 0, 0, 74, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(36, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(48, 1, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(64, 1, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(76, 1, 0, 0, 2, 0, 1, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 1, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(45, 1, 0, 0, 42, 0, 0, 0),
+            ::capnp::word(73, 1, 0, 0, 42, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(40, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(116, 1, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(68, 1, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(144, 1, 0, 0, 2, 0, 1, 0),
             ::capnp::word(1, 0, 0, 0, 1, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 2, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(113, 1, 0, 0, 106, 0, 0, 0),
+            ::capnp::word(141, 1, 0, 0, 106, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(112, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(188, 1, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(140, 1, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(216, 1, 0, 0, 2, 0, 1, 0),
             ::capnp::word(2, 0, 0, 0, 2, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 3, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(185, 1, 0, 0, 58, 0, 0, 0),
+            ::capnp::word(213, 1, 0, 0, 58, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(180, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(0, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(208, 1, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(28, 2, 0, 0, 2, 0, 1, 0),
             ::capnp::word(3, 0, 0, 0, 3, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 4, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(253, 1, 0, 0, 58, 0, 0, 0),
+            ::capnp::word(25, 2, 0, 0, 58, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(248, 1, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(68, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(20, 2, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(96, 2, 0, 0, 2, 0, 1, 0),
             ::capnp::word(4, 0, 0, 0, 16, 0, 0, 0),
             ::capnp::word(0, 0, 1, 0, 5, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(65, 2, 0, 0, 138, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(68, 2, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(80, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(5, 0, 0, 0, 4, 0, 0, 0),
-            ::capnp::word(0, 0, 1, 0, 6, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(77, 2, 0, 0, 122, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(76, 2, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(88, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(6, 0, 0, 0, 5, 0, 0, 0),
-            ::capnp::word(0, 0, 1, 0, 7, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(85, 2, 0, 0, 106, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(84, 2, 0, 0, 3, 0, 1, 0),
-            ::capnp::word(96, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(7, 0, 0, 0, 6, 0, 0, 0),
-            ::capnp::word(0, 0, 1, 0, 8, 0, 0, 0),
-            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(93, 2, 0, 0, 154, 0, 0, 0),
+            ::capnp::word(93, 2, 0, 0, 138, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(96, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(108, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(8, 0, 0, 0, 7, 0, 0, 0),
-            ::capnp::word(0, 0, 1, 0, 9, 0, 0, 0),
+            ::capnp::word(5, 0, 0, 0, 4, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 6, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
-            ::capnp::word(105, 2, 0, 0, 90, 0, 0, 0),
+            ::capnp::word(105, 2, 0, 0, 122, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(104, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(116, 2, 0, 0, 2, 0, 1, 0),
-            ::capnp::word(9, 0, 0, 0, 8, 0, 0, 0),
-            ::capnp::word(0, 0, 1, 0, 10, 0, 0, 0),
+            ::capnp::word(6, 0, 0, 0, 5, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 7, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(113, 2, 0, 0, 106, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(112, 2, 0, 0, 3, 0, 1, 0),
             ::capnp::word(124, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(7, 0, 0, 0, 6, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 8, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(121, 2, 0, 0, 154, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(124, 2, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(136, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(8, 0, 0, 0, 7, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 9, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(133, 2, 0, 0, 90, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(132, 2, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(144, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(9, 0, 0, 0, 8, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 10, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(141, 2, 0, 0, 106, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(140, 2, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(152, 2, 0, 0, 2, 0, 1, 0),
+            ::capnp::word(11, 0, 0, 0, 2, 0, 0, 0),
+            ::capnp::word(0, 0, 1, 0, 11, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(149, 2, 0, 0, 106, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(148, 2, 0, 0, 3, 0, 1, 0),
+            ::capnp::word(160, 2, 0, 0, 2, 0, 1, 0),
             ::capnp::word(106, 111, 105, 110, 77, 111, 100, 101),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(15, 0, 0, 0, 0, 0, 0, 0),
@@ -9543,6 +9562,15 @@ pub mod query_body {
             ::capnp::word(16, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
             ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(113, 117, 101, 114, 121, 86, 101, 114),
+            ::capnp::word(115, 105, 111, 110, 0, 0, 0, 0),
+            ::capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(7, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+            ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
         ];
         pub fn get_field_types(index: u16) -> ::capnp::introspect::Type {
             match index {
@@ -9557,6 +9585,7 @@ pub mod query_body {
         8 => <crate::hypersync_net_types_capnp::opt_u_int64::Owned as ::capnp::introspect::Introspect>::introspect(),
         9 => <crate::hypersync_net_types_capnp::opt_u_int64::Owned as ::capnp::introspect::Introspect>::introspect(),
         10 => <crate::hypersync_net_types_capnp::opt_u_int64::Owned as ::capnp::introspect::Introspect>::introspect(),
+        11 => <u16 as ::capnp::introspect::Introspect>::introspect(),
         _ => panic!("invalid field index {}", index),
       }
         }
@@ -9573,9 +9602,9 @@ pub mod query_body {
                 members_by_discriminant: MEMBERS_BY_DISCRIMINANT,
                 members_by_name: MEMBERS_BY_NAME,
             };
-        pub static NONUNION_MEMBERS: &[u16] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        pub static NONUNION_MEMBERS: &[u16] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
         pub static MEMBERS_BY_DISCRIMINANT: &[u16] = &[];
-        pub static MEMBERS_BY_NAME: &[u16] = &[4, 6, 5, 0, 1, 7, 9, 10, 8, 3, 2];
+        pub static MEMBERS_BY_NAME: &[u16] = &[4, 6, 5, 0, 1, 7, 9, 10, 8, 11, 3, 2];
         pub const TYPE_ID: u64 = 0x8288_0a2a_3382_87ed;
     }
 }
