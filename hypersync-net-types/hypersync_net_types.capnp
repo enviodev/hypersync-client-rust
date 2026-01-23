@@ -2,6 +2,8 @@
 
 struct QueryResponseData {
     blocks: union {
+        # The use of data and chunks is evolving the schema in backwards compatible way.
+        # Old responses will be returned as data, and new responses allow for chunked data.
         data @0 :Data;
         chunks @4 :List(Data);
     }

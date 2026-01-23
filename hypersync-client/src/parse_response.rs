@@ -54,16 +54,89 @@ pub fn read_query_response(
 
     let data = query_response.get_data().context("read data")?;
 
-    let blocks =
-        read_chunks(data.get_blocks().context("get block data")?).context("parse block data")?;
-    let transactions = read_chunks(data.get_transactions().context("get transaction data")?)
-        .context("parse tx data")?;
-    let logs = read_chunks(data.get_logs().context("get log data")?).context("parse log data")?;
-    let traces = if data.has_traces() {
-        read_chunks(data.get_traces().context("get trace data")?).context("parse traces data")?
-    } else {
-        Vec::new()
-    };
+    let blocks = {
+        let reader = data.get_blocks();
+        use hypersync_net_types_capnp::query_response_data::blocks::Which;
+        match reader.which().context("read union variant")? {
+            Which::Data(data_result) => {
+                let data = data_result.context("get data")?;
+                read_chunks(data).context("parse data")
+            }
+            Which::Chunks(chunks_result) => {
+                let mut contiguous_data: Vec<u8> = Vec::new();
+                let chunks = chunks_result.context("get chunks")?;
+                for chunk in chunks.iter() {
+                    contiguous_data.extend(chunk.context("read chunk")?);
+                }
+                read_chunks(&contiguous_data).context("parse chunked data")
+            }
+        }
+    }
+    .context("read blocks")?;
+
+    let transactions = {
+        let reader = data.get_transactions();
+        use hypersync_net_types_capnp::query_response_data::transactions::Which;
+        match reader.which().context("read union variant")? {
+            Which::Data(data_result) => {
+                let data = data_result.context("get data")?;
+                read_chunks(data).context("parse data")
+            }
+            Which::Chunks(chunks_result) => {
+                let mut contiguous_data: Vec<u8> = Vec::new();
+                let chunks = chunks_result.context("get chunks")?;
+                for chunk in chunks.iter() {
+                    contiguous_data.extend(chunk.context("read chunk")?);
+                }
+                read_chunks(&contiguous_data).context("parse chunked data")
+            }
+        }
+    }
+    .context("read transactions")?;
+
+    let logs = {
+        let reader = data.get_logs();
+        use hypersync_net_types_capnp::query_response_data::logs::Which;
+        match reader.which().context("read union variant")? {
+            Which::Data(data_result) => {
+                let data = data_result.context("get data")?;
+                read_chunks(data).context("parse data")
+            }
+            Which::Chunks(chunks_result) => {
+                let mut contiguous_data: Vec<u8> = Vec::new();
+                let chunks = chunks_result.context("get chunks")?;
+                for chunk in chunks.iter() {
+                    contiguous_data.extend(chunk.context("read chunk")?);
+                }
+                read_chunks(&contiguous_data).context("parse chunked data")
+            }
+        }
+    }
+    .context("read logs")?;
+
+    let traces = {
+        let reader = data.get_traces();
+        if reader.has_data() || reader.has_chunks() {
+            use hypersync_net_types_capnp::query_response_data::traces::Which;
+            match reader.which().context("read union variant")? {
+                Which::Data(data_result) => {
+                    let data = data_result.context("get data")?;
+                    read_chunks(data).context("parse data")
+                }
+                Which::Chunks(chunks_result) => {
+                    let mut contiguous_data: Vec<u8> = Vec::new();
+                    let chunks = chunks_result.context("get chunks")?;
+                    for chunk in chunks.iter() {
+                        contiguous_data.extend(chunk.context("read chunk")?);
+                    }
+                    read_chunks(&contiguous_data).context("parse chunked data")
+                }
+            }
+        } else {
+            Ok(Vec::new())
+        }
+    }
+    .context("read traces")?;
 
     Ok(QueryResponse {
         archive_height,
