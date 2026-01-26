@@ -242,9 +242,6 @@ struct QueryBody {
     maxNumLogs @9 :OptUInt64;
     maxNumTraces @10 :OptUInt64;
     joinMode @0 :JoinMode;
-    # An incrementing version number for the query. Used to detect queries from specific versions of the client.
-    # to allow for backwards compatibility.
-    queryVersion @11 :UInt16;
 }
 
 struct BlockRange {
