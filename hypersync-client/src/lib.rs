@@ -77,11 +77,13 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
+use reqwest::header::HeaderMap;
 use reqwest::Method;
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
 
 pub mod arrow_reader;
+mod client_version;
 mod column_mapping;
 mod config;
 mod decode;
@@ -105,6 +107,7 @@ use tokio::sync::mpsc;
 use types::{EventResponse, ResponseData};
 use url::Url;
 
+pub use client_version::ClientVersion;
 pub use column_mapping::{ColumnMapping, DataType};
 pub use config::HexOutput;
 pub use config::{ClientConfig, SerializationFormat, StreamConfig};
@@ -215,9 +218,15 @@ impl Client {
 
     /// Internal constructor that takes both config and user agent.
     fn new_internal(cfg: ClientConfig, user_agent: String) -> Result<Self> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ClientVersion::HEADER_KEY,
+            ClientVersion::CURRENT.header_value(),
+        );
         let http_client = HttpClientWrapper {
             client: reqwest::Client::builder()
                 .no_gzip()
+                .default_headers(headers)
                 .user_agent(user_agent)
                 .build()
                 .unwrap(),
