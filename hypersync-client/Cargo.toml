@@ -46,6 +46,7 @@ hypersync-schema = { path = "../hypersync-schema", version = "0.4.0" }
 reqwest-eventsource = "0.6"
 uuid = { version = "1", features = ["v4"] }
 thiserror = "2.0.17"
+schemars = "1.2.0"
 
 [dependencies.reqwest]
 version = "0.12"

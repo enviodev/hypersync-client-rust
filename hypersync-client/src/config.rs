@@ -1,4 +1,5 @@
 use anyhow::Result;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -114,7 +115,7 @@ pub enum SerializationFormat {
 }
 
 /// Config for hypersync event streaming.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StreamConfig {
     /// Column mapping for stream function output.
     /// It lets you map columns you want into the DataTypes you want.
@@ -160,7 +161,7 @@ pub struct StreamConfig {
 }
 
 /// Determines format of Binary column
-#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub enum HexOutput {
     /// Binary column won't be formatted as hex
     #[default]
