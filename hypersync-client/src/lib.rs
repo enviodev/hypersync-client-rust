@@ -958,7 +958,7 @@ impl Client {
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     let block_range = if let Some(to_block) = query.to_block {
                         let current = to_block - query.from_block;
-                        if current < 1 {
+                        if current < 2 {
                             anyhow::bail!(
                                 "Payload is too large and query is using the minimum block range."
                             )
