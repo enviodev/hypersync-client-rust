@@ -14,11 +14,12 @@ use arrow::{
 };
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Column mapping for stream function output.
 /// It lets you map columns you want into the DataTypes you want.
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ColumnMapping {
     /// Mapping for block data.
     #[serde(default)]
@@ -40,7 +41,7 @@ pub struct ColumnMapping {
 #[allow(missing_docs)]
 /// `DataType` is an enumeration representing the different data types that can be used in the column mapping.
 /// Each variant corresponds to a specific data type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DataType {
     Float64,

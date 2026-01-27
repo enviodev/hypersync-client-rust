@@ -77,7 +77,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use reqwest_eventsource::retry::ExponentialBackoff;
 use reqwest_eventsource::{Event, EventSource};
 
@@ -776,7 +776,10 @@ impl Client {
     }
 
     /// Executes query once and returns the result in (Arrow, size) format using JSON serialization.
-    async fn get_arrow_impl_json(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+    async fn get_arrow_impl_json(
+        &self,
+        query: &Query,
+    ) -> std::result::Result<(ArrowResponse, u64), HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -787,14 +790,17 @@ impl Client {
         let res = req.json(&query).send().await.context("execute http req")?;
 
         let status = res.status();
+        if status == StatusCode::PAYLOAD_TOO_LARGE {
+            return Err(HyperSyncResponseError::PayloadTooLarge);
+        }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
 
-            return Err(anyhow!(
+            return Err(HyperSyncResponseError::Other(anyhow!(
                 "http response status code {}, err body: {}",
                 status,
                 text
-            ));
+            )));
         }
 
         let bytes = res.bytes().await.context("read response body bytes")?;
@@ -816,7 +822,10 @@ impl Client {
     }
 
     /// Executes query once and returns the result in (Arrow, size) format using Cap'n Proto serialization.
-    async fn get_arrow_impl_capnp(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+    async fn get_arrow_impl_capnp(
+        &self,
+        query: &Query,
+    ) -> std::result::Result<(ArrowResponse, u64), HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -832,9 +841,12 @@ impl Client {
                 let mut request_builder =
                     message.init_root::<hypersync_net_types_capnp::request::Builder>();
 
-                request_builder.build_query_id_from_query(query)?;
+                request_builder
+                    .build_query_id_from_query(query)
+                    .context("build query id")?;
                 let mut query_with_id = Vec::new();
-                capnp::serialize_packed::write_message(&mut query_with_id, &message)?;
+                capnp::serialize_packed::write_message(&mut query_with_id, &message)
+                    .context("write capnp message")?;
                 query_with_id
             };
 
@@ -848,6 +860,9 @@ impl Client {
                 .context("execute http req")?;
 
             let status = res.status();
+            if status == StatusCode::PAYLOAD_TOO_LARGE {
+                return Err(HyperSyncResponseError::PayloadTooLarge);
+            }
             if status.is_success() {
                 let bytes = res.bytes().await.context("read response body bytes")?;
 
@@ -858,7 +873,7 @@ impl Client {
                 let query_response = message_reader
                     .get_root::<hypersync_net_types_capnp::cached_query_response::Reader>()
                     .context("get cached_query_response root")?;
-                match query_response.get_either().which()? {
+                match query_response.get_either().which().context("get either")? {
                 hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
                     query_response,
                 ) => {
@@ -887,9 +902,12 @@ impl Client {
             let mut query_builder =
                 message.init_root::<hypersync_net_types_capnp::request::Builder>();
 
-            query_builder.build_full_query_from_query(query, should_cache)?;
+            query_builder
+                .build_full_query_from_query(query, should_cache)
+                .context("build full query")?;
             let mut bytes = Vec::new();
-            capnp::serialize_packed::write_message(&mut bytes, &message)?;
+            capnp::serialize_packed::write_message(&mut bytes, &message)
+                .context("write full query capnp message")?;
             bytes
         };
 
@@ -904,14 +922,17 @@ impl Client {
             .context("execute http req")?;
 
         let status = res.status();
+        if status == StatusCode::PAYLOAD_TOO_LARGE {
+            return Err(HyperSyncResponseError::PayloadTooLarge);
+        }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
 
-            return Err(anyhow!(
+            return Err(HyperSyncResponseError::Other(anyhow!(
                 "http response status code {}, err body: {}",
                 status,
                 text
-            ));
+            )));
         }
 
         let bytes = res.bytes().await.context("read response body bytes")?;
@@ -925,9 +946,38 @@ impl Client {
 
     /// Executes query once and returns the result in (Arrow, size) format.
     async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
-        match self.inner.serialization_format {
-            SerializationFormat::Json => self.get_arrow_impl_json(query).await,
-            SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(query).await,
+        let mut query = query.clone();
+        loop {
+            let res = match self.inner.serialization_format {
+                SerializationFormat::Json => self.get_arrow_impl_json(&query).await,
+                SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(&query).await,
+            };
+            match res {
+                Ok(res) => return Ok(res),
+                Err(HyperSyncResponseError::Other(e)) => return Err(e),
+                Err(HyperSyncResponseError::PayloadTooLarge) => {
+                    let block_range = if let Some(to_block) = query.to_block {
+                        let current = to_block - query.from_block;
+                        if current < 2 {
+                            anyhow::bail!(
+                                "Payload is too large and query is using the minimum block range."
+                            )
+                        }
+                        // Half the current block range
+                        current / 2
+                    } else {
+                        200
+                    };
+                    let to_block = query.from_block + block_range;
+                    query.to_block = Some(to_block);
+
+                    log::trace!(
+                        "Payload is too large, retrying with block range from: {} to: {}",
+                        query.from_block,
+                        to_block
+                    );
+                }
+            }
         }
     }
 
@@ -1653,6 +1703,17 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Used to indicate whether or not a retry should be attempted.
+#[derive(Debug, thiserror::Error)]
+pub enum HyperSyncResponseError {
+    /// Means that the client should retry with a smaller block range.
+    #[error("hypersync responded with 'payload too large' error")]
+    PayloadTooLarge,
+    /// Any other server error.
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[cfg(test)]
