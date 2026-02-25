@@ -72,6 +72,7 @@
 //! - Wallet transaction history  
 //! - Event decoding and filtering
 //! - Real-time data streaming
+use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
@@ -117,26 +118,82 @@ use crate::simple_types::InternalEventJoinStrategy;
 
 #[derive(Debug)]
 struct HttpClientWrapper {
-    /// Initialized reqwest instance for client url.
-    client: reqwest::Client,
+    /// Mutable state that needs to be refreshed periodically
+    inner: std::sync::Mutex<HttpClientWrapperInner>,
     /// HyperSync server api token.
     api_token: String,
     /// Standard timeout for http requests.
     timeout: Duration,
+    /// Pools are never idle since polling often happens on the client
+    /// so connections never timeout and dns lookups never happen again
+    /// this is problematic if the underlying ip address changes during
+    /// failovers on hypersync. Since reqwest doesn't implement this we
+    /// simply recreate the client every time
+    max_connection_age: Duration,
+    /// For refreshing the client
+    user_agent: String,
+}
+
+#[derive(Debug)]
+struct HttpClientWrapperInner {
+    /// Initialized reqwest instance for client url.
+    client: reqwest::Client,
+    /// Timestamp when the client was created
+    created_at: Instant,
 }
 
 impl HttpClientWrapper {
+    fn new(user_agent: String, api_token: String, timeout: Duration) -> Self {
+        let client = reqwest::Client::builder()
+            .no_gzip()
+            .user_agent(&user_agent)
+            .build()
+            .unwrap();
+
+        Self {
+            inner: std::sync::Mutex::new(HttpClientWrapperInner {
+                client,
+                created_at: Instant::now(),
+            }),
+            api_token,
+            timeout,
+            max_connection_age: Duration::from_secs(60),
+            user_agent,
+        }
+    }
+
+    fn get_client(&self) -> reqwest::Client {
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("HttpClientWrapper mutex poisoned");
+
+        // Check if client needs refresh due to age
+        if inner.created_at.elapsed() > self.max_connection_age {
+            // Recreate client to force new DNS lookup for failover scenarios
+            inner.client = reqwest::Client::builder()
+                .no_gzip()
+                .user_agent(&self.user_agent)
+                .build()
+                .unwrap();
+            inner.created_at = Instant::now();
+        }
+
+        // Clone is cheap for reqwest::Client (it's Arc-wrapped internally)
+        inner.client.clone()
+    }
+
     fn request(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
-        self.client
+        let client = self.get_client();
+        client
             .request(method, url)
             .timeout(self.timeout)
             .bearer_auth(&self.api_token)
     }
 
     fn request_no_timeout(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
-        self.client
-            .request(method, url)
-            .bearer_auth(&self.api_token)
+        let client = self.get_client();
+        client.request(method, url).bearer_auth(&self.api_token)
     }
 }
 
@@ -215,15 +272,11 @@ impl Client {
 
     /// Internal constructor that takes both config and user agent.
     fn new_internal(cfg: ClientConfig, user_agent: String) -> Result<Self> {
-        let http_client = HttpClientWrapper {
-            client: reqwest::Client::builder()
-                .no_gzip()
-                .user_agent(user_agent)
-                .build()
-                .unwrap(),
-            api_token: cfg.api_token,
-            timeout: Duration::from_millis(cfg.http_req_timeout_millis),
-        };
+        let http_client = HttpClientWrapper::new(
+            user_agent,
+            cfg.api_token,
+            Duration::from_millis(cfg.http_req_timeout_millis),
+        );
 
         let url = Url::parse(&cfg.url).context("url is malformed")?;
 
@@ -915,7 +968,6 @@ impl Client {
         req = req.header("content-type", "application/x-capnp");
 
         let res = req
-            .header("content-type", "application/x-capnp")
             .body(full_query_bytes)
             .send()
             .await
