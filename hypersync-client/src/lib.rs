@@ -163,10 +163,7 @@ impl HttpClientWrapper {
     }
 
     fn get_client(&self) -> reqwest::Client {
-        let mut inner = self
-            .inner
-            .lock()
-            .expect("HttpClientWrapper mutex poisoned");
+        let mut inner = self.inner.lock().expect("HttpClientWrapper mutex poisoned");
 
         // Check if client needs refresh due to age
         if inner.created_at.elapsed() > self.max_connection_age {
