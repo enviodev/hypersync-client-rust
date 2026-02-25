@@ -900,8 +900,7 @@ impl Client {
                 query_with_id
             };
 
-            let mut req = self.inner.http_client.request(Method::POST, url.clone());
-            req = req.header("content-type", "application/x-capnp");
+            let req = self.inner.http_client.request(Method::POST, url.clone());
 
             let res = req
                 .body(query_with_id)
@@ -961,8 +960,7 @@ impl Client {
             bytes
         };
 
-        let mut req = self.inner.http_client.request(Method::POST, url);
-        req = req.header("content-type", "application/x-capnp");
+        let req = self.inner.http_client.request(Method::POST, url);
 
         let res = req
             .body(full_query_bytes)
