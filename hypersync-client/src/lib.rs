@@ -103,7 +103,7 @@ pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
 use tokio::sync::mpsc;
-use types::{EventResponse, ResponseData};
+use types::ResponseData;
 use url::Url;
 
 pub use column_mapping::{ColumnMapping, DataType};
@@ -111,7 +111,7 @@ pub use config::HexOutput;
 pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
-pub use types::{ArrowResponse, ArrowResponseData, QueryResponse};
+pub use types::{ArrowResponse, ArrowResponseData, EventResponse, QueryResponse};
 
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
