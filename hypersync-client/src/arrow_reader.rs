@@ -1409,7 +1409,7 @@ mod tests {
         };
         let client = Client::builder()
             .url("https://eth-traces.hypersync.xyz")
-            .api_token(dotenvy::var("HYPERSYNC_API_TOKEN")?)
+            .api_token(dotenvy::var("ENVIO_API_TOKEN")?)
             .build()
             .context("Failed to build client")?;
 
