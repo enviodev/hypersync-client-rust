@@ -91,3 +91,27 @@ fn test_tron_block_without_tx_deserialize() {
     let file = read_json_file("tron_block_without_tx.json");
     let _: Block<Hash> = deserialize_with_path(&file).unwrap();
 }
+
+#[test]
+fn test_tempo_transaction_null_input_and_value() {
+    // Tempo blockchain: transactions of type 0x76 have null input and null value fields.
+    // Verifies that deserialize_data_or_null and deserialize_quantity_or_null handle null correctly.
+    let file = read_json_file("tempo_transaction.json");
+    let tx: Transaction = serde_json::from_str(&file)
+        .expect("should deserialize Tempo transaction with null input and value");
+    assert_eq!(
+        tx.input,
+        Data::default(),
+        "null input should produce empty Data"
+    );
+    assert_eq!(
+        tx.value,
+        Quantity::default(),
+        "null value should produce zero Quantity"
+    );
+    assert_eq!(
+        tx.type_,
+        Some(TransactionType::from(0x76u8)),
+        "type should be 0x76"
+    );
+}

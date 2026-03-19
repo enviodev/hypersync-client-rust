@@ -72,6 +72,22 @@ pub struct Block<Tx> {
     pub transactions: Vec<Tx>,
 }
 
+/// Deserialize a Quantity that may be null or missing, defaulting to zero.
+fn deserialize_quantity_or_null<'de, D>(deserializer: D) -> Result<Quantity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Quantity>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// Deserialize Data that may be null or missing, defaulting to empty.
+fn deserialize_data_or_null<'de, D>(deserializer: D) -> Result<Data, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Data>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Evm transaction object
 ///
 /// See ethereum rpc spec for the meaning of fields
@@ -85,10 +101,14 @@ pub struct Transaction {
     pub gas: Quantity,
     pub gas_price: Option<Quantity>,
     pub hash: Hash,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_data_or_null")]
     pub input: Data,
     pub nonce: Quantity,
     pub to: Option<Address>,
     pub transaction_index: TransactionIndex,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_quantity_or_null")]
     pub value: Quantity,
     #[serde(rename = "type")]
     pub type_: Option<TransactionType>,
@@ -338,6 +358,144 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
+
+    // Helper that builds a minimal valid Transaction JSON, overriding specific fields.
+    fn minimal_transaction_json() -> Value {
+        json!({
+            "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "blockNumber": "0x1",
+            "gas": "0x5208",
+            "hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "input": "0x",
+            "nonce": "0x0",
+            "transactionIndex": "0x0",
+            "value": "0x0"
+        })
+    }
+
+    // --- Tests for deserialize_data_or_null (Transaction.input) ---
+
+    #[test]
+    fn transaction_input_null_deserializes_to_empty_data() {
+        let mut json = minimal_transaction_json();
+        json["input"] = json!(null);
+        let tx: Transaction = serde_json::from_value(json).expect("should handle null input");
+        assert_eq!(tx.input, Data::default(), "null input should produce empty Data");
+    }
+
+    #[test]
+    fn transaction_input_missing_deserializes_to_empty_data() {
+        let mut json = minimal_transaction_json();
+        json.as_object_mut().unwrap().remove("input");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle missing input");
+        assert_eq!(tx.input, Data::default(), "missing input should produce empty Data");
+    }
+
+    #[test]
+    fn transaction_input_present_deserializes_correctly() {
+        let mut json = minimal_transaction_json();
+        json["input"] = json!("0xdeadbeef");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle present input");
+        assert_eq!(
+            tx.input,
+            Data::from(vec![0xde, 0xad, 0xbe, 0xef]),
+            "input should parse hex bytes correctly"
+        );
+    }
+
+    #[test]
+    fn transaction_input_empty_hex_deserializes_to_empty_data() {
+        let mut json = minimal_transaction_json();
+        json["input"] = json!("0x");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle empty hex input");
+        assert_eq!(tx.input, Data::default(), "empty hex input should produce empty Data");
+    }
+
+    // --- Tests for deserialize_quantity_or_null (Transaction.value) ---
+
+    #[test]
+    fn transaction_value_null_deserializes_to_zero_quantity() {
+        let mut json = minimal_transaction_json();
+        json["value"] = json!(null);
+        let tx: Transaction = serde_json::from_value(json).expect("should handle null value");
+        assert_eq!(tx.value, Quantity::default(), "null value should produce zero Quantity");
+    }
+
+    #[test]
+    fn transaction_value_missing_deserializes_to_zero_quantity() {
+        let mut json = minimal_transaction_json();
+        json.as_object_mut().unwrap().remove("value");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle missing value");
+        assert_eq!(tx.value, Quantity::default(), "missing value should produce zero Quantity");
+    }
+
+    #[test]
+    fn transaction_value_present_deserializes_correctly() {
+        let mut json = minimal_transaction_json();
+        json["value"] = json!("0xde0b6b3a7640000");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle present value");
+        assert_eq!(
+            tx.value,
+            Quantity::from(0xde0b6b3a7640000u64),
+            "value should parse hex quantity correctly"
+        );
+    }
+
+    #[test]
+    fn transaction_value_zero_hex_deserializes_to_zero_quantity() {
+        let mut json = minimal_transaction_json();
+        json["value"] = json!("0x0");
+        let tx: Transaction = serde_json::from_value(json).expect("should handle zero hex value");
+        assert_eq!(tx.value, Quantity::default(), "0x0 value should equal zero Quantity");
+    }
+
+    // --- Tests for the Tempo blockchain type 0x76 case (both fields null/missing) ---
+
+    #[test]
+    fn transaction_tempo_type_both_input_and_value_null() {
+        // Tempo blockchain: transactions of type 0x76 have no input and no value
+        let mut json = minimal_transaction_json();
+        json["input"] = json!(null);
+        json["value"] = json!(null);
+        json["type"] = json!("0x76");
+        let tx: Transaction =
+            serde_json::from_value(json).expect("should handle Tempo type 0x76 with null fields");
+        assert_eq!(tx.input, Data::default(), "null input should produce empty Data");
+        assert_eq!(tx.value, Quantity::default(), "null value should produce zero Quantity");
+        assert_eq!(
+            tx.type_,
+            Some(TransactionType::from(0x76u8)),
+            "type should be 0x76"
+        );
+    }
+
+    #[test]
+    fn transaction_tempo_type_both_input_and_value_missing() {
+        let mut json = minimal_transaction_json();
+        {
+            let obj = json.as_object_mut().unwrap();
+            obj.remove("input");
+            obj.remove("value");
+            obj.insert("type".to_string(), json!("0x76"));
+        }
+        let tx: Transaction = serde_json::from_value(json)
+            .expect("should handle Tempo type 0x76 with missing fields");
+        assert_eq!(tx.input, Data::default(), "missing input should produce empty Data");
+        assert_eq!(tx.value, Quantity::default(), "missing value should produce zero Quantity");
+    }
+
+    // --- Regression: standard transaction with all fields present still works ---
+
+    #[test]
+    fn transaction_standard_fields_roundtrip() {
+        let json = minimal_transaction_json();
+        let tx: Transaction =
+            serde_json::from_value(json.clone()).expect("standard transaction should deserialize");
+        assert_eq!(tx.input, Data::default());
+        assert_eq!(tx.value, Quantity::default());
+        assert_eq!(tx.gas, Quantity::from(0x5208u64));
+        assert_eq!(tx.nonce, Quantity::default());
+    }
 
     #[test]
     fn handle_zeta_null_effective_gas_price() {
