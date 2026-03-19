@@ -91,3 +91,13 @@ fn test_tron_block_without_tx_deserialize() {
     let file = read_json_file("tron_block_without_tx.json");
     let _: Block<Hash> = deserialize_with_path(&file).unwrap();
 }
+
+/// Verify that Tempo-style transactions (type 0x76) with null `input` and `value`
+/// fields deserialize successfully, with both fields falling back to their defaults.
+#[test]
+fn test_tempo_transaction_null_input_and_value() {
+    let file = read_json_file("tempo_transaction.json");
+    let tx: Transaction = deserialize_with_path(&file).unwrap();
+    assert_eq!(tx.input, Data::default(), "null input should default to empty Data");
+    assert_eq!(tx.value, Quantity::default(), "null value should default to zero Quantity");
+}
