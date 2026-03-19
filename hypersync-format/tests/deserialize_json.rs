@@ -91,3 +91,22 @@ fn test_tron_block_without_tx_deserialize() {
     let file = read_json_file("tron_block_without_tx.json");
     let _: Block<Hash> = deserialize_with_path(&file).unwrap();
 }
+
+/// Tempo blockchain transactions of type 0x76 omit both `input` and `value` fields.
+/// Verify that these deserialize to their defaults (empty Data, zero Quantity).
+#[test]
+fn test_tempo_transaction_missing_input_and_value() {
+    let file = read_json_file("tempo_transaction.json");
+    let tx: Transaction = deserialize_with_path(&file)
+        .expect("Tempo transaction without input/value should deserialize");
+    assert_eq!(
+        tx.input,
+        Data::default(),
+        "missing input should default to empty Data"
+    );
+    assert_eq!(
+        tx.value,
+        Quantity::default(),
+        "missing value should default to zero Quantity"
+    );
+}

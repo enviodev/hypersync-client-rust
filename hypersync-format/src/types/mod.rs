@@ -72,6 +72,22 @@ pub struct Block<Tx> {
     pub transactions: Vec<Tx>,
 }
 
+/// Deserialize a Quantity that may be null or missing, defaulting to zero.
+fn deserialize_quantity_or_null<'de, D>(deserializer: D) -> Result<Quantity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Quantity>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// Deserialize Data that may be null or missing, defaulting to empty.
+fn deserialize_data_or_null<'de, D>(deserializer: D) -> Result<Data, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Data>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Evm transaction object
 ///
 /// See ethereum rpc spec for the meaning of fields
@@ -85,10 +101,14 @@ pub struct Transaction {
     pub gas: Quantity,
     pub gas_price: Option<Quantity>,
     pub hash: Hash,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_data_or_null")]
     pub input: Data,
     pub nonce: Quantity,
     pub to: Option<Address>,
     pub transaction_index: TransactionIndex,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_quantity_or_null")]
     pub value: Quantity,
     #[serde(rename = "type")]
     pub type_: Option<TransactionType>,
@@ -338,6 +358,148 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
+
+    // Minimal valid Transaction JSON with all required non-optional fields.
+    // `input` and `value` are intentionally omitted/overridden per test.
+    fn minimal_tx_json() -> Value {
+        json!({
+            "blockHash": "0xcff64235f297a94e038c3347d61aadbf5ca6f04492e30c57f033da3b37c1a27e",
+            "blockNumber": "0xf5043f",
+            "gas": "0x5208",
+            "gasPrice": null,
+            "hash": "0x3d65eb0f1bc9ad40afc1e12c80cef8a028ada8113ad8d2adea429511a84ff5af",
+            "input": "0x",
+            "nonce": "0x1",
+            "to": null,
+            "transactionIndex": "0x0",
+            "value": "0x0"
+        })
+    }
+
+    // Build a Transaction JSON with specific input/value overrides.
+    fn tx_json_with(input: Option<Value>, value: Option<Value>) -> Value {
+        let mut obj = minimal_tx_json().as_object().unwrap().clone();
+        match input {
+            Some(v) => {
+                obj.insert("input".into(), v);
+            }
+            None => {
+                obj.remove("input");
+            }
+        }
+        match value {
+            Some(v) => {
+                obj.insert("value".into(), v);
+            }
+            None => {
+                obj.remove("value");
+            }
+        }
+        Value::Object(obj)
+    }
+
+    /// Deserialization of `input: null` should yield an empty Data (default).
+    #[test]
+    fn test_transaction_null_input_defaults_to_empty() {
+        let json = tx_json_with(Some(Value::Null), Some(json!("0x1")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(tx.input, Data::default(), "null input should deserialize to empty Data");
+    }
+
+    /// Deserialization of a missing `input` field should yield an empty Data (default).
+    #[test]
+    fn test_transaction_missing_input_defaults_to_empty() {
+        let json = tx_json_with(None, Some(json!("0x1")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(tx.input, Data::default(), "missing input should deserialize to empty Data");
+    }
+
+    /// Deserialization of `input: "0x"` should yield an empty Data.
+    #[test]
+    fn test_transaction_empty_hex_input_is_empty_data() {
+        let json = tx_json_with(Some(json!("0x")), Some(json!("0x1")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(tx.input, Data::default(), "empty hex input should deserialize to empty Data");
+    }
+
+    /// Deserialization of a non-empty `input` field should preserve the bytes.
+    #[test]
+    fn test_transaction_valid_input_is_preserved() {
+        let json = tx_json_with(Some(json!("0xdeadbeef")), Some(json!("0x0")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(
+            tx.input,
+            Data::from(vec![0xde, 0xad, 0xbe, 0xef]),
+            "valid input bytes should be preserved"
+        );
+    }
+
+    /// Deserialization of `value: null` should yield a zero Quantity (default).
+    #[test]
+    fn test_transaction_null_value_defaults_to_zero() {
+        let json = tx_json_with(Some(json!("0x")), Some(Value::Null));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(tx.value, Quantity::default(), "null value should deserialize to zero Quantity");
+    }
+
+    /// Deserialization of a missing `value` field should yield a zero Quantity (default).
+    #[test]
+    fn test_transaction_missing_value_defaults_to_zero() {
+        let json = tx_json_with(Some(json!("0x")), None);
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(
+            tx.value,
+            Quantity::default(),
+            "missing value should deserialize to zero Quantity"
+        );
+    }
+
+    /// Deserialization of `value: "0x0"` should yield a zero Quantity.
+    #[test]
+    fn test_transaction_zero_value_is_zero_quantity() {
+        let json = tx_json_with(Some(json!("0x")), Some(json!("0x0")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_eq!(tx.value, Quantity::default(), "0x0 value should equal default Quantity");
+    }
+
+    /// Deserialization of a non-zero `value` field should preserve the value.
+    #[test]
+    fn test_transaction_valid_value_is_preserved() {
+        let json = tx_json_with(Some(json!("0x")), Some(json!("0x214e8348c4efff9")));
+        let tx: Transaction = serde_json::from_value(json).expect("should deserialize");
+        assert_ne!(
+            tx.value,
+            Quantity::default(),
+            "non-zero value should not equal zero Quantity"
+        );
+        // Verify byte representation: 0x214e8348c4efff9
+        assert_eq!(
+            tx.value.as_ref(),
+            &[0x02, 0x14, 0xe8, 0x34, 0x8c, 0x4e, 0xff, 0xf9],
+            "value bytes should match hex literal"
+        );
+    }
+
+    /// Simulate the Tempo blockchain scenario where both `input` and `value` are absent.
+    /// Both fields should default to their zero/empty values.
+    #[test]
+    fn test_transaction_tempo_missing_input_and_value() {
+        let json = tx_json_with(None, None);
+        let tx: Transaction = serde_json::from_value(json)
+            .expect("Tempo-style transaction (no input, no value) should deserialize");
+        assert_eq!(tx.input, Data::default(), "missing input should default to empty Data");
+        assert_eq!(tx.value, Quantity::default(), "missing value should default to zero Quantity");
+    }
+
+    /// Simulate the Tempo blockchain scenario where both `input` and `value` are null.
+    #[test]
+    fn test_transaction_tempo_null_input_and_value() {
+        let json = tx_json_with(Some(Value::Null), Some(Value::Null));
+        let tx: Transaction = serde_json::from_value(json)
+            .expect("Tempo-style transaction (null input, null value) should deserialize");
+        assert_eq!(tx.input, Data::default(), "null input should default to empty Data");
+        assert_eq!(tx.value, Quantity::default(), "null value should default to zero Quantity");
+    }
 
     #[test]
     fn handle_zeta_null_effective_gas_price() {
