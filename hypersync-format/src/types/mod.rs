@@ -72,6 +72,66 @@ pub struct Block<Tx> {
     pub transactions: Vec<Tx>,
 }
 
+/// Deserialize a possibly-null or missing `Quantity`, returning zero when absent.
+///
+/// This deserializer interprets JSON `null` or a missing field as `Quantity::default()`.
+///
+/// # Examples
+///
+/// ```
+/// use serde::Deserialize;
+/// use serde_json;
+///
+/// #[derive(Deserialize)]
+/// struct S {
+///     #[serde(default, deserialize_with = "crate::deserialize_quantity_or_null")]
+///     val: Quantity,
+/// }
+///
+/// let s: S = serde_json::from_str(r#"{"val": null}"#).unwrap();
+/// assert_eq!(s.val, Quantity::default());
+///
+/// let s2: S = serde_json::from_str(r#"{}"#).unwrap();
+/// assert_eq!(s2.val, Quantity::default());
+/// ```
+fn deserialize_quantity_or_null<'de, D>(deserializer: D) -> Result<Quantity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Quantity>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// Deserialize a `Data` value that may be `null` or missing, returning an empty `Data` when absent.
+///
+/// This helper is intended for use with `#[serde(default, deserialize_with = "...")]` so that
+/// JSON fields that are `null` or omitted yield `Data::default()` instead of a deserialization error.
+///
+/// # Examples
+///
+/// ```
+/// use serde::Deserialize;
+///
+/// #[derive(Deserialize, Debug, PartialEq)]
+/// struct S {
+///     #[serde(default, deserialize_with = "deserialize_data_or_null")]
+///     data: Data,
+/// }
+///
+/// // Field omitted -> default empty Data
+/// let s: S = serde_json::from_str(r#"{}"#).unwrap();
+/// assert_eq!(s.data, Data::default());
+///
+/// // Field explicitly null -> default empty Data
+/// let s2: S = serde_json::from_str(r#"{"data":null}"#).unwrap();
+/// assert_eq!(s2.data, Data::default());
+/// ```
+fn deserialize_data_or_null<'de, D>(deserializer: D) -> Result<Data, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Data>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Evm transaction object
 ///
 /// See ethereum rpc spec for the meaning of fields
@@ -85,10 +145,14 @@ pub struct Transaction {
     pub gas: Quantity,
     pub gas_price: Option<Quantity>,
     pub hash: Hash,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_data_or_null")]
     pub input: Data,
     pub nonce: Quantity,
     pub to: Option<Address>,
     pub transaction_index: TransactionIndex,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_quantity_or_null")]
     pub value: Quantity,
     #[serde(rename = "type")]
     pub type_: Option<TransactionType>,
