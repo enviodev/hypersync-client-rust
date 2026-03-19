@@ -72,6 +72,22 @@ pub struct Block<Tx> {
     pub transactions: Vec<Tx>,
 }
 
+/// Deserialize a Quantity that may be null or missing, defaulting to zero.
+fn deserialize_quantity_or_null<'de, D>(deserializer: D) -> Result<Quantity, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Quantity>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// Deserialize Data that may be null or missing, defaulting to empty.
+fn deserialize_data_or_null<'de, D>(deserializer: D) -> Result<Data, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Option::<Data>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 /// Evm transaction object
 ///
 /// See ethereum rpc spec for the meaning of fields
@@ -85,10 +101,14 @@ pub struct Transaction {
     pub gas: Quantity,
     pub gas_price: Option<Quantity>,
     pub hash: Hash,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_data_or_null")]
     pub input: Data,
     pub nonce: Quantity,
     pub to: Option<Address>,
     pub transaction_index: TransactionIndex,
+    // In the Tempo blockchain, transactions don't need to have an input, and don't if they are of type 0x76
+    #[serde(default, deserialize_with = "deserialize_quantity_or_null")]
     pub value: Quantity,
     #[serde(rename = "type")]
     pub type_: Option<TransactionType>,
