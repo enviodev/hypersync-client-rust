@@ -833,11 +833,11 @@ impl Client {
         EventResponse::try_from_arrow_response(&arrow_response, &event_join_strategy)
     }
 
-    /// Executes query once and returns the result in (Arrow, size, rate_limit) format using JSON serialization.
+    /// Executes query once and returns the result using JSON serialization.
     async fn get_arrow_impl_json(
         &self,
         query: &Query,
-    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
+    ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -872,7 +872,11 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok((res, bytes.len().try_into().unwrap(), rate_limit))
+        Ok(ArrowImplResponse {
+            response: res,
+            response_bytes: bytes.len().try_into().unwrap(),
+            rate_limit,
+        })
     }
 
     fn should_cache_queries(&self) -> bool {
@@ -884,11 +888,11 @@ impl Client {
         )
     }
 
-    /// Executes query once and returns the result in (Arrow, size, rate_limit) format using Cap'n Proto serialization.
+    /// Executes query once and returns the result using Cap'n Proto serialization.
     async fn get_arrow_impl_capnp(
         &self,
         query: &Query,
-    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
+    ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -948,7 +952,11 @@ impl Client {
                         let res = query_response?;
                         read_query_response(&res).context("parse query response cached")
                     })?;
-                    return Ok((res, bytes.len().try_into().unwrap(), rate_limit));
+                    return Ok(ArrowImplResponse {
+                        response: res,
+                        response_bytes: bytes.len().try_into().unwrap(),
+                        rate_limit,
+                    });
                 }
                 hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
                     log::trace!("query was not cached, retrying with full query");
@@ -1011,14 +1019,18 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok((res, bytes.len().try_into().unwrap(), rate_limit))
+        Ok(ArrowImplResponse {
+            response: res,
+            response_bytes: bytes.len().try_into().unwrap(),
+            rate_limit,
+        })
     }
 
-    /// Executes query once and returns the result in (Arrow, size, rate_limit) format.
+    /// Executes query once and returns the result, handling payload-too-large by halving block range.
     async fn get_arrow_impl(
         &self,
         query: &Query,
-    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
+    ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut query = query.clone();
         loop {
             let res = match self.inner.serialization_format {
@@ -1059,14 +1071,13 @@ impl Client {
 
     /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
-        self.get_arrow_with_size(query).await.map(|(res, _, _)| res)
+        self.get_arrow_with_size(query)
+            .await
+            .map(|res| res.response)
     }
 
     /// Internal implementation for get_arrow.
-    async fn get_arrow_with_size(
-        &self,
-        query: &Query,
-    ) -> Result<(ArrowResponse, u64, RateLimitInfo)> {
+    async fn get_arrow_with_size(&self, query: &Query) -> Result<ArrowImplResponse> {
         let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
@@ -1078,15 +1089,15 @@ impl Client {
 
         for _ in 0..self.inner.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
-                Ok((response, size, rate_limit)) => {
-                    self.update_rate_limit_state(&rate_limit);
-                    return Ok((response, size, rate_limit));
+                Ok(res) => {
+                    self.update_rate_limit_state(&res.rate_limit);
+                    return Ok(res);
                 }
                 Err(HyperSyncResponseError::RateLimited { rate_limit }) => {
                     self.update_rate_limit_state(&rate_limit);
                     let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
                     log::warn!(
-                        "rate limited by server (remaining: {:?}, reset: {:?}s), waiting {wait_secs}s before retry",
+                        "rate limited by server, remaining={:?} reset_secs={:?} wait_secs={wait_secs}",
                         rate_limit.remaining,
                         rate_limit.reset_secs,
                     );
@@ -1300,10 +1311,10 @@ impl Client {
         &self,
         query: &Query,
     ) -> Result<QueryResponseWithRateLimit<ArrowResponseData>> {
-        let (response, _, rate_limit) = self.get_arrow_with_size(query).await?;
+        let result = self.get_arrow_with_size(query).await?;
         Ok(QueryResponseWithRateLimit {
-            response,
-            rate_limit,
+            response: result.response,
+            rate_limit: result.rate_limit,
         })
     }
 
@@ -1365,7 +1376,7 @@ impl Client {
         if let Some(secs) = wait_secs {
             if secs > 0 {
                 log::warn!(
-                    "rate limit exhausted, proactively waiting {secs}s for window reset"
+                    "rate limit exhausted, proactively waiting for window reset, wait_secs={secs}"
                 );
                 tokio::time::sleep(Duration::from_secs(secs)).await;
             }
@@ -1933,6 +1944,16 @@ pub enum HyperSyncResponseError {
     /// Any other server error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+/// Result of a single Arrow query execution, before retry logic.
+struct ArrowImplResponse {
+    /// The parsed Arrow response data.
+    response: ArrowResponse,
+    /// Size of the response body in bytes.
+    response_bytes: u64,
+    /// Rate limit information parsed from response headers.
+    rate_limit: RateLimitInfo,
 }
 
 #[cfg(test)]
