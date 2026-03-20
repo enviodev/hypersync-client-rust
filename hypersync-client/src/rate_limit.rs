@@ -1,0 +1,221 @@
+/// Rate limit information extracted from response headers.
+///
+/// Envoy's rate limiter returns these headers in the IETF draft format:
+/// - `x-ratelimit-limit`: e.g. `"50, 50;w=60"` (total quota for the window)
+/// - `x-ratelimit-remaining`: e.g. `"40"` (remaining budget in window)
+/// - `x-ratelimit-reset`: e.g. `"41"` (seconds until window resets)
+/// - `x-ratelimit-cost`: e.g. `"10"` (budget consumed per request)
+/// - `retry-after`: e.g. `"5"` (seconds to wait, standard HTTP header for 429s)
+#[derive(Debug, Clone, Default)]
+pub struct RateLimitInfo {
+    /// Total request quota for the current window.
+    ///
+    /// Parsed from `x-ratelimit-limit`. For IETF draft format like `"50, 50;w=60"`,
+    /// the first integer before the comma is used.
+    pub limit: Option<u64>,
+    /// Remaining budget in the current window.
+    ///
+    /// Parsed from `x-ratelimit-remaining`. Note this is budget units, not request count.
+    /// Divide by [`cost`](Self::cost) to get the number of requests remaining.
+    pub remaining: Option<u64>,
+    /// Seconds until the rate limit window resets.
+    ///
+    /// Parsed from `x-ratelimit-reset`.
+    pub reset_secs: Option<u64>,
+    /// Budget consumed per request.
+    ///
+    /// Parsed from `x-ratelimit-cost`. For example, if `limit` is 50 and `cost` is 10,
+    /// you can make 5 requests per window.
+    pub cost: Option<u64>,
+    /// Seconds to wait before retrying (standard HTTP `retry-after` header).
+    ///
+    /// May not be present on all 429 responses. When absent, use
+    /// [`suggested_wait_secs`](Self::suggested_wait_secs) which falls back to `reset_secs`.
+    pub retry_after_secs: Option<u64>,
+}
+
+impl std::fmt::Display for RateLimitInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+        if let (Some(remaining), Some(limit)) = (self.remaining, self.limit) {
+            let cost = self.cost.unwrap_or(1);
+            parts.push(format!(
+                "remaining={}/{} reqs ({}/{} budget, cost={})",
+                remaining / cost,
+                limit / cost,
+                remaining,
+                limit,
+                cost
+            ));
+        } else {
+            if let Some(remaining) = self.remaining {
+                parts.push(format!("remaining={remaining}"));
+            }
+            if let Some(limit) = self.limit {
+                parts.push(format!("limit={limit}"));
+            }
+        }
+        if let Some(reset) = self.reset_secs {
+            parts.push(format!("resets_in={reset}s"));
+        }
+        if let Some(retry) = self.retry_after_secs {
+            parts.push(format!("retry_after={retry}s"));
+        }
+        write!(f, "{}", parts.join(", "))
+    }
+}
+
+impl RateLimitInfo {
+    /// Extracts rate limit information from HTTP response headers.
+    ///
+    /// All parsing is best-effort: missing or unparseable headers become `None`.
+    pub(crate) fn from_response(res: &reqwest::Response) -> Self {
+        Self {
+            limit: Self::parse_limit_header(res),
+            remaining: Self::parse_u64_header(res, "x-ratelimit-remaining"),
+            reset_secs: Self::parse_u64_header(res, "x-ratelimit-reset"),
+            cost: Self::parse_u64_header(res, "x-ratelimit-cost"),
+            retry_after_secs: Self::parse_u64_header(res, "retry-after"),
+        }
+    }
+
+    /// Returns `true` if the rate limit quota has been exhausted or the server
+    /// has explicitly asked us to back off via `retry-after`.
+    pub fn is_rate_limited(&self) -> bool {
+        self.remaining == Some(0) || self.retry_after_secs.is_some()
+    }
+
+    /// Returns the suggested number of seconds to wait before making another request.
+    ///
+    /// Prefers `retry-after` (explicit server instruction), falls back to `reset_secs`.
+    pub fn suggested_wait_secs(&self) -> Option<u64> {
+        self.retry_after_secs.or(self.reset_secs)
+    }
+
+    /// Parses `x-ratelimit-limit` which uses IETF draft format: `"60, 60;w=60"`.
+    /// Extracts the first integer before the comma.
+    fn parse_limit_header(res: &reqwest::Response) -> Option<u64> {
+        let value = res.headers().get("x-ratelimit-limit")?.to_str().ok()?;
+        // Take first value before comma: "60, 60;w=60" -> "60"
+        let first = value.split(',').next()?.trim();
+        first.parse().ok()
+    }
+
+    /// Parses a simple u64 header value.
+    fn parse_u64_header(res: &reqwest::Response, name: &str) -> Option<u64> {
+        res.headers().get(name)?.to_str().ok()?.trim().parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_rate_limited() {
+        let info = RateLimitInfo {
+            remaining: Some(0),
+            ..Default::default()
+        };
+        assert!(info.is_rate_limited());
+
+        let info = RateLimitInfo {
+            remaining: Some(5),
+            ..Default::default()
+        };
+        assert!(!info.is_rate_limited());
+
+        let info = RateLimitInfo::default();
+        assert!(!info.is_rate_limited());
+
+        // retry_after alone means rate limited, even without remaining=0
+        let info = RateLimitInfo {
+            retry_after_secs: Some(5),
+            ..Default::default()
+        };
+        assert!(info.is_rate_limited());
+
+        // retry_after with remaining > 0 is still rate limited
+        let info = RateLimitInfo {
+            remaining: Some(10),
+            retry_after_secs: Some(3),
+            ..Default::default()
+        };
+        assert!(info.is_rate_limited());
+    }
+
+    #[test]
+    fn test_from_response_header_case_insensitive() {
+        // Build an http::Response with mixed-case headers, then convert to reqwest::Response.
+        // This confirms that HeaderMap normalizes names so our lowercase lookups match.
+        let http_resp = http::Response::builder()
+            .header("X-RateLimit-Remaining", "42")
+            .header("X-RATELIMIT-RESET", "30")
+            .header("X-Ratelimit-Limit", "100, 100;w=60")
+            .header("X-Ratelimit-Cost", "10")
+            .header("Retry-After", "5")
+            .body("")
+            .unwrap();
+        let resp: reqwest::Response = http_resp.into();
+
+        let info = RateLimitInfo::from_response(&resp);
+        assert_eq!(info.limit, Some(100));
+        assert_eq!(info.remaining, Some(42));
+        assert_eq!(info.reset_secs, Some(30));
+        assert_eq!(info.cost, Some(10));
+        assert_eq!(info.retry_after_secs, Some(5));
+    }
+
+    #[test]
+    fn test_suggested_wait_secs() {
+        // Prefers retry_after_secs
+        let info = RateLimitInfo {
+            retry_after_secs: Some(5),
+            reset_secs: Some(30),
+            ..Default::default()
+        };
+        assert_eq!(info.suggested_wait_secs(), Some(5));
+
+        // Falls back to reset_secs
+        let info = RateLimitInfo {
+            reset_secs: Some(30),
+            ..Default::default()
+        };
+        assert_eq!(info.suggested_wait_secs(), Some(30));
+
+        // None when no info
+        let info = RateLimitInfo::default();
+        assert_eq!(info.suggested_wait_secs(), None);
+    }
+
+    #[test]
+    fn test_display_full() {
+        let info = RateLimitInfo {
+            limit: Some(50),
+            remaining: Some(0),
+            reset_secs: Some(59),
+            cost: Some(10),
+            retry_after_secs: Some(5),
+        };
+        assert_eq!(
+            info.to_string(),
+            "remaining=0/5 reqs (0/50 budget, cost=10), resets_in=59s, retry_after=5s"
+        );
+    }
+
+    #[test]
+    fn test_display_partial() {
+        let info = RateLimitInfo {
+            remaining: Some(3),
+            reset_secs: Some(30),
+            ..Default::default()
+        };
+        assert_eq!(info.to_string(), "remaining=3, resets_in=30s");
+    }
+
+    #[test]
+    fn test_display_empty() {
+        let info = RateLimitInfo::default();
+        assert_eq!(info.to_string(), "");
+    }
+}
