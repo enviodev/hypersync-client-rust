@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-client"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 description = "client library for hypersync"
 license = "MPL-2.0"
@@ -51,6 +51,7 @@ schemars = "1.2.0"
 [dependencies.reqwest]
 version = "0.12"
 default-features = false
+# rustls-tls-native-roots uses the OS certificate store, required for Claude Code containers
 features = ["json", "rustls-tls-native-roots", "stream", "http2"]
 
 [dev-dependencies]
