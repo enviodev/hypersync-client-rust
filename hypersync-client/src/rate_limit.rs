@@ -113,6 +113,28 @@ mod tests {
     }
 
     #[test]
+    fn test_from_response_header_case_insensitive() {
+        // Build an http::Response with mixed-case headers, then convert to reqwest::Response.
+        // This confirms that HeaderMap normalizes names so our lowercase lookups match.
+        let http_resp = http::Response::builder()
+            .header("X-RateLimit-Remaining", "42")
+            .header("X-RATELIMIT-RESET", "30")
+            .header("X-Ratelimit-Limit", "100, 100;w=60")
+            .header("X-Ratelimit-Cost", "10")
+            .header("Retry-After", "5")
+            .body("")
+            .unwrap();
+        let resp: reqwest::Response = http_resp.into();
+
+        let info = RateLimitInfo::from_response(&resp);
+        assert_eq!(info.limit, Some(100));
+        assert_eq!(info.remaining, Some(42));
+        assert_eq!(info.reset_secs, Some(30));
+        assert_eq!(info.cost, Some(10));
+        assert_eq!(info.retry_after_secs, Some(5));
+    }
+
+    #[test]
     fn test_suggested_wait_secs() {
         // Prefers retry_after_secs
         let info = RateLimitInfo {

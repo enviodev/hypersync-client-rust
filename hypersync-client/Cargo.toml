@@ -54,6 +54,7 @@ default-features = false
 features = ["json", "rustls-tls", "stream", "http2"]
 
 [dev-dependencies]
+http = "1"
 maplit = "1"
 hex-literal = "0.4"
 env_logger = "0.11"
