@@ -1,7 +1,7 @@
-name: Publish to crates.io 
+name: Publish to crates.io
 
 permissions:
-  contents: read
+  contents: write
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
         description: "The crate name to publish"
         required: true
         type: choice
-        options: 
+        options:
         - hypersync-format
         - hypersync-schema
         - hypersync-net-types
@@ -20,10 +20,13 @@ run-name: "Publish ${{ inputs.crate_name }} to crates.io"
 
 jobs:
   publish_crates:
-    name: Publish to crates.io 
+    name: Publish to crates.io
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Install Dependencies
@@ -31,10 +34,55 @@ jobs:
             export DEBIAN_FRONTEND=noninteractive
             sudo apt-get install -y capnproto libcapnp-dev
 
-      - uses: actions/checkout@v2
-      - name: Run publish script
+      - name: Get crate version
+        id: crate_version
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "${{ inputs.crate_name }}") | .version')
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not determine version for ${{ inputs.crate_name }}"
+            exit 1
+          fi
+          TAG="${{ inputs.crate_name }}/v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Check for existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.crate_version.outputs.tag }}"
+          if git tag -l "$TAG" | grep -q .; then
+            echo "::error::Git tag '${TAG}' already exists. Bump the version in Cargo.toml before publishing."
+            exit 1
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::error::GitHub release '${TAG}' already exists. Bump the version in Cargo.toml before publishing."
+            exit 1
+          fi
+          echo "No existing tag or release found for ${TAG}. Proceeding."
+
+      - name: Publish to crates.io
         env:
           VERBOSE: true
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           cargo publish -p ${{ inputs.crate_name }}
+
+      - name: Create git tag
+        run: |
+          TAG="${{ steps.crate_version.outputs.tag }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.crate_version.outputs.tag }}"
+          VERSION="${{ steps.crate_version.outputs.version }}"
+          CRATE="${{ inputs.crate_name }}"
+          gh release create "$TAG" \
+            --title "${CRATE} v${VERSION}" \
+            --notes "Published ${CRATE} v${VERSION} to [crates.io](https://crates.io/crates/${CRATE}/${VERSION})." \
+            --latest=false
