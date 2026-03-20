@@ -1102,6 +1102,7 @@ impl Client {
                     log::warn!(
                         "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry"
                     );
+                    err = err.context(format!("rate limited by server ({rate_limit})"));
                     tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                     continue;
                 }
