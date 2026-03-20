@@ -214,8 +214,9 @@ struct ClientInner {
     retry_ceiling_ms: u64,
     /// Query serialization format to use for HTTP requests.
     serialization_format: SerializationFormat,
-    /// Most recently observed rate limit info from the server.
-    rate_limit_state: std::sync::Mutex<Option<RateLimitInfo>>,
+    /// Most recently observed rate limit info from the server, paired with the
+    /// instant it was captured so elapsed time can be subtracted from `reset_secs`.
+    rate_limit_state: std::sync::Mutex<Option<(RateLimitInfo, Instant)>>,
     /// Whether to proactively sleep when the rate limit is exhausted.
     proactive_rate_limit_sleep: bool,
 }
@@ -1345,7 +1346,8 @@ impl Client {
             .rate_limit_state
             .lock()
             .expect("rate_limit_state mutex poisoned")
-            .clone()
+            .as_ref()
+            .map(|(info, _captured_at)| info.clone())
     }
 
     /// Waits until the current rate limit window resets, if the client is rate limited.
@@ -1364,8 +1366,12 @@ impl Client {
                 .lock()
                 .expect("rate_limit_state mutex poisoned");
             match state.as_ref() {
-                Some(info) if info.remaining == Some(0) => {
-                    info.reset_secs.map(|secs| (secs, info.clone()))
+                Some((info, captured_at)) if info.remaining == Some(0) => {
+                    info.reset_secs.map(|secs| {
+                        let elapsed = captured_at.elapsed().as_secs();
+                        let remaining_wait = secs.saturating_sub(elapsed);
+                        (remaining_wait, info.clone())
+                    })
                 }
                 _ => None,
             }
@@ -1380,7 +1386,7 @@ impl Client {
         }
     }
 
-    /// Updates the internally tracked rate limit state.
+    /// Updates the internally tracked rate limit state with the current timestamp.
     fn update_rate_limit_state(&self, rate_limit: &RateLimitInfo) {
         // Only update if the response actually contained rate limit headers
         if rate_limit.limit.is_some()
@@ -1392,7 +1398,7 @@ impl Client {
                 .rate_limit_state
                 .lock()
                 .expect("rate_limit_state mutex poisoned");
-            *state = Some(rate_limit.clone());
+            *state = Some((rate_limit.clone(), Instant::now()));
         }
     }
 
