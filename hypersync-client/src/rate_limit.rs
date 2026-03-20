@@ -80,21 +80,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_limit_header_ietf_format() {
-        // Simulate by testing the parsing logic directly
-        let value = "60, 60;w=60";
-        let first = value.split(',').next().unwrap().trim();
-        assert_eq!(first.parse::<u64>().unwrap(), 60);
-    }
-
-    #[test]
-    fn test_parse_limit_header_simple() {
-        let value = "100";
-        let first = value.split(',').next().unwrap().trim();
-        assert_eq!(first.parse::<u64>().unwrap(), 100);
-    }
-
-    #[test]
     fn test_is_rate_limited() {
         let info = RateLimitInfo {
             remaining: Some(0),

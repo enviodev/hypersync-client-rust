@@ -1084,7 +1084,7 @@ impl Client {
 
         // Proactive throttling: if we know we're rate limited, wait before sending
         if self.inner.proactive_rate_limit_sleep {
-            self.wait_for_rate_limit_inner().await;
+            self.wait_for_rate_limit().await;
         }
 
         for _ in 0..self.inner.max_num_retries + 1 {
@@ -1357,11 +1357,6 @@ impl Client {
     /// This method is useful for consumers who want to explicitly wait before making
     /// requests, for example when coordinating rate limits across multiple systems.
     pub async fn wait_for_rate_limit(&self) {
-        self.wait_for_rate_limit_inner().await;
-    }
-
-    /// Internal implementation for proactive rate limit waiting.
-    async fn wait_for_rate_limit_inner(&self) {
         let wait_secs = {
             let state = self
                 .inner
