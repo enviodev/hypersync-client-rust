@@ -1039,10 +1039,7 @@ impl Client {
             };
             match res {
                 Ok(res) => return Ok(res),
-                Err(HyperSyncResponseError::Other(e)) => {
-                    return Err(HyperSyncResponseError::Other(e))
-                }
-                Err(e @ HyperSyncResponseError::RateLimited { .. }) => return Err(e),
+                Err(e @ (HyperSyncResponseError::Other(_) | HyperSyncResponseError::RateLimited { .. })) => return Err(e),
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     let block_range = if let Some(to_block) = query.to_block {
                         let current = to_block - query.from_block;
