@@ -1,3 +1,4 @@
+use crate::rate_limit::RateLimitInfo;
 use crate::simple_types::{Block, Event, InternalEventJoinStrategy, Log, Trace, Transaction};
 use anyhow::Context;
 use arrow::array::RecordBatch;
@@ -123,3 +124,16 @@ pub struct QueryResponse<T = ResponseData> {
 pub type ArrowResponse = QueryResponse<ArrowResponseData>;
 /// Alias for Event oriented, vectorized QueryResponse
 pub type EventResponse = QueryResponse<Vec<Event>>;
+
+/// Response that includes rate limit information from the server.
+///
+/// Returned by [`Client::get_with_rate_limit`] and [`Client::get_arrow_with_rate_limit`].
+/// Use this when you need to inspect rate limit headers for external monitoring or
+/// coordination across systems.
+#[derive(Debug, Clone)]
+pub struct QueryResponseWithRateLimit<T = ResponseData> {
+    /// The query response data.
+    pub response: QueryResponse<T>,
+    /// Rate limit information from response headers (if present).
+    pub rate_limit: RateLimitInfo,
+}

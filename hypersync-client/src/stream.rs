@@ -402,7 +402,7 @@ async fn run_query_to_end(
     let mut query = query;
 
     loop {
-        let (resp, resp_size) = client
+        let (resp, resp_size, _rate_limit) = client
             .get_arrow_with_size(&query)
             .await
             .context("get data")?;

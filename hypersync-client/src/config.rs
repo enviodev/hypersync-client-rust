@@ -32,6 +32,12 @@ pub struct ClientConfig {
     /// Query serialization format to use for HTTP requests.
     #[serde(default)]
     pub serialization_format: SerializationFormat,
+    /// Whether to proactively sleep when the rate limit is exhausted instead of
+    /// sending requests that will be rejected with 429.
+    ///
+    /// Enabled by default. Set to `false` to opt out and handle rate limits yourself.
+    #[serde(default = "ClientConfig::default_proactive_rate_limit_sleep")]
+    pub proactive_rate_limit_sleep: bool,
 }
 
 impl Default for ClientConfig {
@@ -45,6 +51,7 @@ impl Default for ClientConfig {
             retry_base_ms: Self::default_retry_base_ms(),
             retry_ceiling_ms: Self::default_retry_ceiling_ms(),
             serialization_format: SerializationFormat::Json,
+            proactive_rate_limit_sleep: Self::default_proactive_rate_limit_sleep(),
         }
     }
 }
@@ -73,6 +80,11 @@ impl ClientConfig {
     /// Default retry ceiling time in milliseconds
     pub const fn default_retry_ceiling_ms() -> u64 {
         5_000
+    }
+
+    /// Default proactive rate limit sleep setting
+    pub const fn default_proactive_rate_limit_sleep() -> bool {
+        true
     }
     /// Validates the config
     pub fn validate(&self) -> Result<()> {

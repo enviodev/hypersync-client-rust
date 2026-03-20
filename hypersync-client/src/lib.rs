@@ -91,6 +91,7 @@ mod from_arrow;
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
+mod rate_limit;
 mod rayon_async;
 pub mod simple_types;
 mod stream;
@@ -111,7 +112,8 @@ pub use config::HexOutput;
 pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
-pub use types::{ArrowResponse, ArrowResponseData, EventResponse, QueryResponse};
+pub use rate_limit::RateLimitInfo;
+pub use types::{ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, QueryResponseWithRateLimit};
 
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
@@ -210,6 +212,10 @@ struct ClientInner {
     retry_ceiling_ms: u64,
     /// Query serialization format to use for HTTP requests.
     serialization_format: SerializationFormat,
+    /// Most recently observed rate limit info from the server.
+    rate_limit_state: std::sync::Mutex<Option<RateLimitInfo>>,
+    /// Whether to proactively sleep when the rate limit is exhausted.
+    proactive_rate_limit_sleep: bool,
 }
 
 /// Client to handle http requests and retries.
@@ -286,6 +292,8 @@ impl Client {
                 retry_base_ms: cfg.retry_base_ms,
                 retry_ceiling_ms: cfg.retry_ceiling_ms,
                 serialization_format: cfg.serialization_format,
+                rate_limit_state: std::sync::Mutex::new(None),
+                proactive_rate_limit_sleep: cfg.proactive_rate_limit_sleep,
             }),
         })
     }
@@ -825,11 +833,11 @@ impl Client {
         EventResponse::try_from_arrow_response(&arrow_response, &event_join_strategy)
     }
 
-    /// Executes query once and returns the result in (Arrow, size) format using JSON serialization.
+    /// Executes query once and returns the result in (Arrow, size, rate_limit) format using JSON serialization.
     async fn get_arrow_impl_json(
         &self,
         query: &Query,
-    ) -> std::result::Result<(ArrowResponse, u64), HyperSyncResponseError> {
+    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -840,8 +848,13 @@ impl Client {
         let res = req.json(&query).send().await.context("execute http req")?;
 
         let status = res.status();
+        let rate_limit = RateLimitInfo::from_response(&res);
+
         if status == StatusCode::PAYLOAD_TOO_LARGE {
             return Err(HyperSyncResponseError::PayloadTooLarge);
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(HyperSyncResponseError::RateLimited { rate_limit });
         }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
@@ -859,7 +872,7 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok((res, bytes.len().try_into().unwrap()))
+        Ok((res, bytes.len().try_into().unwrap(), rate_limit))
     }
 
     fn should_cache_queries(&self) -> bool {
@@ -871,11 +884,11 @@ impl Client {
         )
     }
 
-    /// Executes query once and returns the result in (Arrow, size) format using Cap'n Proto serialization.
+    /// Executes query once and returns the result in (Arrow, size, rate_limit) format using Cap'n Proto serialization.
     async fn get_arrow_impl_capnp(
         &self,
         query: &Query,
-    ) -> std::result::Result<(ArrowResponse, u64), HyperSyncResponseError> {
+    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
@@ -909,8 +922,13 @@ impl Client {
                 .context("execute http req")?;
 
             let status = res.status();
+            let rate_limit = RateLimitInfo::from_response(&res);
+
             if status == StatusCode::PAYLOAD_TOO_LARGE {
                 return Err(HyperSyncResponseError::PayloadTooLarge);
+            }
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                return Err(HyperSyncResponseError::RateLimited { rate_limit });
             }
             if status.is_success() {
                 let bytes = res.bytes().await.context("read response body bytes")?;
@@ -930,7 +948,7 @@ impl Client {
                         let res = query_response?;
                         read_query_response(&res).context("parse query response cached")
                     })?;
-                    return Ok((res, bytes.len().try_into().unwrap()));
+                    return Ok((res, bytes.len().try_into().unwrap(), rate_limit));
                 }
                 hypersync_net_types_capnp::cached_query_response::either::Which::NotCached(()) => {
                     log::trace!("query was not cached, retrying with full query");
@@ -969,8 +987,13 @@ impl Client {
             .context("execute http req")?;
 
         let status = res.status();
+        let rate_limit = RateLimitInfo::from_response(&res);
+
         if status == StatusCode::PAYLOAD_TOO_LARGE {
             return Err(HyperSyncResponseError::PayloadTooLarge);
+        }
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(HyperSyncResponseError::RateLimited { rate_limit });
         }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
@@ -988,11 +1011,14 @@ impl Client {
             parse_query_response(&bytes).context("parse query response")
         })?;
 
-        Ok((res, bytes.len().try_into().unwrap()))
+        Ok((res, bytes.len().try_into().unwrap(), rate_limit))
     }
 
-    /// Executes query once and returns the result in (Arrow, size) format.
-    async fn get_arrow_impl(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+    /// Executes query once and returns the result in (Arrow, size, rate_limit) format.
+    async fn get_arrow_impl(
+        &self,
+        query: &Query,
+    ) -> std::result::Result<(ArrowResponse, u64, RateLimitInfo), HyperSyncResponseError> {
         let mut query = query.clone();
         loop {
             let res = match self.inner.serialization_format {
@@ -1001,14 +1027,17 @@ impl Client {
             };
             match res {
                 Ok(res) => return Ok(res),
-                Err(HyperSyncResponseError::Other(e)) => return Err(e),
+                Err(HyperSyncResponseError::Other(e)) => {
+                    return Err(HyperSyncResponseError::Other(e))
+                }
+                Err(e @ HyperSyncResponseError::RateLimited { .. }) => return Err(e),
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     let block_range = if let Some(to_block) = query.to_block {
                         let current = to_block - query.from_block;
                         if current < 2 {
-                            anyhow::bail!(
+                            return Err(HyperSyncResponseError::Other(anyhow!(
                                 "Payload is too large and query is using the minimum block range."
-                            )
+                            )));
                         }
                         // Half the current block range
                         current / 2
@@ -1030,23 +1059,50 @@ impl Client {
 
     /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
-        self.get_arrow_with_size(query).await.map(|res| res.0)
+        self.get_arrow_with_size(query).await.map(|(res, _, _)| res)
     }
 
     /// Internal implementation for get_arrow.
-    async fn get_arrow_with_size(&self, query: &Query) -> Result<(ArrowResponse, u64)> {
+    async fn get_arrow_with_size(
+        &self,
+        query: &Query,
+    ) -> Result<(ArrowResponse, u64, RateLimitInfo)> {
         let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
+        // Proactive throttling: if we know we're rate limited, wait before sending
+        if self.inner.proactive_rate_limit_sleep {
+            self.wait_for_rate_limit_inner().await;
+        }
+
         for _ in 0..self.inner.max_num_retries + 1 {
             match self.get_arrow_impl(query).await {
-                Ok(res) => return Ok(res),
-                Err(e) => {
+                Ok((response, size, rate_limit)) => {
+                    self.update_rate_limit_state(&rate_limit);
+                    return Ok((response, size, rate_limit));
+                }
+                Err(HyperSyncResponseError::RateLimited { rate_limit }) => {
+                    self.update_rate_limit_state(&rate_limit);
+                    let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
+                    log::warn!(
+                        "rate limited by server (remaining: {:?}, reset: {:?}s), waiting {wait_secs}s before retry",
+                        rate_limit.remaining,
+                        rate_limit.reset_secs,
+                    );
+                    tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                    continue;
+                }
+                Err(HyperSyncResponseError::Other(e)) => {
                     log::error!(
                         "failed to get arrow data from server, retrying... The error was: {e:?}"
                     );
                     err = err.context(format!("{e:?}"));
+                }
+                Err(HyperSyncResponseError::PayloadTooLarge) => {
+                    // This shouldn't happen since get_arrow_impl handles it, but just in case
+                    log::error!("unexpected PayloadTooLarge from get_arrow_impl, retrying...");
+                    err = err.context("unexpected PayloadTooLarge");
                 }
             }
 
@@ -1233,6 +1289,103 @@ impl Client {
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
         stream::stream_arrow(self, query, config).await
+    }
+
+    /// Executes query with retries and returns the response in Arrow format along with
+    /// rate limit information from the server.
+    ///
+    /// This is useful for consumers that want to inspect rate limit headers and implement
+    /// their own rate limiting logic in external systems.
+    pub async fn get_arrow_with_rate_limit(
+        &self,
+        query: &Query,
+    ) -> Result<QueryResponseWithRateLimit<ArrowResponseData>> {
+        let (response, _, rate_limit) = self.get_arrow_with_size(query).await?;
+        Ok(QueryResponseWithRateLimit {
+            response,
+            rate_limit,
+        })
+    }
+
+    /// Executes query with retries and returns the response along with
+    /// rate limit information from the server.
+    ///
+    /// This is useful for consumers that want to inspect rate limit headers and implement
+    /// their own rate limiting logic in external systems.
+    pub async fn get_with_rate_limit(
+        &self,
+        query: &Query,
+    ) -> Result<QueryResponseWithRateLimit<ResponseData>> {
+        let result = self.get_arrow_with_rate_limit(query).await?;
+        let converted =
+            QueryResponse::try_from(&result.response).context("convert arrow response")?;
+        Ok(QueryResponseWithRateLimit {
+            response: converted,
+            rate_limit: result.rate_limit,
+        })
+    }
+
+    /// Returns the most recently observed rate limit information, if any.
+    ///
+    /// Updated after every request (including inside streams). Returns `None`
+    /// if no requests have been made yet or the server hasn't returned rate limit headers.
+    pub fn rate_limit_info(&self) -> Option<RateLimitInfo> {
+        self.inner
+            .rate_limit_state
+            .lock()
+            .expect("rate_limit_state mutex poisoned")
+            .clone()
+    }
+
+    /// Waits until the current rate limit window resets, if the client is rate limited.
+    ///
+    /// Returns immediately if:
+    /// - No rate limit information has been observed yet
+    /// - There is remaining quota in the current window
+    ///
+    /// This method is useful for consumers who want to explicitly wait before making
+    /// requests, for example when coordinating rate limits across multiple systems.
+    pub async fn wait_for_rate_limit(&self) {
+        self.wait_for_rate_limit_inner().await;
+    }
+
+    /// Internal implementation for proactive rate limit waiting.
+    async fn wait_for_rate_limit_inner(&self) {
+        let wait_secs = {
+            let state = self
+                .inner
+                .rate_limit_state
+                .lock()
+                .expect("rate_limit_state mutex poisoned");
+            match state.as_ref() {
+                Some(info) if info.remaining == Some(0) => info.reset_secs,
+                _ => None,
+            }
+        };
+        if let Some(secs) = wait_secs {
+            if secs > 0 {
+                log::warn!(
+                    "rate limit exhausted, proactively waiting {secs}s for window reset"
+                );
+                tokio::time::sleep(Duration::from_secs(secs)).await;
+            }
+        }
+    }
+
+    /// Updates the internally tracked rate limit state.
+    fn update_rate_limit_state(&self, rate_limit: &RateLimitInfo) {
+        // Only update if the response actually contained rate limit headers
+        if rate_limit.limit.is_some()
+            || rate_limit.remaining.is_some()
+            || rate_limit.reset_secs.is_some()
+        {
+            let mut state = self
+                .inner
+                .rate_limit_state
+                .lock()
+                .expect("rate_limit_state mutex poisoned");
+            *state = Some(rate_limit.clone());
+        }
     }
 
     /// Getter for url field.
@@ -1453,6 +1606,19 @@ impl ClientBuilder {
     /// ```
     pub fn retry_ceiling_ms(mut self, retry_ceiling_ms: u64) -> Self {
         self.0.retry_ceiling_ms = retry_ceiling_ms;
+        self
+    }
+
+    /// Sets whether to proactively sleep when rate limited.
+    ///
+    /// When enabled (default), the client will wait for the rate limit window to reset
+    /// before sending requests it knows will be rejected. Set to `false` to disable
+    /// this behavior and handle rate limits yourself.
+    ///
+    /// # Arguments
+    /// * `proactive_rate_limit_sleep` - Whether to enable proactive rate limit sleeping (default: true)
+    pub fn proactive_rate_limit_sleep(mut self, proactive_rate_limit_sleep: bool) -> Self {
+        self.0.proactive_rate_limit_sleep = proactive_rate_limit_sleep;
         self
     }
 
@@ -1758,6 +1924,12 @@ pub enum HyperSyncResponseError {
     /// Means that the client should retry with a smaller block range.
     #[error("hypersync responded with 'payload too large' error")]
     PayloadTooLarge,
+    /// Server responded with 429 Too Many Requests.
+    #[error("rate limited by server")]
+    RateLimited {
+        /// Rate limit information from the 429 response headers.
+        rate_limit: RateLimitInfo,
+    },
     /// Any other server error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
