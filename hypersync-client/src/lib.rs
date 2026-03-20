@@ -113,7 +113,9 @@ pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use rate_limit::RateLimitInfo;
-pub use types::{ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, QueryResponseWithRateLimit};
+pub use types::{
+    ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, QueryResponseWithRateLimit,
+};
 
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
@@ -1039,7 +1041,10 @@ impl Client {
             };
             match res {
                 Ok(res) => return Ok(res),
-                Err(e @ (HyperSyncResponseError::Other(_) | HyperSyncResponseError::RateLimited { .. })) => return Err(e),
+                Err(
+                    e @ (HyperSyncResponseError::Other(_)
+                    | HyperSyncResponseError::RateLimited { .. }),
+                ) => return Err(e),
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     let block_range = if let Some(to_block) = query.to_block {
                         let current = to_block - query.from_block;
