@@ -79,9 +79,10 @@ impl RateLimitInfo {
         }
     }
 
-    /// Returns `true` if the rate limit quota has been exhausted.
+    /// Returns `true` if the rate limit quota has been exhausted or the server
+    /// has explicitly asked us to back off via `retry-after`.
     pub fn is_rate_limited(&self) -> bool {
-        self.remaining == Some(0)
+        self.remaining == Some(0) || self.retry_after_secs.is_some()
     }
 
     /// Returns the suggested number of seconds to wait before making another request.
@@ -126,6 +127,21 @@ mod tests {
 
         let info = RateLimitInfo::default();
         assert!(!info.is_rate_limited());
+
+        // retry_after alone means rate limited, even without remaining=0
+        let info = RateLimitInfo {
+            retry_after_secs: Some(5),
+            ..Default::default()
+        };
+        assert!(info.is_rate_limited());
+
+        // retry_after with remaining > 0 is still rate limited
+        let info = RateLimitInfo {
+            remaining: Some(10),
+            retry_after_secs: Some(3),
+            ..Default::default()
+        };
+        assert!(info.is_rate_limited());
     }
 
     #[test]

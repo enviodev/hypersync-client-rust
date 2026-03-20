@@ -1367,8 +1367,8 @@ impl Client {
                 .lock()
                 .expect("rate_limit_state mutex poisoned");
             match state.as_ref() {
-                Some((info, captured_at)) if info.remaining == Some(0) => {
-                    info.reset_secs.map(|secs| {
+                Some((info, captured_at)) if info.is_rate_limited() => {
+                    info.suggested_wait_secs().map(|secs| {
                         let elapsed = captured_at.elapsed().as_secs();
                         let remaining_wait = secs.saturating_sub(elapsed);
                         (remaining_wait, info.clone())
