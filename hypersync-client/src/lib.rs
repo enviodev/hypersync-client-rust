@@ -1989,6 +1989,31 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "integration test requiring live hs server"]
+    async fn test_http2_is_used() -> anyhow::Result<()> {
+        let api_token = std::env::var("ENVIO_API_TOKEN")?;
+        let client = reqwest::Client::builder()
+            .no_gzip()
+            .user_agent("hscr-test")
+            .build()?;
+
+        let res = client
+            .get("https://eth.hypersync.xyz/height")
+            .bearer_auth(&api_token)
+            .send()
+            .await?;
+
+        assert_eq!(
+            res.version(),
+            reqwest::Version::HTTP_2,
+            "expected HTTP/2 but got {:?}",
+            res.version()
+        );
+        assert!(res.status().is_success());
+        Ok(())
+    }
+
+    #[tokio::test]
     #[ignore = "integration test with live hs server for height stream"]
     async fn test_stream_height_events() -> anyhow::Result<()> {
         let (tx, mut rx) = mpsc::channel(16);
