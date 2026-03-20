@@ -1099,9 +1099,7 @@ impl Client {
                     self.update_rate_limit_state(&rate_limit);
                     let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
                     log::warn!(
-                        "rate limited by server, remaining={:?} reset_secs={:?} wait_secs={wait_secs}",
-                        rate_limit.remaining,
-                        rate_limit.reset_secs,
+                        "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry"
                     );
                     tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                     continue;
@@ -1359,21 +1357,23 @@ impl Client {
     /// This method is useful for consumers who want to explicitly wait before making
     /// requests, for example when coordinating rate limits across multiple systems.
     pub async fn wait_for_rate_limit(&self) {
-        let wait_secs = {
+        let wait_info = {
             let state = self
                 .inner
                 .rate_limit_state
                 .lock()
                 .expect("rate_limit_state mutex poisoned");
             match state.as_ref() {
-                Some(info) if info.remaining == Some(0) => info.reset_secs,
+                Some(info) if info.remaining == Some(0) => {
+                    info.reset_secs.map(|secs| (secs, info.clone()))
+                }
                 _ => None,
             }
         };
-        if let Some(secs) = wait_secs {
+        if let Some((secs, info)) = wait_info {
             if secs > 0 {
                 log::warn!(
-                    "rate limit exhausted, proactively waiting for window reset, wait_secs={secs}"
+                    "rate limit exhausted ({info}), proactively waiting {secs}s for window reset"
                 );
                 tokio::time::sleep(Duration::from_secs(secs)).await;
             }

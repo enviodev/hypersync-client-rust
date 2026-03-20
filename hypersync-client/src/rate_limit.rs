@@ -34,6 +34,37 @@ pub struct RateLimitInfo {
     pub retry_after_secs: Option<u64>,
 }
 
+impl std::fmt::Display for RateLimitInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+        if let (Some(remaining), Some(limit)) = (self.remaining, self.limit) {
+            let cost = self.cost.unwrap_or(1);
+            parts.push(format!(
+                "remaining={}/{} reqs ({}/{} budget, cost={})",
+                remaining / cost,
+                limit / cost,
+                remaining,
+                limit,
+                cost
+            ));
+        } else {
+            if let Some(remaining) = self.remaining {
+                parts.push(format!("remaining={remaining}"));
+            }
+            if let Some(limit) = self.limit {
+                parts.push(format!("limit={limit}"));
+            }
+        }
+        if let Some(reset) = self.reset_secs {
+            parts.push(format!("resets_in={reset}s"));
+        }
+        if let Some(retry) = self.retry_after_secs {
+            parts.push(format!("retry_after={retry}s"));
+        }
+        write!(f, "{}", parts.join(", "))
+    }
+}
+
 impl RateLimitInfo {
     /// Extracts rate limit information from HTTP response headers.
     ///
@@ -139,5 +170,36 @@ mod tests {
         // None when no info
         let info = RateLimitInfo::default();
         assert_eq!(info.suggested_wait_secs(), None);
+    }
+
+    #[test]
+    fn test_display_full() {
+        let info = RateLimitInfo {
+            limit: Some(50),
+            remaining: Some(0),
+            reset_secs: Some(59),
+            cost: Some(10),
+            retry_after_secs: Some(5),
+        };
+        assert_eq!(
+            info.to_string(),
+            "remaining=0/5 reqs (0/50 budget, cost=10), resets_in=59s, retry_after=5s"
+        );
+    }
+
+    #[test]
+    fn test_display_partial() {
+        let info = RateLimitInfo {
+            remaining: Some(3),
+            reset_secs: Some(30),
+            ..Default::default()
+        };
+        assert_eq!(info.to_string(), "remaining=3, resets_in=30s");
+    }
+
+    #[test]
+    fn test_display_empty() {
+        let info = RateLimitInfo::default();
+        assert_eq!(info.to_string(), "");
     }
 }
