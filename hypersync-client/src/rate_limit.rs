@@ -1,28 +1,36 @@
 /// Rate limit information extracted from response headers.
 ///
 /// Envoy's rate limiter returns these headers in the IETF draft format:
-/// - `x-ratelimit-limit`: e.g. `"60, 60;w=60"` (total quota for the window)
-/// - `x-ratelimit-remaining`: e.g. `"57"` (requests left in window)
-/// - `x-ratelimit-reset`: e.g. `"52"` (seconds until window resets)
-/// - `retry-after`: e.g. `"5"` (seconds to wait, present on 429 responses)
+/// - `x-ratelimit-limit`: e.g. `"50, 50;w=60"` (total quota for the window)
+/// - `x-ratelimit-remaining`: e.g. `"40"` (remaining budget in window)
+/// - `x-ratelimit-reset`: e.g. `"41"` (seconds until window resets)
+/// - `x-ratelimit-cost`: e.g. `"10"` (budget consumed per request)
+/// - `retry-after`: e.g. `"5"` (seconds to wait, standard HTTP header for 429s)
 #[derive(Debug, Clone, Default)]
 pub struct RateLimitInfo {
     /// Total request quota for the current window.
     ///
-    /// Parsed from `x-ratelimit-limit`. For IETF draft format like `"60, 60;w=60"`,
+    /// Parsed from `x-ratelimit-limit`. For IETF draft format like `"50, 50;w=60"`,
     /// the first integer before the comma is used.
     pub limit: Option<u64>,
-    /// Remaining requests in the current window.
+    /// Remaining budget in the current window.
     ///
-    /// Parsed from `x-ratelimit-remaining`.
+    /// Parsed from `x-ratelimit-remaining`. Note this is budget units, not request count.
+    /// Divide by [`cost`](Self::cost) to get the number of requests remaining.
     pub remaining: Option<u64>,
     /// Seconds until the rate limit window resets.
     ///
     /// Parsed from `x-ratelimit-reset`.
     pub reset_secs: Option<u64>,
-    /// Seconds to wait before retrying, typically present on 429 responses.
+    /// Budget consumed per request.
     ///
-    /// Parsed from `retry-after`.
+    /// Parsed from `x-ratelimit-cost`. For example, if `limit` is 50 and `cost` is 10,
+    /// you can make 5 requests per window.
+    pub cost: Option<u64>,
+    /// Seconds to wait before retrying (standard HTTP `retry-after` header).
+    ///
+    /// May not be present on all 429 responses. When absent, use
+    /// [`suggested_wait_secs`](Self::suggested_wait_secs) which falls back to `reset_secs`.
     pub retry_after_secs: Option<u64>,
 }
 
@@ -35,6 +43,7 @@ impl RateLimitInfo {
             limit: Self::parse_limit_header(res),
             remaining: Self::parse_u64_header(res, "x-ratelimit-remaining"),
             reset_secs: Self::parse_u64_header(res, "x-ratelimit-reset"),
+            cost: Self::parse_u64_header(res, "x-ratelimit-cost"),
             retry_after_secs: Self::parse_u64_header(res, "retry-after"),
         }
     }
