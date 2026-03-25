@@ -1,6 +1,6 @@
 # hypersync-client
 
-[![CI](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml) [![Crates.io](https://img.shields.io/crates/v/hypersync-client.svg?style=flat-square)](https://crates.io/crates/hypersync-client) [![docs.rs](https://img.shields.io/docsrs/hypersync-client)](https://docs.rs/hypersync-client/latest/hypersync_client/) [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289da?logo=discord&logoColor=white)](https://discord.gg/Q9qt8gZ2fX)
+[![CI](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml) [![Crates.io](https://img.shields.io/crates/v/hypersync-client.svg?style=flat-square)](https://crates.io/crates/hypersync-client) [![docs.rs](https://img.shields.io/docsrs/hypersync-client)](https://docs.rs/hypersync-client/latest/hypersync_client/) [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289da?logo=discord&logoColor=white)](https://discord.com/invite/envio)
 
 Rust crate for [Envio's](https://envio.dev) HyperSync client. The most performant way to access HyperSync, providing direct access to the underlying Rust implementation with no FFI overhead.
 
@@ -134,6 +134,6 @@ This is the native Rust implementation. The [Python](https://github.com/enviodev
 
 ## Support
 
-- [Discord community](https://discord.gg/Q9qt8gZ2fX)
+- [Discord community](https://discord.com/invite/envio)
 - [GitHub Issues](https://github.com/enviodev/hypersync-client-rust/issues)
 - [Documentation](https://docs.envio.dev/docs/HyperSync/overview)
