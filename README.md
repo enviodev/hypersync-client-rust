@@ -30,6 +30,7 @@ Add to your `Cargo.toml`:
 [dependencies]
 hypersync-client = "1"
 tokio = { version = "1", features = ["full"] }
++anyhow = "1"
 ```
 
 ## API Token
