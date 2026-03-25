@@ -5,7 +5,6 @@
 /// - `x-ratelimit-remaining`: e.g. `"40"` (remaining budget in window)
 /// - `x-ratelimit-reset`: e.g. `"41"` (seconds until window resets)
 /// - `x-ratelimit-cost`: e.g. `"10"` (budget consumed per request)
-/// - `retry-after`: e.g. `"5"` (seconds to wait, standard HTTP header for 429s)
 #[derive(Debug, Clone, Default)]
 pub struct RateLimitInfo {
     /// Total request quota for the current window.
@@ -27,11 +26,6 @@ pub struct RateLimitInfo {
     /// Parsed from `x-ratelimit-cost`. For example, if `limit` is 50 and `cost` is 10,
     /// you can make 5 requests per window.
     pub cost: Option<u64>,
-    /// Seconds to wait before retrying (standard HTTP `retry-after` header).
-    ///
-    /// May not be present on all 429 responses. When absent, use
-    /// [`suggested_wait_secs`](Self::suggested_wait_secs) which falls back to `reset_secs`.
-    pub retry_after_secs: Option<u64>,
 }
 
 impl std::fmt::Display for RateLimitInfo {
@@ -58,9 +52,6 @@ impl std::fmt::Display for RateLimitInfo {
         if let Some(reset) = self.reset_secs {
             parts.push(format!("resets_in={reset}s"));
         }
-        if let Some(retry) = self.retry_after_secs {
-            parts.push(format!("retry_after={retry}s"));
-        }
         write!(f, "{}", parts.join(", "))
     }
 }
@@ -75,21 +66,17 @@ impl RateLimitInfo {
             remaining: Self::parse_u64_header(res, "x-ratelimit-remaining"),
             reset_secs: Self::parse_u64_header(res, "x-ratelimit-reset"),
             cost: Self::parse_u64_header(res, "x-ratelimit-cost"),
-            retry_after_secs: Self::parse_u64_header(res, "retry-after"),
         }
     }
 
-    /// Returns `true` if the rate limit quota has been exhausted or the server
-    /// has explicitly asked us to back off via `retry-after`.
+    /// Returns `true` if the rate limit quota has been exhausted.
     pub fn is_rate_limited(&self) -> bool {
-        self.remaining == Some(0) || self.retry_after_secs.is_some()
+        self.remaining == Some(0)
     }
 
     /// Returns the suggested number of seconds to wait before making another request.
-    ///
-    /// Prefers `retry-after` (explicit server instruction), falls back to `reset_secs`.
     pub fn suggested_wait_secs(&self) -> Option<u64> {
-        self.retry_after_secs.or(self.reset_secs)
+        self.reset_secs
     }
 
     /// Parses `x-ratelimit-limit` which uses IETF draft format: `"60, 60;w=60"`.
@@ -127,21 +114,6 @@ mod tests {
 
         let info = RateLimitInfo::default();
         assert!(!info.is_rate_limited());
-
-        // retry_after alone means rate limited, even without remaining=0
-        let info = RateLimitInfo {
-            retry_after_secs: Some(5),
-            ..Default::default()
-        };
-        assert!(info.is_rate_limited());
-
-        // retry_after with remaining > 0 is still rate limited
-        let info = RateLimitInfo {
-            remaining: Some(10),
-            retry_after_secs: Some(3),
-            ..Default::default()
-        };
-        assert!(info.is_rate_limited());
     }
 
     #[test]
@@ -153,7 +125,6 @@ mod tests {
             .header("X-RATELIMIT-RESET", "30")
             .header("X-Ratelimit-Limit", "100, 100;w=60")
             .header("X-Ratelimit-Cost", "10")
-            .header("Retry-After", "5")
             .body("")
             .unwrap();
         let resp: reqwest::Response = http_resp.into();
@@ -163,20 +134,11 @@ mod tests {
         assert_eq!(info.remaining, Some(42));
         assert_eq!(info.reset_secs, Some(30));
         assert_eq!(info.cost, Some(10));
-        assert_eq!(info.retry_after_secs, Some(5));
     }
 
     #[test]
     fn test_suggested_wait_secs() {
-        // Prefers retry_after_secs
-        let info = RateLimitInfo {
-            retry_after_secs: Some(5),
-            reset_secs: Some(30),
-            ..Default::default()
-        };
-        assert_eq!(info.suggested_wait_secs(), Some(5));
-
-        // Falls back to reset_secs
+        // Uses reset_secs
         let info = RateLimitInfo {
             reset_secs: Some(30),
             ..Default::default()
@@ -195,11 +157,10 @@ mod tests {
             remaining: Some(0),
             reset_secs: Some(59),
             cost: Some(10),
-            retry_after_secs: Some(5),
         };
         assert_eq!(
             info.to_string(),
-            "remaining=0/5 reqs (0/50 budget, cost=10), resets_in=59s, retry_after=5s"
+            "remaining=0/5 reqs (0/50 budget, cost=10), resets_in=59s"
         );
     }
 

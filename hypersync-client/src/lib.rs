@@ -1393,7 +1393,6 @@ impl Client {
         if rate_limit.limit.is_some()
             || rate_limit.remaining.is_some()
             || rate_limit.reset_secs.is_some()
-            || rate_limit.retry_after_secs.is_some()
         {
             let mut state = self
                 .inner
