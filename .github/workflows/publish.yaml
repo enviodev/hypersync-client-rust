@@ -85,4 +85,4 @@ jobs:
           gh release create "$TAG" \
             --title "${CRATE} v${VERSION}" \
             --notes "Published ${CRATE} v${VERSION} to [crates.io](https://crates.io/crates/${CRATE}/${VERSION})." \
-            --latest=false
+            --latest=true
