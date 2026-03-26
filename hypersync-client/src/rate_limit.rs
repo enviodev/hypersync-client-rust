@@ -34,12 +34,9 @@ impl std::fmt::Display for RateLimitInfo {
         if let (Some(remaining), Some(limit)) = (self.remaining, self.limit) {
             let cost = self.cost.unwrap_or(1);
             parts.push(format!(
-                "remaining={}/{} reqs ({}/{} budget, cost={})",
+                "remaining={}/{} reqs",
                 remaining / cost,
                 limit / cost,
-                remaining,
-                limit,
-                cost
             ));
         } else {
             if let Some(remaining) = self.remaining {
@@ -158,10 +155,7 @@ mod tests {
             reset_secs: Some(59),
             cost: Some(10),
         };
-        assert_eq!(
-            info.to_string(),
-            "remaining=0/5 reqs (0/50 budget, cost=10), resets_in=59s"
-        );
+        assert_eq!(info.to_string(), "remaining=0/5 reqs, resets_in=59s");
     }
 
     #[test]
