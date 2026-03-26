@@ -2,13 +2,15 @@
 
 [![CI](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/enviodev/hypersync-client-rust/actions/workflows/ci.yaml) [![Crates.io](https://img.shields.io/crates/v/hypersync-client.svg?style=flat-square)](https://crates.io/crates/hypersync-client) [![docs.rs](https://img.shields.io/docsrs/hypersync-client)](https://docs.rs/hypersync-client/latest/hypersync_client/) [![Discord](https://img.shields.io/badge/Discord-Join%20Chat-7289da?logo=discord&logoColor=white)](https://discord.com/invite/envio)
 
-Rust crate for [Envio's](https://envio.dev) HyperSync client. The most performant way to access HyperSync, providing direct access to the underlying Rust implementation with no FFI overhead.
+Rust crate for [Envio's](https://envio.dev) HyperSync client. The most performant way to access HyperSync, with direct access to the underlying Rust implementation and no FFI overhead.
 
 ## What is HyperSync?
 
 [HyperSync](https://docs.envio.dev/docs/HyperSync/overview) is Envio's high-performance blockchain data retrieval layer. It is a purpose-built alternative to JSON-RPC endpoints, offering up to 2000x faster data access across 70+ EVM-compatible networks and Fuel.
 
 HyperSync lets you query logs, transactions, blocks, and traces with flexible filtering and field selection, returning only the data you need in binary formats for maximum throughput.
+
+If you need a full indexing framework on top of HyperSync with GraphQL APIs and schema management, see [HyperIndex](https://github.com/enviodev/hyperindex).
 
 ## Features
 
@@ -30,7 +32,7 @@ Add to your `Cargo.toml`:
 [dependencies]
 hypersync-client = "1"
 tokio = { version = "1", features = ["full"] }
-+anyhow = "1"
+anyhow = "1"
 ```
 
 ## API Token
@@ -106,6 +108,17 @@ Client::builder().url("https://eth.hypersync.xyz").api_token(...).build()?;
 
 See the full list of [supported networks and URLs](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks).
 
+## What you can build
+
+The Rust client is well suited for performance-critical applications that need direct, low-latency access to blockchain data:
+
+- **Blockchain indexers**: Build custom data pipelines without the overhead of JSON-RPC
+- **Data analytics**: Scan entire chain histories in seconds, not hours
+- **Block explorers**: Power responsive, real-time interfaces with comprehensive data access
+- **ETL pipelines**: Extract and transform on-chain data at scale using Apache Arrow output
+- **Monitoring tools**: Track wallet activity, token transfers, and contract events in near real-time
+- **Security tooling**: Scan token approvals and transaction history across 70+ chains. See [Snubb](https://www.npmjs.com/package/snubb), a CLI tool built with HyperSync that scans outstanding token approvals across 70 chains simultaneously
+
 ## Documentation
 
 - [API Reference (docs.rs)](https://docs.rs/hypersync-client/latest/hypersync_client/)
@@ -116,10 +129,10 @@ See the full list of [supported networks and URLs](https://docs.envio.dev/docs/H
 ## FAQ
 
 **How does this compare to using JSON-RPC?**
-HyperSync retrieves data up to 2000x faster than traditional JSON-RPC. For example, scanning the entire Arbitrum chain for sparse log data takes seconds instead of hours.
+HyperSync retrieves data up to 2000x faster than traditional JSON-RPC. Scanning the entire Arbitrum chain for sparse log data takes seconds instead of hours.
 
 **Do I need an API token?**
-Yes, an API token is required. [Get one here](https://docs.envio.dev/docs/HyperSync/api-tokens).
+Yes. [Get one here](https://docs.envio.dev/docs/HyperSync/api-tokens).
 
 **Which networks are supported?**
 70+ EVM-compatible networks and Fuel. See the [full list](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks).
@@ -131,7 +144,10 @@ CapnProto (recommended for performance) and JSON. Both are available via `Serial
 Yes. Use `stream_arrow` to receive data as Apache Arrow record batches, which integrates directly with analytics and DataFrame libraries.
 
 **What is the difference between this and the other HyperSync clients?**
-This is the native Rust implementation. The [Python](https://github.com/enviodev/hypersync-client-python) and [Node.js](https://github.com/enviodev/hypersync-client-node) clients are built on top of this crate via FFI bindings.
+This is the native Rust implementation. The [Python](https://github.com/enviodev/hypersync-client-python) and [Node.js](https://github.com/enviodev/hypersync-client-node) clients are built on top of this crate via FFI bindings. If you don't need Rust specifically, those clients give you the same HyperSync performance in your preferred language.
+
+**What is the difference between HyperSync and HyperIndex?**
+HyperSync is the raw data access layer. Use it when you need direct, low-level access to blockchain data in your own pipeline. [HyperIndex](https://github.com/enviodev/hyperindex) is the full indexing framework built on top of HyperSync, with schema management, event handlers, and a GraphQL API.
 
 ## Support
 
