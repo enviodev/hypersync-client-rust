@@ -62,8 +62,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Query ERC-20 Transfer events from USDC contract
     let query = Query::new()
-        .from_block(19000000)
-        .to_block_excl(19001000)
+        .from_block(0)
         .where_logs(
             LogFilter::all()
                 // USDC contract address
