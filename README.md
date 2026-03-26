@@ -4,6 +4,8 @@
 
 Rust crate for [Envio's](https://envio.dev) HyperSync client. The most performant way to access HyperSync, with direct access to the underlying Rust implementation and no FFI overhead.
 
+[Full API documentation on docs.rs](https://docs.rs/hypersync-client)
+
 ## What is HyperSync?
 
 [HyperSync](https://docs.envio.dev/docs/HyperSync/overview) is Envio's high-performance blockchain data retrieval layer. It is a purpose-built alternative to JSON-RPC endpoints, offering up to 2000x faster data access across 70+ EVM-compatible networks and Fuel.
