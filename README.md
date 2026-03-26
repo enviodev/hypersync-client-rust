@@ -15,12 +15,14 @@ If you need a full indexing framework on top of HyperSync with GraphQL APIs and 
 ## Features
 
 - **Maximum performance**: Direct Rust implementation with no FFI overhead
-- **Arrow format support**: Stream blockchain data as Apache Arrow record batches for in-memory analytics
+- **Arrow and Parquet format support**: Stream blockchain data as Apache Arrow record batches for in-memory analytics, or write directly to Parquet files
 - **Binary transport**: Uses CapnProto serialization to minimize bandwidth and maximize throughput
 - **Flexible queries**: Filter logs, transactions, blocks, and traces with granular control
 - **Field selection**: Choose exactly which fields to return, reducing unnecessary data transfer
 - **Automatic pagination**: Handles large datasets with built-in pagination
 - **Event decoding**: Decode ABI-encoded event data directly in the stream
+- **Real-time updates**: Live height streaming via Server-Sent Events
+- **Production ready**: Built-in rate limiting, automatic retries, and error handling
 - **Async/await**: Built on Tokio for fully asynchronous operation
 - **70+ networks**: Access any [HyperSync-supported network](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks)
 
@@ -90,6 +92,14 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 See the [examples directory](./examples) for more usage patterns including wallet transactions, block streaming, and decoded event output.
+
+## Main Types
+
+- [`Client`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.Client.html) - Main client for interacting with HyperSync servers
+- [`net_types::Query`](https://docs.rs/hypersync-client/latest/hypersync_net_types/struct.Query.html) - Query builder for specifying what data to fetch
+- [`StreamConfig`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.StreamConfig.html) - Configuration for streaming operations
+- [`QueryResponse`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.QueryResponse.html) - Response containing blocks, transactions, logs, and traces
+- [`ArrowResponse`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.ArrowResponse.html) - Response in Apache Arrow format for high-performance processing
 
 ## Connecting to Different Networks
 
