@@ -50,7 +50,7 @@ impl Default for ClientConfig {
             retry_backoff_ms: Self::default_retry_backoff_ms(),
             retry_base_ms: Self::default_retry_base_ms(),
             retry_ceiling_ms: Self::default_retry_ceiling_ms(),
-            serialization_format: SerializationFormat::Json,
+            serialization_format: SerializationFormat::default(),
             proactive_rate_limit_sleep: Self::default_proactive_rate_limit_sleep(),
         }
     }
@@ -114,16 +114,23 @@ impl ClientConfig {
 }
 
 /// Determines query serialization format for HTTP requests.
-#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SerializationFormat {
-    /// Use JSON serialization (default)
-    #[default]
+    /// Use JSON serialization
     Json,
-    /// Use Cap'n Proto binary serialization
+    /// Use Cap'n Proto binary serialization (default, with query caching enabled)
     CapnProto {
         /// Whether to use query caching
         should_cache_queries: bool,
     },
+}
+
+impl Default for SerializationFormat {
+    fn default() -> Self {
+        Self::CapnProto {
+            should_cache_queries: true,
+        }
+    }
 }
 
 /// Config for hypersync event streaming.
