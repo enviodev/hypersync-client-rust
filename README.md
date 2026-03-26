@@ -4,6 +4,8 @@
 
 Rust crate for [Envio's](https://envio.dev) HyperSync client. The most performant way to access HyperSync, with direct access to the underlying Rust implementation and no FFI overhead.
 
+[Full API documentation on docs.rs](https://docs.rs/hypersync-client)
+
 ## What is HyperSync?
 
 [HyperSync](https://docs.envio.dev/docs/HyperSync/overview) is Envio's high-performance blockchain data retrieval layer. It is a purpose-built alternative to JSON-RPC endpoints, offering up to 2000x faster data access across 70+ EVM-compatible networks and Fuel.
@@ -15,12 +17,14 @@ If you need a full indexing framework on top of HyperSync with GraphQL APIs and 
 ## Features
 
 - **Maximum performance**: Direct Rust implementation with no FFI overhead
-- **Arrow format support**: Stream blockchain data as Apache Arrow record batches for in-memory analytics
+- **Arrow and Parquet format support**: Stream blockchain data as Apache Arrow record batches for in-memory analytics, or write directly to Parquet files
 - **Binary transport**: Uses CapnProto serialization to minimize bandwidth and maximize throughput
 - **Flexible queries**: Filter logs, transactions, blocks, and traces with granular control
 - **Field selection**: Choose exactly which fields to return, reducing unnecessary data transfer
 - **Automatic pagination**: Handles large datasets with built-in pagination
 - **Event decoding**: Decode ABI-encoded event data directly in the stream
+- **Real-time updates**: Live height streaming via Server-Sent Events
+- **Production ready**: Built-in rate limiting, automatic retries, and error handling
 - **Async/await**: Built on Tokio for fully asynchronous operation
 - **70+ networks**: Access any [HyperSync-supported network](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks)
 
@@ -45,31 +49,28 @@ export ENVIO_API_TOKEN="your-token-here"
 
 ## Quick Start
 
-Stream all ERC-20 Transfer events from Ethereum mainnet:
+Query ERC-20 Transfer events from USDC on Ethereum mainnet:
 
 ```rust
-use hypersync_client::{
-    net_types::{LogField, LogFilter, Query},
-    Client, SerializationFormat, StreamConfig,
-};
+use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Create a client for Ethereum mainnet
     let client = Client::builder()
-        .chain_id(1) // Ethereum mainnet
+        .chain_id(1)
         .api_token(std::env::var("ENVIO_API_TOKEN")?)
-        .serialization_format(SerializationFormat::CapnProto {
-            should_cache_queries: true,
-        })
         .build()?;
 
+    // Query ERC-20 Transfer events from USDC contract
     let query = Query::new()
         .from_block(0)
         .where_logs(
-            LogFilter::all().and_topic0([
+            LogFilter::all()
+                // USDC contract address
+                .and_address(["0xA0b86a33E6411b87Fd9D3DF822C8698FC06BBe4c"])?
                 // ERC-20 Transfer event signature
-                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-            ])?,
+                .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
         )
         .select_log_fields([
             LogField::Data,
@@ -78,11 +79,15 @@ async fn main() -> anyhow::Result<()> {
             LogField::Topic2,
         ]);
 
-    let mut receiver = client.stream_arrow(query, StreamConfig::default()).await?;
+    // Get all data in one response
+    let response = client.get(&query).await?;
+    println!("Retrieved {} blocks", response.data.blocks.len());
 
-    while let Some(batch) = receiver.recv().await {
-        let batch = batch?;
-        println!("Received {} logs", batch.data.logs.len());
+    // Or stream data for large ranges
+    let mut receiver = client.stream(query, StreamConfig::default()).await?;
+    while let Some(response) = receiver.recv().await {
+        let response = response?;
+        println!("Streaming: got blocks up to {}", response.next_block);
     }
 
     Ok(())
@@ -90,6 +95,14 @@ async fn main() -> anyhow::Result<()> {
 ```
 
 See the [examples directory](./examples) for more usage patterns including wallet transactions, block streaming, and decoded event output.
+
+## Main Types
+
+- [`Client`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.Client.html) - Main client for interacting with HyperSync servers
+- [`net_types::Query`](https://docs.rs/hypersync-client/latest/hypersync_net_types/struct.Query.html) - Query builder for specifying what data to fetch
+- [`StreamConfig`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.StreamConfig.html) - Configuration for streaming operations
+- [`QueryResponse`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.QueryResponse.html) - Response containing blocks, transactions, logs, and traces
+- [`ArrowResponse`](https://docs.rs/hypersync-client/latest/hypersync_client/struct.ArrowResponse.html) - Response in Apache Arrow format for high-performance processing
 
 ## Connecting to Different Networks
 
