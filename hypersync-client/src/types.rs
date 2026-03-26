@@ -127,7 +127,7 @@ pub type EventResponse = QueryResponse<Vec<Event>>;
 
 /// Response that includes rate limit information from the server.
 ///
-/// Returned by [`Client::get_with_rate_limit`] and [`Client::get_arrow_with_rate_limit`].
+/// Returned by [`crate::Client::get_with_rate_limit`] and [`crate::Client::get_arrow_with_rate_limit`].
 /// Use this when you need to inspect rate limit headers for external monitoring or
 /// coordination across systems.
 #[derive(Debug, Clone)]
