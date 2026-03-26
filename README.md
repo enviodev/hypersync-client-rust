@@ -72,10 +72,10 @@ async fn main() -> anyhow::Result<()> {
                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
         )
         .select_log_fields([
-            LogField::Address,
+            LogField::Data,
+            LogField::Topic0,
             LogField::Topic1,
             LogField::Topic2,
-            LogField::Data,
         ]);
 
     // Get all data in one response
