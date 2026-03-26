@@ -51,7 +51,7 @@ export ENVIO_API_TOKEN="your-token-here"
 
 Query ERC-20 Transfer events from USDC on Ethereum mainnet:
 
-```rust
+```rust,no_run
 use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
 
 #[tokio::main]
@@ -108,7 +108,7 @@ See the [examples directory](./examples) for more usage patterns including walle
 
 Change the `chain_id` (or use `url`) to connect to any supported network:
 
-```rust
+```rust,ignore
 // Arbitrum
 Client::builder().chain_id(42161).api_token(...).build()?;
 
