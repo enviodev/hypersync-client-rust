@@ -51,7 +51,7 @@ export ENVIO_API_TOKEN="your-token-here"
 
 Query ERC-20 Transfer events from USDC on Ethereum mainnet:
 
-```rust
+```rust,no_run
 use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
 
 #[tokio::main]
@@ -108,15 +108,22 @@ See the [examples directory](./examples) for more usage patterns including walle
 
 Change the `chain_id` (or use `url`) to connect to any supported network:
 
-```rust
+```rust,no_run
+use hypersync_client::Client;
+
+# fn main() -> anyhow::Result<()> {
+let api_token = std::env::var("ENVIO_API_TOKEN")?;
+
 // Arbitrum
-Client::builder().chain_id(42161).api_token(...).build()?;
+Client::builder().chain_id(42161).api_token(&api_token).build()?;
 
 // Base
-Client::builder().chain_id(8453).api_token(...).build()?;
+Client::builder().chain_id(8453).api_token(&api_token).build()?;
 
 // Or use the URL directly
-Client::builder().url("https://eth.hypersync.xyz").api_token(...).build()?;
+Client::builder().url("https://eth.hypersync.xyz").api_token(&api_token).build()?;
+# Ok(())
+# }
 ```
 
 See the full list of [supported networks and URLs](https://docs.envio.dev/docs/HyperSync/hypersync-supported-networks).
