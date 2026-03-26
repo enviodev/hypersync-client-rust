@@ -71,7 +71,12 @@ async fn main() -> anyhow::Result<()> {
                 // ERC-20 Transfer event signature
                 .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
         )
-        .select_log_fields([LogField::Address, LogField::Topic1, LogField::Topic2, LogField::Data]);
+        .select_log_fields([
+            LogField::Address,
+            LogField::Topic1,
+            LogField::Topic2,
+            LogField::Data,
+        ]);
 
     // Get all data in one response
     let response = client.get(&query).await?;
