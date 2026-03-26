@@ -47,44 +47,41 @@ export ENVIO_API_TOKEN="your-token-here"
 
 ## Quick Start
 
-Stream all ERC-20 Transfer events from Ethereum mainnet:
+Query ERC-20 Transfer events from USDC on Ethereum mainnet:
 
 ```rust
-use hypersync_client::{
-    net_types::{LogField, LogFilter, Query},
-    Client, SerializationFormat, StreamConfig,
-};
+use hypersync_client::{Client, net_types::{Query, LogFilter, LogField}, StreamConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Create a client for Ethereum mainnet
     let client = Client::builder()
-        .chain_id(1) // Ethereum mainnet
+        .chain_id(1)
         .api_token(std::env::var("ENVIO_API_TOKEN")?)
-        .serialization_format(SerializationFormat::CapnProto {
-            should_cache_queries: true,
-        })
         .build()?;
 
+    // Query ERC-20 Transfer events from USDC contract
     let query = Query::new()
-        .from_block(0)
+        .from_block(19000000)
+        .to_block_excl(19001000)
         .where_logs(
-            LogFilter::all().and_topic0([
+            LogFilter::all()
+                // USDC contract address
+                .and_address(["0xA0b86a33E6411b87Fd9D3DF822C8698FC06BBe4c"])?
                 // ERC-20 Transfer event signature
-                "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-            ])?,
+                .and_topic0(["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"])?
         )
-        .select_log_fields([
-            LogField::Data,
-            LogField::Topic0,
-            LogField::Topic1,
-            LogField::Topic2,
-        ]);
+        .select_log_fields([LogField::Address, LogField::Topic1, LogField::Topic2, LogField::Data]);
 
-    let mut receiver = client.stream_arrow(query, StreamConfig::default()).await?;
+    // Get all data in one response
+    let response = client.get(&query).await?;
+    println!("Retrieved {} blocks", response.data.blocks.len());
 
-    while let Some(batch) = receiver.recv().await {
-        let batch = batch?;
-        println!("Received {} logs", batch.data.logs.len());
+    // Or stream data for large ranges
+    let mut receiver = client.stream(query, StreamConfig::default()).await?;
+    while let Some(response) = receiver.recv().await {
+        let response = response?;
+        println!("Streaming: got blocks up to {}", response.next_block);
     }
 
     Ok(())
