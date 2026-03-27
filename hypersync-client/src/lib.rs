@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-#![doc = include_str!("../README.md")]
+//! Rust crate for Envio's HyperSync client.
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 
