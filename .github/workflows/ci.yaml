@@ -35,7 +35,7 @@ jobs:
       - name: Test
         run: cargo test
 
-  test_release:
+  package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -44,15 +44,12 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
-      - name: Check Rust version
+      - name: Verify publishable crates package correctly
         run: |
-          rustc --version
-          cargo --version
-          rustup show
-      - name: Build
-        run: cargo build --release
-      - name: Test
-        run: cargo test --release
+          cargo package -p hypersync-format
+          cargo package -p hypersync-schema
+          cargo package -p hypersync-net-types
+          cargo package -p hypersync-client
 
   lint:
     runs-on: ubuntu-latest

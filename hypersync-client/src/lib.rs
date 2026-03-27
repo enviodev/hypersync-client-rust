@@ -1,5 +1,10 @@
 #![deny(missing_docs)]
-#![doc = include_str!("../../README.md")]
+// README.md is a symlink (ln -s ../README.md README.md) to the root workspace
+// README. This is needed so that both `cargo doc` and `cargo package` work:
+// - `cargo doc`: include_str! resolves the symlink to the root README.
+// - `cargo package`: cargo copies the symlink target into the tarball, so
+//   include_str! finds README.md at the package root during verification.
+#![doc = include_str!("../README.md")]
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
 
