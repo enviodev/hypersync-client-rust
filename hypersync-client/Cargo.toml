@@ -6,6 +6,7 @@ description = "client library for hypersync"
 license = "MPL-2.0"
 homepage = "https://github.com/enviodev/hypersync-client-rust"
 repository = "https://github.com/enviodev/hypersync-client-rust"
+readme = "README.md"
 
 [dependencies]
 arrow = { workspace = true, features = ["ipc_compression"] }
