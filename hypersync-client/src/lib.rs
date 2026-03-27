@@ -1,4 +1,7 @@
 #![deny(missing_docs)]
+// README.md is a symlink to the root workspace README. This allows include_str!
+// to resolve correctly both locally and in the published crate tarball, where
+// cargo copies the symlink target into the package root.
 #![doc = include_str!("../README.md")]
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};

@@ -6,6 +6,8 @@ description = "client library for hypersync"
 license = "MPL-2.0"
 homepage = "https://github.com/enviodev/hypersync-client-rust"
 repository = "https://github.com/enviodev/hypersync-client-rust"
+# Points to a symlink to the root workspace README. Cargo resolves the symlink
+# and copies the actual file into the published crate tarball.
 readme = "README.md"
 
 [dependencies]
