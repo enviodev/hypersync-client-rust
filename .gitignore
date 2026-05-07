@@ -22,3 +22,4 @@ ex/
 
 .idea
 .env
+hypersync-client-wasm/demo/node_modules

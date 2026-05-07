@@ -102,7 +102,7 @@
         <h2>connection</h2>
         <div class="row">
             <div>
-                <label>Hypersync URL</label>
+                <label>Hypersync URL <span class="small">(prefilled from server.mjs — defaults to <code>${origin}/proxy</code>, which forwards to the upstream set via <code>HYPERSYNC_URL</code> env or <code>pnpm start &lt;url&gt;</code>. Bypasses CORS.)</span></label>
                 <input id="url" type="text" value="https://eth.hypersync.xyz" />
             </div>
             <div>
@@ -169,6 +169,18 @@
             if (!token) token = "00000000-0000-0000-0000-000000000000";
             return new Client(url, token);
         }
+
+        // Prefill URL + token from the server (HYPERSYNC_URL / ENVIO_API_TOKEN
+        // env vars or a tests/js-style .env). Falls through silently if
+        // /config.json isn't reachable (e.g. served from a static CDN).
+        try {
+            const cfg = await fetch("./config.json");
+            if (cfg.ok) {
+                const { hypersyncUrl, apiToken } = await cfg.json();
+                if (hypersyncUrl) $("url").value = hypersyncUrl;
+                if (apiToken) $("token").value = apiToken;
+            }
+        } catch (_) {}
 
         // Init wasm. Report load time + .wasm size for the demo card.
         const t0 = performance.now();

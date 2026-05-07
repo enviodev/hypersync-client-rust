@@ -5,3 +5,7 @@
 /tests/js/package-lock.json
 /tests/js/pnpm-lock.yaml
 /tests/js/.env
+/demo/.env
+/demo/node_modules/
+/demo/pnpm-lock.yaml
+/demo/package-lock.json
