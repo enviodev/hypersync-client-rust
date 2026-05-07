@@ -193,3 +193,110 @@ impl ArrowResponse {
         self.decoded_logs.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::array::{StringArray, UInt64Array};
+    use arrow::datatypes::{DataType, Field, Schema};
+    use arrow::ipc::reader::FileReader;
+    use hypersync_client::ArrowResponseData;
+    use std::io::Cursor;
+    use std::sync::Arc;
+
+    fn make_batch() -> RecordBatch {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("number", DataType::UInt64, false),
+            Field::new("hash", DataType::Utf8, false),
+        ]));
+        let numbers: Arc<dyn arrow::array::Array> = Arc::new(UInt64Array::from(vec![1, 2, 3]));
+        let hashes: Arc<dyn arrow::array::Array> =
+            Arc::new(StringArray::from(vec!["0x01", "0x02", "0x03"]));
+        RecordBatch::try_new(schema, vec![numbers, hashes]).unwrap()
+    }
+
+    /// `encode_batches` returns an empty Vec for an empty input (and crucially
+    /// does not panic trying to read `batches[0].schema()`).
+    #[test]
+    fn encode_batches_empty() {
+        assert_eq!(encode_batches(&[]).unwrap(), Vec::<u8>::new());
+    }
+
+    /// `encode_batches` produces a self-describing Arrow IPC file that round-
+    /// trips back to the same rows via `FileReader`. This is the contract the
+    /// JS side relies on (apache-arrow's `tableFromIPC`).
+    #[test]
+    fn encode_batches_round_trip() {
+        let batch = make_batch();
+        let bytes = encode_batches(std::slice::from_ref(&batch)).unwrap();
+        assert!(!bytes.is_empty());
+
+        let reader = FileReader::try_new(Cursor::new(bytes), None).unwrap();
+        let read_back: Vec<RecordBatch> = reader.map(|r| r.unwrap()).collect();
+
+        assert_eq!(read_back.len(), 1);
+        assert_eq!(read_back[0].num_rows(), batch.num_rows());
+        assert_eq!(read_back[0].schema(), batch.schema());
+    }
+
+    /// Multiple batches concatenate into a single IPC file, preserving order.
+    #[test]
+    fn encode_batches_multiple() {
+        let batches = vec![make_batch(), make_batch()];
+        let bytes = encode_batches(&batches).unwrap();
+        let reader = FileReader::try_new(Cursor::new(bytes), None).unwrap();
+        let read_back: Vec<RecordBatch> = reader.map(|r| r.unwrap()).collect();
+        assert_eq!(read_back.len(), 2);
+        assert_eq!(read_back[0].num_rows() + read_back[1].num_rows(), 6);
+    }
+
+    /// `ArrowResponse::from_native` faithfully copies scalar header fields and
+    /// emits empty IPC payloads for empty tables (matches the JS test's
+    /// expectation that `decoded_logs.byteLength === 0` when no signature was
+    /// supplied).
+    #[test]
+    fn from_native_copies_header_and_empty_tables() {
+        let native = hypersync_client::ArrowResponse {
+            archive_height: Some(123),
+            next_block: 100,
+            total_execution_time: 42,
+            data: ArrowResponseData::default(),
+            rollback_guard: None,
+        };
+
+        let resp = ArrowResponse::from_native(native).unwrap();
+
+        assert_eq!(resp.archive_height, Some(123));
+        assert_eq!(resp.next_block, 100);
+        assert_eq!(resp.total_execution_time, 42);
+        assert!(resp.blocks.is_empty());
+        assert!(resp.transactions.is_empty());
+        assert!(resp.logs.is_empty());
+        assert!(resp.traces.is_empty());
+        assert!(resp.decoded_logs.is_empty());
+    }
+
+    /// One non-empty table produces a non-empty IPC payload while siblings
+    /// stay empty. Catches accidental cross-wiring (e.g., logs into traces).
+    #[test]
+    fn from_native_routes_tables_independently() {
+        let native = hypersync_client::ArrowResponse {
+            archive_height: None,
+            next_block: 0,
+            total_execution_time: 0,
+            data: ArrowResponseData {
+                logs: vec![make_batch()],
+                ..ArrowResponseData::default()
+            },
+            rollback_guard: None,
+        };
+
+        let resp = ArrowResponse::from_native(native).unwrap();
+
+        assert!(!resp.logs.is_empty());
+        assert!(resp.blocks.is_empty());
+        assert!(resp.transactions.is_empty());
+        assert!(resp.traces.is_empty());
+        assert!(resp.decoded_logs.is_empty());
+    }
+}
