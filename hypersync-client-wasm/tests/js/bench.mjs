@@ -51,8 +51,8 @@ const smallQueryNative = {
     toBlock: 19000005,
     logs: [{ topics: [[TRANSFER_TOPIC0]] }],
     fieldSelection: {
-        log: ["address", "topic0", "topic1", "topic2", "data", "block_number"],
-        block: ["number", "hash", "timestamp"],
+        log: ["Address", "Topic0", "Topic1", "Topic2", "Data", "BlockNumber"],
+        block: ["Number", "Hash", "Timestamp"],
     },
 };
 
@@ -72,8 +72,8 @@ const streamQueryNative = {
     toBlock: 19000000 + STREAM_BLOCKS,
     logs: [{ topics: [[TRANSFER_TOPIC0]] }],
     fieldSelection: {
-        log: ["address", "topic0", "topic1", "topic2", "data", "block_number"],
-        block: ["number"],
+        log: ["Address", "Topic0", "Topic1", "Topic2", "Data", "BlockNumber"],
+        block: ["Number"],
     },
 };
 
