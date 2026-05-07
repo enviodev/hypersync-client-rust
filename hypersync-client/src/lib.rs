@@ -84,6 +84,26 @@ where
     }
 }
 
+/// Sleep for `duration`, on whichever runtime is driving the caller.
+///
+/// `tokio::time::sleep` does not work on `wasm32-unknown-unknown`: tokio's
+/// internal `Instant::now()` falls back to `std::time::Instant::now()`,
+/// which panics. We use `gloo-timers`'s `TimeoutFuture` (a small wrapper
+/// around `setTimeout`) on wasm. On native we keep `tokio::time::sleep`.
+async fn sleep_compat(duration: Duration) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::time::sleep(duration).await;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // `setTimeout` takes a 32-bit ms; clamp to avoid overflow for
+        // very large `Duration`s (which we never produce in practice).
+        let ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
+        gloo_timers::future::TimeoutFuture::new(ms).await;
+    }
+}
+
 /// Fire-and-forget spawn of a background async task.
 ///
 /// On native we use `tokio::spawn`, which schedules onto whichever runtime
@@ -688,7 +708,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -738,7 +758,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -1107,7 +1127,7 @@ impl Client {
                         "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                     );
                     err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens"));
-                    tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                    sleep_compat(Duration::from_secs(wait_secs)).await;
                     continue;
                 }
                 Err(HyperSyncResponseError::Other(e)) => {
@@ -1129,7 +1149,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -1386,7 +1406,7 @@ impl Client {
                 log::warn!(
                     "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                 );
-                tokio::time::sleep(Duration::from_secs(secs)).await;
+                sleep_compat(Duration::from_secs(secs)).await;
             }
         }
     }

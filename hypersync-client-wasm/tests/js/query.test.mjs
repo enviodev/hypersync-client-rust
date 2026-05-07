@@ -56,7 +56,12 @@ const query = {
 console.log(`POST ${HYPERSYNC_URL}/query/arrow-ipc  blocks=${query.from_block}..${query.to_block}`);
 
 const client = new Client(HYPERSYNC_URL, TOKEN);
-assert.equal(client.url, HYPERSYNC_URL, "url getter");
+// `url::Url::to_string()` always normalizes to a trailing slash on the
+// authority — accept either form.
+assert.ok(
+    client.url === HYPERSYNC_URL || client.url === HYPERSYNC_URL + "/",
+    `url getter unexpected: ${client.url}`,
+);
 
 // Probe the simple endpoints first to make sure auth works before we run a query.
 const [height, chainId] = await Promise.all([

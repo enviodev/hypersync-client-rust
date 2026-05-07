@@ -81,7 +81,6 @@ tokio = { version = "1", default-features = false, features = [
   "rt",
   "macros",
   "sync",
-  "time",
 ] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 # `rand` (and any other transitive user of `getrandom`) needs the `js` feature
@@ -90,6 +89,10 @@ getrandom = { version = "0.2", features = ["js"] }
 # Used by the stream module to fire-and-forget background async work on the
 # wasm event loop. On native we use `tokio::spawn` directly.
 wasm-bindgen-futures = "0.4"
+# `tokio::time` is unusable on wasm32-unknown-unknown — its internal
+# `Instant::now` reduces to `std::time::Instant::now` which panics. We use
+# `gloo-timers` to back the wasm side of `sleep_compat` instead.
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 [dev-dependencies]
 http = "1"
