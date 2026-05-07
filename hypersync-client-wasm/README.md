@@ -78,7 +78,22 @@ wasm-pack build --target nodejs --release
 cd tests/js
 npm install
 # Token can be set in tests/js/.env (loaded automatically) or as an env var.
-ENVIO_API_TOKEN=... node query.test.mjs
+ENVIO_API_TOKEN=... node query.test.mjs   # one-shot get_arrow round-trip
+ENVIO_API_TOKEN=... node stream.test.mjs  # streaming
+```
+
+## Run the benchmark vs `@envio-dev/hypersync-client` (native)
+
+`bench.mjs` runs the same workload through both the wasm client and the
+native napi-rs binding and prints a side-by-side table of cold/warm
+get latency, stream throughput, and bundle size.
+
+```bash
+wasm-pack build --target nodejs --release
+cd tests/js
+npm install
+ENVIO_API_TOKEN=... npm run bench
+# tweak BENCH_ITERATIONS=20 for tighter warm-call medians
 ```
 
 ## What's intentionally missing
