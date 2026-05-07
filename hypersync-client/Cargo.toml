@@ -11,9 +11,11 @@ repository = "https://github.com/enviodev/hypersync-client-rust"
 # published crate tarball, so both `cargo doc` and `cargo package` work.
 readme = "README.md"
 
+# Dependencies common to native (x86_64, aarch64, etc.) and wasm32 builds.
+# Native-only or wasm-only deps live in the [target.'cfg(...)'.dependencies]
+# tables below.
 [dependencies]
 arrow = { workspace = true, features = ["ipc_compression"] }
-parquet = { workspace = true, features = ["arrow", "async"] }
 
 anyhow = "1"
 url = { version = "2", features = ["serde"] }
@@ -22,6 +24,35 @@ capnp = "0.23"
 serde = { version = "1", features = ["derive"] }
 futures = "0.3"
 arrayvec = { version = "0.7", features = ["serde"] }
+log = "0.4"
+fastrange-rs = "0.1"
+rand = "0.8"
+alloy-dyn-abi = "1.1"
+alloy-json-abi = "1.1"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+faster-hex = "0.9"
+ruint = "1"
+bincode = "1"
+nohash-hasher = "0.2.0"
+alloy-primitives = "1.1"
+# `web-time` is a drop-in replacement for `std::time::Instant` that compiles
+# on both native and wasm32 (uses `performance.now()` under the hood on wasm).
+web-time = "1"
+
+hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
+hypersync-format = { path = "../hypersync-format", version = "0.7.0" }
+hypersync-schema = { path = "../hypersync-schema", version = "0.4.0" }
+uuid = { version = "1", features = ["v4", "js"] }
+thiserror = "2.0.17"
+schemars = "1.2.0"
+
+# Native-only deps. These power features that do not compile on wasm32:
+# - `parquet`/`tokio::fs` for `collect_parquet`
+# - `tokio` multi-threaded runtime + `rayon` for `stream*`/`collect*`
+# - `reqwest-eventsource` for `stream_height`
+# - native `reqwest` features (TLS / streaming bodies / http2)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+parquet = { workspace = true, features = ["arrow", "async"] }
 tokio = { version = "1", default-features = false, features = [
   "rt-multi-thread",
   "fs",
@@ -29,34 +60,33 @@ tokio = { version = "1", default-features = false, features = [
   "rt",
   "macros",
   "sync",
+  "time",
 ] }
-log = "0.4"
-fastrange-rs = "0.1"
-rand = "0.8"
-alloy-dyn-abi = "1.1"
-alloy-json-abi = "1.1"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-num_cpus = "1"
 rayon = "1"
-faster-hex = "0.9"
-ruint = "1"
-bincode = "1"
-nohash-hasher = "0.2.0"
-alloy-primitives = "1.1"
-
-hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
-hypersync-format = { path = "../hypersync-format", version = "0.7.0" }
-hypersync-schema = { path = "../hypersync-schema", version = "0.4.0" }
+num_cpus = "1"
 reqwest-eventsource = "0.6"
-uuid = { version = "1", features = ["v4"] }
-thiserror = "2.0.17"
-schemars = "1.2.0"
+reqwest = { version = "0.12", default-features = false, features = [
+  # rustls-tls-native-roots uses the OS certificate store, required for Claude Code containers
+  "json",
+  "rustls-tls-native-roots",
+  "stream",
+  "http2",
+] }
 
-[dependencies.reqwest]
-version = "0.12"
-default-features = false
-# rustls-tls-native-roots uses the OS certificate store, required for Claude Code containers
-features = ["json", "rustls-tls-native-roots", "stream", "http2"]
+# Wasm-only deps. The browser/Node wasm runtime is single-threaded and uses
+# the host's `fetch` API, so we strip everything that would pull in tokio's
+# multi-thread runtime, mio, native TLS, or rayon's thread pool.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", default-features = false, features = [
+  "rt",
+  "macros",
+  "sync",
+  "time",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+# `rand` (and any other transitive user of `getrandom`) needs the `js` feature
+# to source entropy from `crypto.getRandomValues` instead of `/dev/urandom`.
+getrandom = { version = "0.2", features = ["js"] }
 
 [dev-dependencies]
 http = "1"

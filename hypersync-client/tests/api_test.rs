@@ -1,3 +1,7 @@
+// Integration tests exercise the streaming/parquet APIs which are gated to
+// native targets. Wasm compiles but does not run these tests.
+#![cfg(not(target_arch = "wasm32"))]
+
 use std::{collections::BTreeSet, env::temp_dir, str::FromStr, sync::Arc};
 
 use alloy_json_abi::JsonAbi;
