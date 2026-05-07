@@ -1,17 +1,40 @@
 # hypersync-client-wasm
 
-Minimal WASM bindings for hypersync. **Experimental — `query` only, no streaming, no retries, no rate-limit handling.**
-
-The goal of this first iteration is just to prove that hypersync's query path
-can be driven from a browser / Node.js wasm runtime. It exposes one async call:
+WASM bindings for hypersync. Thin wasm-bindgen wrapper around
+[`hypersync-client`](../hypersync-client) — the same `Client`, the same
+`Query`, the same retry / rate-limit / cap'n-proto-cache logic, just exposed
+to JavaScript.
 
 ```ts
-new Client(url: string, apiToken: string)
-client.get_arrow(query: Query): Promise<ArrowResponse>
+const client = new Client("https://eth.hypersync.xyz", apiToken);
+// or: Client.with_config({ url, api_token, max_num_retries: 5, ... })
+
+const height  = await client.get_height();          // bigint
+const chainId = await client.get_chain_id();        // bigint
+
+const res = await client.get_arrow({
+    from_block: 19000000,
+    to_block:   19000005,
+    logs: [{ topics: [["0xddf2...3b3ef"]] }],
+    field_selection: { log: ["address", "topic0", "data"] },
+});
+// res.{blocks, transactions, logs, traces, decoded_logs} are Uint8Array of
+// uncompressed Arrow IPC bytes — feed into apache-arrow's tableFromIPC.
 ```
 
-Where `ArrowResponse` exposes `blocks` / `transactions` / `logs` / `traces` as
-`Uint8Array`s of Arrow IPC bytes — feed them into `apache-arrow`'s `tableFromIPC`.
+## Architecture
+
+This crate is a thin layer:
+
+- `hypersync-client` itself compiles to `wasm32-unknown-unknown`. Streaming,
+  parquet, rayon parallelism, and SSE height-stream are cfg-gated to native
+  targets; everything else (retries, payload-too-large halving, rate-limit
+  tracking, cap'n proto query caching, alloy-based decoding) compiles for
+  both.
+- `hypersync-client-wasm` defines wasm-bindgen `#[wasm_bindgen]` exports that
+  proxy calls into the inner `hypersync_client::Client` and re-encode the
+  resulting `Vec<RecordBatch>` as uncompressed Arrow IPC bytes for the JS
+  side. `apache-arrow` (JS) doesn't yet support compressed IPC batches.
 
 ## Build
 
@@ -48,11 +71,15 @@ ENVIO_API_TOKEN=... node query.test.mjs
 
 ## What's intentionally missing
 
-- HTTP retries / payload-too-large halving
-- Rate limit awareness (`RateLimitInfo`)
-- Cap'n Proto request encoding (uses JSON path only)
-- `stream`, `stream_arrow`, `collect`, `collect_parquet`
-- Decoded logs (no alloy ABI decoding in wasm yet)
-- `health_check`, `get_height`, `get_chain_id`
+These are all native-only methods on `hypersync_client::Client` and would
+require additional plumbing for wasm:
 
-These can be added incrementally as the wasm story matures.
+- `stream`, `stream_arrow`, `stream_events`, `stream_height` — depend on
+  `tokio::spawn` / `JoinSet` / SSE.
+- `collect`, `collect_arrow`, `collect_events`, `collect_parquet` — depend on
+  `stream_arrow` and (for `collect_parquet`) `tokio::fs` + the parquet async
+  writer.
+- Per-column parallel decoding (rayon) — falls back to serial iteration on
+  wasm.
+
+These can be added incrementally if/when there's a clear use case.

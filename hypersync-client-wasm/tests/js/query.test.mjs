@@ -13,7 +13,9 @@
 //   node tests/js/query.test.mjs
 //
 // Verifies:
-//   - wasm Client constructs
+//   - wasm Client constructs (both `new Client(url, token)` and
+//     `Client.with_config({...})`)
+//   - get_height() / get_chain_id() succeed and return bigints
 //   - get_arrow() returns an ArrowResponse with sane scalar fields
 //   - Returned IPC bytes decode with apache-arrow into RecordBatches
 //   - At least one log row is returned for a known-active block range
@@ -54,6 +56,21 @@ const query = {
 console.log(`POST ${HYPERSYNC_URL}/query/arrow-ipc  blocks=${query.from_block}..${query.to_block}`);
 
 const client = new Client(HYPERSYNC_URL, TOKEN);
+assert.equal(client.url, HYPERSYNC_URL, "url getter");
+
+// Probe the simple endpoints first to make sure auth works before we run a query.
+const [height, chainId] = await Promise.all([
+    client.get_height(),
+    client.get_chain_id(),
+]);
+assert.equal(typeof height, "bigint", "get_height returns bigint");
+assert.equal(typeof chainId, "bigint", "get_chain_id returns bigint");
+console.log(`server: chain_id=${chainId}, height=${height}`);
+
+// Also verify with_config works as an alternate constructor
+const client2 = Client.with_config({ url: HYPERSYNC_URL, api_token: TOKEN });
+assert.equal(client2.url, HYPERSYNC_URL, "with_config().url");
+
 const t0 = performance.now();
 const res = await client.get_arrow(query);
 const elapsed = (performance.now() - t0).toFixed(0);
@@ -68,6 +85,7 @@ console.log({
     transactions_bytes: res.transactions.byteLength,
     logs_bytes: res.logs.byteLength,
     traces_bytes: res.traces.byteLength,
+    decoded_logs_bytes: res.decoded_logs.byteLength,
 });
 
 assert.equal(typeof res.next_block, "bigint", "next_block should be bigint");
@@ -93,5 +111,8 @@ if (res.blocks.byteLength > 0) {
     const blocksTable = tableFromIPC(res.blocks);
     console.log(`blocks: ${blocksTable.numRows} rows`);
 }
+
+// decoded_logs should be empty here (no event_signature requested).
+assert.equal(res.decoded_logs.byteLength, 0, "decoded_logs empty when no signature");
 
 console.log("OK");
