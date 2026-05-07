@@ -19,10 +19,18 @@
 //   - At least one log row is returned for a known-active block range
 
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { tableFromIPC } from "apache-arrow";
 import { Client } from "../../pkg/hypersync_client_wasm.js";
 
-const URL = process.env.HYPERSYNC_URL ?? "https://eth.hypersync.xyz";
+// Load .env next to this file if present (Node >=20.6).
+try {
+    process.loadEnvFile(fileURLToPath(new URL("./.env", import.meta.url)));
+} catch (e) {
+    if (e.code !== "ENOENT") throw e;
+}
+
+const HYPERSYNC_URL = process.env.HYPERSYNC_URL ?? "https://eth.hypersync.xyz";
 const TOKEN = process.env.ENVIO_API_TOKEN ?? "";
 
 // Small range with known ERC20 transfer activity.
@@ -43,9 +51,9 @@ const query = {
     },
 };
 
-console.log(`POST ${URL}/query/arrow-ipc  blocks=${query.from_block}..${query.to_block}`);
+console.log(`POST ${HYPERSYNC_URL}/query/arrow-ipc  blocks=${query.from_block}..${query.to_block}`);
 
-const client = new Client(URL, TOKEN);
+const client = new Client(HYPERSYNC_URL, TOKEN);
 const t0 = performance.now();
 const res = await client.get_arrow(query);
 const elapsed = (performance.now() - t0).toFixed(0);

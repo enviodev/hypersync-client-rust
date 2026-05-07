@@ -1,3 +1,5 @@
 /pkg/
 /tests/js/node_modules/
 /tests/js/package-lock.json
+/tests/js/pnpm-lock.yaml
+/tests/js/.env

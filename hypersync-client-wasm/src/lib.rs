@@ -7,10 +7,37 @@
 //! Intentionally omits: streaming, retries, rate-limit handling, parquet
 //! output, capnp request encoding, decoded logs.
 
+use std::io::Cursor;
+
 use anyhow::{anyhow, Context, Result};
+use arrow::ipc::{reader::FileReader, writer::FileWriter};
 use hypersync_net_types::{hypersync_net_types_capnp, Query};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+
+/// Re-encode an Arrow IPC file as uncompressed.
+///
+/// The hypersync server emits LZ4/ZSTD-compressed batches, which the Rust
+/// `arrow` crate decodes transparently but the JS `apache-arrow` reader does
+/// not yet support. We round-trip through `FileReader`/`FileWriter` so JS sees
+/// plain uncompressed IPC.
+fn reencode_uncompressed(bytes: &[u8]) -> Result<Vec<u8>> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    let reader = FileReader::try_new(Cursor::new(bytes), None).context("open ipc reader")?;
+    let schema = reader.schema();
+    let mut out = Vec::with_capacity(bytes.len());
+    {
+        let mut writer = FileWriter::try_new(&mut out, &schema).context("open ipc writer")?;
+        for batch in reader {
+            let batch = batch.context("decode record batch")?;
+            writer.write(&batch).context("write record batch")?;
+        }
+        writer.finish().context("finish ipc file")?;
+    }
+    Ok(out)
+}
 
 #[wasm_bindgen(start)]
 pub fn _start() {
@@ -91,11 +118,13 @@ impl Client {
             archive_height,
             next_block: qr.get_next_block(),
             total_execution_time: qr.get_total_execution_time(),
-            blocks: data.get_blocks().context("blocks")?.to_vec(),
-            transactions: data.get_transactions().context("transactions")?.to_vec(),
-            logs: data.get_logs().context("logs")?.to_vec(),
+            blocks: reencode_uncompressed(data.get_blocks().context("blocks")?)
+                .context("blocks")?,
+            transactions: reencode_uncompressed(data.get_transactions().context("transactions")?)
+                .context("transactions")?,
+            logs: reencode_uncompressed(data.get_logs().context("logs")?).context("logs")?,
             traces: if data.has_traces() {
-                data.get_traces().context("traces")?.to_vec()
+                reencode_uncompressed(data.get_traces().context("traces")?).context("traces")?
             } else {
                 Vec::new()
             },

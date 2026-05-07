@@ -18,6 +18,7 @@ console_error_panic_hook = { version = "0.1", optional = true }
 
 anyhow = "1"
 capnp = "0.23"
+arrow = { workspace = true, features = ["ipc_compression"] }
 hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
 
 [dependencies.reqwest]

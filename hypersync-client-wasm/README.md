@@ -25,12 +25,24 @@ wasm-pack build --target bundler --release
 
 Output lands in `pkg/`.
 
+### macOS prereq
+
+`zstd-sys` (transitive via `arrow`) needs a clang with wasm32 support. Apple's
+clang doesn't include it. Install Homebrew LLVM and point the wasm build at it:
+
+```bash
+brew install llvm
+export CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang
+export AR_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/llvm-ar
+```
+
 ## Run the smoke test
 
 ```bash
 wasm-pack build --target nodejs --release
 cd tests/js
 npm install
+# Token can be set in tests/js/.env (loaded automatically) or as an env var.
 ENVIO_API_TOKEN=... node query.test.mjs
 ```
 
