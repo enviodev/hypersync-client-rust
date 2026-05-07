@@ -10,16 +10,20 @@
 //! Currently exposed: `Client::new`, `Client::get_arrow`, `Client::get_height`,
 //! `Client::get_chain_id`. Streaming/parquet/sse stay native-only.
 
+use alloy_dyn_abi::DynSolValue;
 use anyhow::{Context, Result};
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::FileWriter;
+use hypersync_client::format::{Hex, LogArgument};
 use hypersync_client::net_types::{Query, RollbackGuard};
 use hypersync_client::simple_types::{Block, Log, Trace, Transaction};
 use hypersync_client::{
-    ArrowResponse as InnerArrowResponse, Client as InnerClient, ClientConfig, QueryResponse,
-    StreamConfig,
+    ArrowResponse as InnerArrowResponse, Client as InnerClient, ClientConfig,
+    Decoder as InnerDecoder, QueryResponse, StreamConfig,
 };
-use serde::Serialize;
+use js_sys::{Array, BigInt, Object, Reflect};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use wasm_bindgen::prelude::*;
 
@@ -233,6 +237,177 @@ impl ArrowStream {
             None => Ok(None),
         }
     }
+}
+
+/// Event decoder. Wraps `hypersync_client::Decoder` for JS.
+///
+/// JS shape (matching `@envio-dev/hypersync-client`):
+///
+/// ```js
+/// const decoder = Decoder.from_signatures([
+///     "Transfer(address indexed from, address indexed to, uint256 amount)",
+/// ]);
+/// const decoded = decoder.decode_logs(logs);
+/// ```
+///
+/// Each input `log` only needs `topics` (array of hex strings or null) and
+/// `data` (hex string). Output entries are either `null` (no matching
+/// signature / decoder error) or `{ indexed, body }`, where each value is
+/// `{ val }` and `val` is `boolean | bigint | string | Array<{val}>`.
+#[wasm_bindgen]
+pub struct Decoder {
+    inner: Arc<InnerDecoder>,
+    checksum_addresses: bool,
+}
+
+/// Minimal log shape required by `Decoder::decode_logs`.
+#[derive(Deserialize)]
+struct DecoderLogInput {
+    #[serde(default)]
+    topics: Vec<Option<String>>,
+    #[serde(default)]
+    data: Option<String>,
+}
+
+#[wasm_bindgen]
+impl Decoder {
+    /// Construct from a list of event signatures, e.g.
+    /// `["Transfer(address indexed from, address indexed to, uint256 amount)"]`.
+    #[wasm_bindgen]
+    pub fn from_signatures(signatures: Vec<String>) -> Result<Decoder, JsError> {
+        let inner = InnerDecoder::from_signatures(&signatures)
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Ok(Decoder {
+            inner: Arc::new(inner),
+            checksum_addresses: false,
+        })
+    }
+
+    /// Toggle EIP-55 checksumming on decoded `address` values.
+    #[wasm_bindgen]
+    pub fn enable_checksummed_addresses(&mut self) {
+        self.checksum_addresses = true;
+    }
+    #[wasm_bindgen]
+    pub fn disable_checksummed_addresses(&mut self) {
+        self.checksum_addresses = false;
+    }
+
+    /// Decode a JS array of logs. Each entry resolves to `null` if the
+    /// signature wasn't recognized or topics/data couldn't be parsed.
+    #[wasm_bindgen]
+    pub fn decode_logs(&self, logs: JsValue) -> Result<JsValue, JsError> {
+        let logs: Vec<DecoderLogInput> = serde_wasm_bindgen::from_value(logs)
+            .map_err(|e| JsError::new(&format!("invalid logs: {e}")))?;
+        let out = Array::new_with_length(logs.len() as u32);
+        for (i, log) in logs.iter().enumerate() {
+            let decoded = self
+                .decode_one(log)
+                .map_err(|e| JsError::new(&format!("decode log[{i}]: {e:?}")))?;
+            out.set(i as u32, decoded);
+        }
+        Ok(out.into())
+    }
+}
+
+impl Decoder {
+    fn decode_one(&self, log: &DecoderLogInput) -> Result<JsValue> {
+        let topics_decoded = log
+            .topics
+            .iter()
+            .map(|t| {
+                t.as_ref()
+                    .map(|s| LogArgument::decode_hex(s).context("decode topic"))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let topic0 = match topics_decoded.first().and_then(|x| x.as_ref()) {
+            Some(t) => t,
+            None => return Ok(JsValue::NULL),
+        };
+
+        let data = match log.data.as_ref() {
+            Some(d) => hypersync_client::format::Data::decode_hex(d).context("decode data")?,
+            None => return Ok(JsValue::NULL),
+        };
+
+        let decoded = match self
+            .inner
+            .decode(topic0.as_slice(), &topics_decoded, &data)?
+        {
+            Some(d) => d,
+            None => return Ok(JsValue::NULL),
+        };
+
+        let event = Object::new();
+        Reflect::set(
+            &event,
+            &"indexed".into(),
+            &dyn_sol_values_to_js(&decoded.indexed, self.checksum_addresses),
+        )
+        .map_err(|e| anyhow::anyhow!("set indexed: {e:?}"))?;
+        Reflect::set(
+            &event,
+            &"body".into(),
+            &dyn_sol_values_to_js(&decoded.body, self.checksum_addresses),
+        )
+        .map_err(|e| anyhow::anyhow!("set body: {e:?}"))?;
+        Ok(event.into())
+    }
+}
+
+/// Maps a `Vec<DynSolValue>` to a JS array of `{ val }`. Mirrors the shape
+/// returned by `@envio-dev/hypersync-client::Decoder`.
+fn dyn_sol_values_to_js(values: &[DynSolValue], checksum_addresses: bool) -> JsValue {
+    let arr = Array::new_with_length(values.len() as u32);
+    for (i, v) in values.iter().enumerate() {
+        let wrapper = Object::new();
+        let _ = Reflect::set(
+            &wrapper,
+            &"val".into(),
+            &dyn_sol_value_to_js(v, checksum_addresses),
+        );
+        arr.set(i as u32, wrapper.into());
+    }
+    arr.into()
+}
+
+fn dyn_sol_value_to_js(v: &DynSolValue, checksum_addresses: bool) -> JsValue {
+    match v {
+        DynSolValue::Bool(b) => JsValue::from_bool(*b),
+        DynSolValue::Int(i, _) => BigInt::new(&JsValue::from_str(&i.to_string()))
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        DynSolValue::Uint(u, _) => BigInt::new(&JsValue::from_str(&u.to_string()))
+            .map(JsValue::from)
+            .unwrap_or(JsValue::NULL),
+        DynSolValue::FixedBytes(b, _) => JsValue::from_str(&hex_prefixed(b.as_slice())),
+        DynSolValue::Address(a) => {
+            if checksum_addresses {
+                JsValue::from_str(&a.to_checksum(None))
+            } else {
+                JsValue::from_str(&hex_prefixed(a.as_slice()))
+            }
+        }
+        DynSolValue::Function(b) => JsValue::from_str(&hex_prefixed(b.as_slice())),
+        DynSolValue::Bytes(b) => JsValue::from_str(&hex_prefixed(b)),
+        DynSolValue::String(s) => JsValue::from_str(s),
+        DynSolValue::Array(vals) | DynSolValue::FixedArray(vals) | DynSolValue::Tuple(vals) => {
+            dyn_sol_values_to_js(vals, checksum_addresses)
+        }
+    }
+}
+
+fn hex_prefixed(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "0x".into();
+    }
+    let mut out = vec![0u8; bytes.len() * 2 + 2];
+    out[0] = b'0';
+    out[1] = b'x';
+    faster_hex::hex_encode(bytes, &mut out[2..]).unwrap();
+    String::from_utf8(out).unwrap()
 }
 
 /// JSON-shaped view of `hypersync_client::QueryResponse` for the wasm

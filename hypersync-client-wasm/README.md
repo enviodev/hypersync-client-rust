@@ -84,17 +84,36 @@ ENVIO_API_TOKEN=... node stream.test.mjs  # streaming
 
 ## Run the benchmark vs `@envio-dev/hypersync-client` (native)
 
-`bench.mjs` runs the same workload through both the wasm client and the
-native napi-rs binding and prints a side-by-side table of cold/warm
-get latency, stream throughput, and bundle size.
+Two benches are provided.
+
+### Compute-only — `decode-bench.mjs` (no network)
+
+Decodes the same in-memory ERC20 Transfer log batch through both clients.
+Reports per-batch + per-log latency, JS↔wasm/native boundary cost, and
+bundle size.
 
 ```bash
 wasm-pack build --target nodejs --release
+cargo build -p hypersync-client-wasm --target wasm32-unknown-unknown --release
 cd tests/js
 npm install
-ENVIO_API_TOKEN=... npm run bench
-# tweak BENCH_ITERATIONS=20 for tighter warm-call medians
+node decode-bench.mjs
+# tweak BENCH_BATCH=1000 BENCH_ITERS=200 to taste
 ```
+
+### End-to-end — `bench.mjs` (network)
+
+Runs `get` + `stream` against a live hypersync server through both
+clients. Mostly measures network time, but useful as a sanity check.
+
+```bash
+ENVIO_API_TOKEN=... npm run bench
+```
+
+## Browser demo
+
+`demo/index.html` loads the wasm bindings directly in a browser — no
+server, no proxy, no native deps. See [`demo/README.md`](./demo/README.md).
 
 ## What's intentionally missing
 

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>hypersync-client-wasm browser demo</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #0e0f12;
+            --fg: #e8e8ea;
+            --muted: #8a8d94;
+            --accent: #4ad295;
+            --warn: #e1a93b;
+            --err: #ef6c6c;
+            --panel: #16181d;
+            --border: #23262d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--fg);
+            font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 24px;
+            max-width: 980px;
+            margin-inline: auto;
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 4px;
+        }
+        .sub {
+            color: var(--muted);
+            margin-bottom: 24px;
+        }
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .panel h2 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+            margin: 0 0 12px;
+        }
+        label { display: block; margin: 6px 0 2px; font-size: 12px; color: var(--muted); }
+        input[type=text], input[type=number] {
+            width: 100%;
+            padding: 6px 8px;
+            background: #0a0b0e;
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+        }
+        button {
+            background: var(--accent);
+            color: #0a0b0e;
+            border: 0;
+            border-radius: 4px;
+            padding: 8px 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 12px 6px 0 0;
+        }
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--fg);
+        }
+        pre {
+            background: #0a0b0e;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px;
+            overflow: auto;
+            max-height: 360px;
+            font-size: 12px;
+            margin: 0;
+        }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .stat { color: var(--accent); }
+        .warn { color: var(--warn); }
+        .err  { color: var(--err); }
+        .small { font-size: 12px; color: var(--muted); }
+    </style>
+</head>
+<body>
+    <h1>hypersync-client-wasm — browser demo</h1>
+    <p class="sub">Runs <code>hypersync-client-wasm</code> directly in the browser. No proxy server, no native bindings.</p>
+
+    <div class="panel">
+        <h2>connection</h2>
+        <div class="row">
+            <div>
+                <label>Hypersync URL</label>
+                <input id="url" type="text" value="https://eth.hypersync.xyz" />
+            </div>
+            <div>
+                <label>API token (optional for free tier; UUID)</label>
+                <input id="token" type="text" placeholder="00000000-0000-0000-0000-000000000000" />
+            </div>
+        </div>
+        <button id="probe">get_height + get_chain_id</button>
+        <span id="probe-out" class="small"></span>
+    </div>
+
+    <div class="panel">
+        <h2>query: ERC20 transfers</h2>
+        <div class="row">
+            <div>
+                <label>from_block</label>
+                <input id="from" type="number" value="19000000" />
+            </div>
+            <div>
+                <label>to_block</label>
+                <input id="to"   type="number" value="19000005" />
+            </div>
+        </div>
+        <button id="run-arrow">get_arrow + decode in JS</button>
+        <button id="run-decoded" class="secondary">get (decoded simple types)</button>
+        <pre id="query-out">// results will appear here</pre>
+    </div>
+
+    <div class="panel">
+        <h2>event decoder</h2>
+        <p class="small">Run an in-memory benchmark of <code>Decoder.decode_logs</code> on a synthetic batch. No network.</p>
+        <div class="row">
+            <div>
+                <label>batch size</label>
+                <input id="batch" type="number" value="1000" />
+            </div>
+            <div>
+                <label>iterations</label>
+                <input id="iters" type="number" value="50" />
+            </div>
+        </div>
+        <button id="run-decode">decode N batches</button>
+        <pre id="decode-out">// results will appear here</pre>
+    </div>
+
+    <p class="small">
+        Bundle: <span id="bundle"></span>
+    </p>
+
+    <script type="module">
+        import init, { Client, Decoder } from "./pkg/hypersync_client_wasm.js";
+        import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm";
+
+        const $ = (id) => document.getElementById(id);
+        const probeOut = $("probe-out");
+        const queryOut = $("query-out");
+        const decodeOut = $("decode-out");
+        const bundleSpan = $("bundle");
+
+        function fmt(ms) { return `${ms.toFixed(2)} ms`; }
+        function makeClient() {
+            const url = $("url").value.trim();
+            let token = $("token").value.trim();
+            if (!token) token = "00000000-0000-0000-0000-000000000000";
+            return new Client(url, token);
+        }
+
+        // Init wasm. Report load time + .wasm size for the demo card.
+        const t0 = performance.now();
+        const wasmModule = await init();
+        const initMs = performance.now() - t0;
+        try {
+            const r = await fetch("./pkg/hypersync_client_wasm_bg.wasm");
+            const buf = await r.arrayBuffer();
+            bundleSpan.innerHTML =
+                `<span class="stat">${(buf.byteLength / 1024 / 1024).toFixed(2)} MB</span> wasm, ` +
+                `<span class="stat">${initMs.toFixed(0)} ms</span> init`;
+        } catch (_) {
+            bundleSpan.textContent = `init ${initMs.toFixed(0)} ms`;
+        }
+
+        $("probe").addEventListener("click", async () => {
+            probeOut.textContent = "...";
+            try {
+                const c = makeClient();
+                const t = performance.now();
+                const [height, chainId] = await Promise.all([c.get_height(), c.get_chain_id()]);
+                probeOut.innerHTML =
+                    `<span class="stat">chain_id=${chainId}, height=${height}</span> in ${fmt(performance.now() - t)}`;
+            } catch (e) {
+                probeOut.innerHTML = `<span class="err">${e.message}</span>`;
+            }
+        });
+
+        const TRANSFER_TOPIC0 =
+            "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+        function makeQuery() {
+            return {
+                from_block: Number($("from").value),
+                to_block:   Number($("to").value),
+                logs: [{ topics: [[TRANSFER_TOPIC0]] }],
+                field_selection: {
+                    log: ["address", "topic0", "topic1", "topic2", "data", "block_number"],
+                    block: ["number", "timestamp"],
+                },
+            };
+        }
+
+        $("run-arrow").addEventListener("click", async () => {
+            queryOut.textContent = "querying...";
+            try {
+                const c = makeClient();
+                const t = performance.now();
+                const res = await c.get_arrow(makeQuery());
+                const fetched = performance.now() - t;
+                const t2 = performance.now();
+                const logsTable = res.logs.byteLength > 0 ? tableFromIPC(res.logs) : null;
+                const blocksTable = res.blocks.byteLength > 0 ? tableFromIPC(res.blocks) : null;
+                const decoded = performance.now() - t2;
+                queryOut.textContent = JSON.stringify(
+                    {
+                        timing: {
+                            wasm_get_arrow_ms: +fetched.toFixed(1),
+                            js_arrow_decode_ms: +decoded.toFixed(1),
+                        },
+                        next_block: res.next_block.toString(),
+                        archive_height: res.archive_height?.toString() ?? null,
+                        logs_rows: logsTable?.numRows ?? 0,
+                        blocks_rows: blocksTable?.numRows ?? 0,
+                        ipc_bytes: {
+                            blocks: res.blocks.byteLength,
+                            logs: res.logs.byteLength,
+                            transactions: res.transactions.byteLength,
+                        },
+                        first_log_address: logsTable
+                            ? "0x" + Array.from(logsTable.getChild("address")?.get(0) ?? [])
+                                .map((b) => b.toString(16).padStart(2, "0"))
+                                .join("")
+                            : null,
+                    },
+                    null,
+                    2,
+                );
+            } catch (e) {
+                queryOut.textContent = `error: ${e.message}`;
+            }
+        });
+
+        $("run-decoded").addEventListener("click", async () => {
+            queryOut.textContent = "querying...";
+            try {
+                const c = makeClient();
+                const t = performance.now();
+                const res = await c.get(makeQuery());
+                queryOut.textContent =
+                    `// took ${fmt(performance.now() - t)}\n` +
+                    JSON.stringify(
+                        {
+                            next_block: res.next_block.toString(),
+                            blocks_count: res.data.blocks.flat().length,
+                            logs_count: res.data.logs.flat().length,
+                            first_log: res.data.logs[0]?.[0] ?? null,
+                        },
+                        (_, v) => (typeof v === "bigint" ? v.toString() : v),
+                        2,
+                    );
+            } catch (e) {
+                queryOut.textContent = `error: ${e.message}`;
+            }
+        });
+
+        // ---- decoder bench ----
+        function makeBatch(n) {
+            const t0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+            const logs = [];
+            for (let i = 0; i < n; i++) {
+                const a = (0xa1b2c3d4_e5f60718n + BigInt(i))
+                    .toString(16)
+                    .padStart(40, "0");
+                const b = (0xb1c2d3e4_f5061829n + BigInt(i))
+                    .toString(16)
+                    .padStart(40, "0");
+                const amt = (1_000_000_000_000_000_000n + BigInt(i))
+                    .toString(16)
+                    .padStart(64, "0");
+                logs.push({
+                    topics: [t0, "0x" + "0".repeat(24) + a, "0x" + "0".repeat(24) + b],
+                    data: "0x" + amt,
+                });
+            }
+            return logs;
+        }
+
+        $("run-decode").addEventListener("click", () => {
+            decodeOut.textContent = "decoding...";
+            try {
+                const n = Number($("batch").value);
+                const iters = Number($("iters").value);
+                const decoder = Decoder.from_signatures([
+                    "Transfer(address indexed from, address indexed to, uint256 amount)",
+                ]);
+                const batch = makeBatch(n);
+                // warm
+                for (let i = 0; i < 3; i++) decoder.decode_logs(batch);
+                const samples = [];
+                for (let i = 0; i < iters; i++) {
+                    const t = performance.now();
+                    decoder.decode_logs(batch);
+                    samples.push(performance.now() - t);
+                }
+                samples.sort((a, b) => a - b);
+                const median = samples[Math.floor(samples.length / 2)];
+                const min = samples[0];
+                decodeOut.textContent = JSON.stringify(
+                    {
+                        batch: n,
+                        iters,
+                        median_ms: +median.toFixed(2),
+                        min_ms: +min.toFixed(2),
+                        per_log_us: +((median / n) * 1000).toFixed(2),
+                        logs_per_sec: Math.floor((n / median) * 1000),
+                    },
+                    null,
+                    2,
+                );
+            } catch (e) {
+                decodeOut.textContent = `error: ${e.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
