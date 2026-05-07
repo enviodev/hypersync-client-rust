@@ -16,13 +16,13 @@ use arrow::{
     },
     datatypes::UInt64Type,
 };
+use futures::stream::{FuturesUnordered, StreamExt};
 use hypersync_net_types::Query;
 use tokio::sync::mpsc;
-use tokio::task::JoinSet;
 
 use crate::{
     config::HexOutput,
-    rayon_async,
+    rayon_async, spawn_local_compat,
     types::ArrowResponse,
     util::{decode_logs_batch, hex_encode_batch},
     ArrowResponseData, StreamConfig,
@@ -51,7 +51,7 @@ pub async fn stream_arrow(
     };
 
     let client = client.clone();
-    tokio::spawn(async move {
+    spawn_local_compat(async move {
         let mut query = query;
 
         if !reverse {
@@ -95,44 +95,41 @@ pub async fn stream_arrow(
         // Using unordered parallelization gives a big boost in performance.
         let (res_tx, mut res_rx) = mpsc::channel(concurrency * 2);
 
-        tokio::spawn(async move {
-            let mut set = JoinSet::new();
+        // `FuturesUnordered` polls many in-flight requests inside a single
+        // task instead of spawning each one. This is required on wasm
+        // (single-threaded, no `Send`) and works equivalently on native for
+        // I/O-bound work.
+        spawn_local_compat(async move {
+            let mut set = FuturesUnordered::new();
             let mut queue = BTreeMap::new();
             let mut next_req_idx = 0;
 
-            while futs.peek().is_some() {
-                while let Some(res) = set.try_join_next() {
-                    let (generation, req_idx, resps) = res.unwrap();
-                    queue.insert(req_idx, (generation, resps));
+            // Prime the pipeline.
+            while set.len() < concurrency {
+                match futs.next() {
+                    Some(fut) => set.push(fut),
+                    None => break,
                 }
-                while set.len() >= concurrency {
-                    let (generation, req_idx, resps) = set.join_next().await.unwrap().unwrap();
-                    queue.insert(req_idx, (generation, resps));
+            }
+
+            while !set.is_empty() {
+                let (generation, req_idx, resps) = set.next().await.unwrap();
+                queue.insert(req_idx, (generation, resps));
+
+                // Refill the in-flight set.
+                while set.len() < concurrency {
+                    match futs.next() {
+                        Some(fut) => set.push(fut),
+                        None => break,
+                    }
                 }
-                if queue.len() < concurrency * 2 {
-                    futs.by_ref().take(concurrency - set.len()).for_each(|fut| {
-                        set.spawn(fut);
-                    });
-                } else {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                }
+
                 while let Some(resps) = queue.remove(&next_req_idx) {
                     if res_tx.send(resps).await.is_err() {
                         return;
                     }
                     next_req_idx += 1;
                 }
-            }
-
-            while let Some(res) = set.join_next().await {
-                let (generation, req_idx, resps) = res.unwrap();
-                queue.insert(req_idx, (generation, resps));
-            }
-            while let Some(resps) = queue.remove(&next_req_idx) {
-                if res_tx.send(resps).await.is_err() {
-                    return;
-                }
-                next_req_idx += 1;
             }
         });
 

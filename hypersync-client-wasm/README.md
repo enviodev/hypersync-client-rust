@@ -12,6 +12,7 @@ const client = new Client("https://eth.hypersync.xyz", apiToken);
 const height  = await client.get_height();          // bigint
 const chainId = await client.get_chain_id();        // bigint
 
+// One-shot Arrow query
 const res = await client.get_arrow({
     from_block: 19000000,
     to_block:   19000005,
@@ -20,6 +21,17 @@ const res = await client.get_arrow({
 });
 // res.{blocks, transactions, logs, traces, decoded_logs} are Uint8Array of
 // uncompressed Arrow IPC bytes — feed into apache-arrow's tableFromIPC.
+
+// One-shot decoded query (returns plain JS objects with bigint numbers)
+const decoded = await client.get(query);
+//  decoded.data.{blocks, transactions, logs, traces}: Array<Array<...>>
+
+// Streamed Arrow (concurrent fetches in the background, ordered chunks out)
+const stream = await client.stream_arrow(query /*, optional StreamConfig */);
+let chunk;
+while ((chunk = await stream.next())) {
+    // chunk is an ArrowResponse, same shape as get_arrow's return
+}
 ```
 
 ## Architecture
@@ -71,15 +83,10 @@ ENVIO_API_TOKEN=... node query.test.mjs
 
 ## What's intentionally missing
 
-These are all native-only methods on `hypersync_client::Client` and would
-require additional plumbing for wasm:
-
-- `stream`, `stream_arrow`, `stream_events`, `stream_height` — depend on
-  `tokio::spawn` / `JoinSet` / SSE.
-- `collect`, `collect_arrow`, `collect_events`, `collect_parquet` — depend on
-  `stream_arrow` and (for `collect_parquet`) `tokio::fs` + the parquet async
-  writer.
+- `stream_height` — uses `reqwest_eventsource` (SSE) which has no wasm
+  support. Native only.
+- `collect_parquet` — uses `tokio::fs` and the parquet async writer. Native
+  only.
 - Per-column parallel decoding (rayon) — falls back to serial iteration on
-  wasm.
-
-These can be added incrementally if/when there's a clear use case.
+  wasm. Probably never worth fixing; CPU-bound parsing is rarely the
+  bottleneck against network I/O.

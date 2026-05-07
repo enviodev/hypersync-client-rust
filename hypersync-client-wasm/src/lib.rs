@@ -13,8 +13,14 @@
 use anyhow::{Context, Result};
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::FileWriter;
-use hypersync_client::{net_types::Query, Client as InnerClient, ClientConfig};
+use hypersync_client::net_types::{Query, RollbackGuard};
+use hypersync_client::simple_types::{Block, Log, Trace, Transaction};
+use hypersync_client::{
+    ArrowResponse as InnerArrowResponse, Client as InnerClient, ClientConfig, QueryResponse,
+    StreamConfig,
+};
 use serde::Serialize;
+use tokio::sync::{mpsc, Mutex};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -95,6 +101,69 @@ impl Client {
         ArrowResponse::from_native(res).map_err(|e| JsError::new(&format!("{e:?}")))
     }
 
+    /// Run a query and return decoded simple types (`blocks`, `transactions`,
+    /// `logs`, `traces`) as a plain JS object.
+    ///
+    /// Use this when you don't want to think about Arrow on the JS side. Use
+    /// [`Client::get_arrow`] when you do — Arrow is faster for large result
+    /// sets because we avoid materializing per-row JS objects.
+    #[wasm_bindgen]
+    pub async fn get(&self, query: JsValue) -> Result<JsValue, JsError> {
+        let query: Query = serde_wasm_bindgen::from_value(query)
+            .map_err(|e| JsError::new(&format!("invalid query: {e}")))?;
+        let res = self
+            .inner
+            .get(&query)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        // `serialize_large_number_types_as_bigints` keeps `u64` block numbers,
+        // gas, etc. accurate beyond 2^53. Without this they would lose
+        // precision when serialized as JS `number`.
+        let serializer =
+            serde_wasm_bindgen::Serializer::new().serialize_large_number_types_as_bigints(true);
+        SerializableQueryResponse::from(&res)
+            .serialize(&serializer)
+            .map_err(|e| JsError::new(&format!("serialize response: {e}")))
+    }
+
+    /// Stream the result of a query in chunks. Returns an [`ArrowStream`]
+    /// whose `next()` method yields one chunk at a time until the stream
+    /// ends.
+    ///
+    /// `query` matches the shape of [`hypersync_client::net_types::Query`].
+    /// `config` is optional and matches [`hypersync_client::StreamConfig`].
+    /// Pass `undefined`/null to use defaults.
+    ///
+    /// Example:
+    /// ```js
+    /// const stream = await client.stream_arrow(query);
+    /// let chunk;
+    /// while ((chunk = await stream.next())) {
+    ///     // chunk.logs, chunk.blocks, ... are Uint8Array of arrow IPC bytes
+    /// }
+    /// ```
+    #[wasm_bindgen]
+    pub async fn stream_arrow(
+        &self,
+        query: JsValue,
+        config: JsValue,
+    ) -> Result<ArrowStream, JsError> {
+        let query: Query = serde_wasm_bindgen::from_value(query)
+            .map_err(|e| JsError::new(&format!("invalid query: {e}")))?;
+        let config: StreamConfig = if config.is_null() || config.is_undefined() {
+            StreamConfig::default()
+        } else {
+            serde_wasm_bindgen::from_value(config)
+                .map_err(|e| JsError::new(&format!("invalid StreamConfig: {e}")))?
+        };
+        let rx = self
+            .inner
+            .stream_arrow(query, config)
+            .await
+            .map_err(|e| JsError::new(&format!("{e:?}")))?;
+        Ok(ArrowStream { rx: Mutex::new(rx) })
+    }
+
     /// Get current archive height of the underlying server.
     #[wasm_bindgen]
     pub async fn get_height(&self) -> Result<u64, JsError> {
@@ -125,6 +194,81 @@ impl Client {
         let inner =
             InnerClient::new(cfg).map_err(|e| JsError::new(&format!("build client: {e:?}")))?;
         Ok(Client { inner })
+    }
+}
+
+/// Async-iterable handle to an in-flight `stream_arrow` request. The inner
+/// `mpsc::Receiver` pulls already-decoded `ArrowResponse` chunks pushed by
+/// the unordered concurrent fetcher in the main client.
+///
+/// JS callers use it like:
+///
+/// ```js
+/// const stream = await client.stream_arrow(query);
+/// let chunk;
+/// while ((chunk = await stream.next())) {
+///     // chunk is an ArrowResponse
+/// }
+/// ```
+#[wasm_bindgen]
+pub struct ArrowStream {
+    // `Mutex<...>` because wasm-bindgen exposes `&self` to JS; we need
+    // interior mutability to call `recv(&mut self)`. `tokio::sync::Mutex`
+    // is wasm-clean and async-aware (recv awaits inside the lock).
+    rx: Mutex<mpsc::Receiver<Result<InnerArrowResponse>>>,
+}
+
+#[wasm_bindgen]
+impl ArrowStream {
+    /// Pulls the next chunk. Resolves to `undefined` when the stream is
+    /// exhausted; throws if the underlying request fails.
+    #[wasm_bindgen]
+    pub async fn next(&self) -> Result<Option<ArrowResponse>, JsError> {
+        let mut rx = self.rx.lock().await;
+        match rx.recv().await {
+            Some(Ok(resp)) => Ok(Some(
+                ArrowResponse::from_native(resp).map_err(|e| JsError::new(&format!("{e:?}")))?,
+            )),
+            Some(Err(e)) => Err(JsError::new(&format!("{e:?}"))),
+            None => Ok(None),
+        }
+    }
+}
+
+/// JSON-shaped view of `hypersync_client::QueryResponse` for the wasm
+/// boundary. We can't `derive(Serialize)` on the upstream type without
+/// modifying it, so we project the fields we care about by reference.
+#[derive(Serialize)]
+struct SerializableQueryResponse<'a> {
+    archive_height: Option<u64>,
+    next_block: u64,
+    total_execution_time: u64,
+    data: SerializableResponseData<'a>,
+    rollback_guard: Option<&'a RollbackGuard>,
+}
+
+#[derive(Serialize)]
+struct SerializableResponseData<'a> {
+    blocks: &'a [Vec<Block>],
+    transactions: &'a [Vec<Transaction>],
+    logs: &'a [Vec<Log>],
+    traces: &'a [Vec<Trace>],
+}
+
+impl<'a> From<&'a QueryResponse> for SerializableQueryResponse<'a> {
+    fn from(r: &'a QueryResponse) -> Self {
+        Self {
+            archive_height: r.archive_height,
+            next_block: r.next_block,
+            total_execution_time: r.total_execution_time,
+            data: SerializableResponseData {
+                blocks: &r.data.blocks,
+                transactions: &r.data.transactions,
+                logs: &r.data.logs,
+                traces: &r.data.traces,
+            },
+            rollback_guard: r.rollback_guard.as_ref(),
+        }
     }
 }
 

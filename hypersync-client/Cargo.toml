@@ -87,6 +87,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 # `rand` (and any other transitive user of `getrandom`) needs the `js` feature
 # to source entropy from `crypto.getRandomValues` instead of `/dev/urandom`.
 getrandom = { version = "0.2", features = ["js"] }
+# Used by the stream module to fire-and-forget background async work on the
+# wasm event loop. On native we use `tokio::spawn` directly.
+wasm-bindgen-futures = "0.4"
 
 [dev-dependencies]
 http = "1"

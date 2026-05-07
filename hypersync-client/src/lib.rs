@@ -27,23 +27,18 @@ mod config;
 mod decode;
 mod decode_call;
 mod from_arrow;
-// `parquet_out`, `stream`, `rayon_async`, and `util` are native-only:
-//   - `parquet_out` writes to `tokio::fs` (no fs on wasm).
-//   - `stream` uses `tokio::spawn`/`JoinSet` (no multi-thread runtime on wasm).
-//   - `rayon_async` wraps `rayon::spawn` (no thread pool on wasm).
-//   - `util` is only consumed by `stream` and uses `rayon::par_iter`.
+// `parquet_out` writes to `tokio::fs`, which has no wasm equivalent. Other
+// modules below (stream, util, rayon_async) compile for both targets via cfg
+// gates inside their bodies.
 #[cfg(not(target_arch = "wasm32"))]
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
 mod rate_limit;
-#[cfg(not(target_arch = "wasm32"))]
 mod rayon_async;
 pub mod simple_types;
-#[cfg(not(target_arch = "wasm32"))]
 mod stream;
 mod types;
-#[cfg(not(target_arch = "wasm32"))]
 mod util;
 
 pub use hypersync_format as format;
@@ -51,7 +46,6 @@ pub use hypersync_net_types as net_types;
 pub use hypersync_schema as schema;
 
 use parse_response::parse_query_response;
-#[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc;
 use types::ResponseData;
 use url::Url;
@@ -88,6 +82,33 @@ where
     {
         f()
     }
+}
+
+/// Fire-and-forget spawn of a background async task.
+///
+/// On native we use `tokio::spawn`, which schedules onto whichever runtime
+/// is currently driving the caller (multi-thread runtime in production,
+/// single-thread `tokio::test` runtime in tests). On wasm there is no tokio
+/// runtime — `wasm_bindgen_futures::spawn_local` schedules onto the
+/// `Promise` micro-task queue that the host (browser / Node / Deno) is
+/// already running.
+///
+/// We do not retain the join handle. Callers synchronize via `mpsc` channels
+/// and treat the spawned task as detached.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn spawn_local_compat<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(fut);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn spawn_local_compat<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + 'static,
+{
+    wasm_bindgen_futures::spawn_local(fut);
 }
 
 /// Construct a reqwest client with the right per-target options.
@@ -331,7 +352,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn collect(&self, query: Query, config: StreamConfig) -> Result<QueryResponse> {
         check_simple_stream_params(&config)?;
 
@@ -413,7 +433,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn collect_events(
         &self,
         mut query: Query,
@@ -493,7 +512,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn collect_arrow(&self, query: Query, config: StreamConfig) -> Result<ArrowResponse> {
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -1151,7 +1169,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream(
         &self,
         query: Query,
@@ -1167,7 +1184,7 @@ impl Client {
             .await
             .context("start inner stream")?;
 
-        tokio::spawn(async move {
+        spawn_local_compat(async move {
             while let Some(resp) = inner_rx.recv().await {
                 let msg = resp
                     .context("inner receiver")
@@ -1216,7 +1233,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream_events(
         &self,
         mut query: Query,
@@ -1236,7 +1252,7 @@ impl Client {
             .await
             .context("start inner stream")?;
 
-        tokio::spawn(async move {
+        spawn_local_compat(async move {
             while let Some(resp) = inner_rx.recv().await {
                 let msg = resp
                     .context("inner receiver")
@@ -1284,7 +1300,6 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn stream_arrow(
         &self,
         query: Query,
@@ -1915,7 +1930,6 @@ impl Client {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
     if config.event_signature.is_some() {
         return Err(anyhow!(
