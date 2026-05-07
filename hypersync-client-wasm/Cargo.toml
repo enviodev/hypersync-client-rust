@@ -1,0 +1,32 @@
+[package]
+name = "hypersync-client-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings for hypersync client (minimal subset)"
+license = "MPL-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+anyhow = "1"
+capnp = "0.23"
+hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
+
+[dependencies.reqwest]
+version = "0.12"
+default-features = false
+features = ["json"]
+
+[features]
+default = ["console_error_panic_hook"]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

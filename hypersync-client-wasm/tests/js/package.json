@@ -1,0 +1,12 @@
+{
+  "name": "hypersync-client-wasm-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node query.test.mjs"
+  },
+  "dependencies": {
+    "apache-arrow": "^17.0.0"
+  }
+}
