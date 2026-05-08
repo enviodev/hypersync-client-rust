@@ -18,6 +18,7 @@ console_error_panic_hook = { version = "0.1", optional = true }
 
 anyhow = "1"
 alloy-dyn-abi = "1.1"
+alloy-primitives = "1.1"
 faster-hex = "0.9"
 arrow = { workspace = true, features = ["ipc_compression"] }
 # We depend on the main client (not net-types directly): the wasm crate is

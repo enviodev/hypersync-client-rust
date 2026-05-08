@@ -132,11 +132,13 @@
     </div>
 
     <div class="panel">
-        <h2>live ERC20 balance — streamed via stream_arrow + zero-copy arrow readers</h2>
+        <h2>live ERC20 balance — streamed via BalanceTracker (all compute in wasm)</h2>
         <p class="small">
-            Streams every <code>Transfer</code> log for one ERC20 token touching one wallet, decoding each batch
-            column-by-column straight off the Arrow IPC buffer (no per-row JS materialization). The wallet's running
-            balance is updated as chunks arrive.
+            Streams every <code>Transfer</code> log for one ERC20 token touching one wallet. Each chunk
+            is fed straight to <code>BalanceTracker.process(chunk)</code>, which walks the Arrow batches
+            in Rust via <code>LogReader::iter</code>/<code>BlockReader::iter</code>, accumulates U256
+            totals, and returns one delta object per chunk. JS never decodes Arrow itself — the only
+            wasm-bindgen boundary cross is the borrowed ArrowResponse in, the delta JsValue out.
         </p>
         <div class="row">
             <div>
@@ -160,15 +162,34 @@
         </div>
         <button id="bal-run">stream balance</button>
         <button id="bal-stop" class="secondary" disabled>stop</button>
-        <div class="small" style="margin-top:12px">
-            balance: <span id="bal-value" class="stat">—</span>
-            &nbsp;|&nbsp; transfers: <span id="bal-count">0</span>
-            (<span id="bal-in" class="stat">+0</span> in / <span id="bal-out" class="warn">-0</span> out)
-            &nbsp;|&nbsp; current block: <span id="bal-block">—</span>
-            &nbsp;|&nbsp; chunks: <span id="bal-chunks">0</span>
-            &nbsp;|&nbsp; <span id="bal-status" class="small">idle</span>
+        <div style="margin-top:14px;display:grid;grid-template-columns:repeat(2, 1fr);gap:8px;font-size:13px">
+            <div>balance: <span id="bal-value" class="stat" style="font-size:18px">—</span></div>
+            <div>transfers: <span id="bal-count">0</span>
+                (<span id="bal-in" class="stat">+0</span> in /
+                <span id="bal-out" class="warn">-0</span> out)</div>
+            <div>at block: <span id="bal-block">—</span> / <span id="bal-tip">—</span>
+                <span id="bal-pct" class="stat">(—%)</span></div>
+            <div>block time: <span id="bal-time">—</span></div>
+            <div>chunks: <span id="bal-chunks">0</span>
+                &nbsp;|&nbsp; <span id="bal-rate" class="small">—</span></div>
+            <div>status: <span id="bal-status" class="small">idle</span></div>
         </div>
-        <pre id="bal-log" style="max-height:200px;margin-top:12px"></pre>
+        <div style="margin-top:14px">
+            <div class="small" style="margin-bottom:6px">last 10 transfers (newest first)</div>
+            <table id="bal-ledger" style="width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:12px">
+                <thead>
+                    <tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--border)">
+                        <th style="padding:4px 6px">dir</th>
+                        <th style="padding:4px 6px">block</th>
+                        <th style="padding:4px 6px">when</th>
+                        <th style="padding:4px 6px">counterparty</th>
+                        <th style="padding:4px 6px;text-align:right">amount</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <pre id="bal-log" style="max-height:140px;margin-top:12px"></pre>
     </div>
 
     <div class="panel">
@@ -193,7 +214,7 @@
     </p>
 
     <script type="module">
-        import init, { Client, Decoder } from "./pkg/hypersync_client_wasm.js";
+        import init, { Client, Decoder, BalanceTracker } from "./pkg/hypersync_client_wasm.js";
         import { tableFromIPC } from "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm";
 
         const $ = (id) => document.getElementById(id);
@@ -365,12 +386,15 @@
 
         // ---- live balance ----
         //
-        // Strategy: one streamed query whose log selection is two filters OR'd
-        // together (token+from=wallet, token+to=wallet). Each chunk arrives as
-        // Arrow IPC bytes; we decode column vectors via apache-arrow and walk
-        // them index-wise. No per-row JS object is built — we read three
-        // Uint8Array views (topic1, topic2, data) and one BigInt (block_number)
-        // per row directly off the underlying buffer.
+        // The compute side of this lives in Rust. We just stream chunks and
+        // hand each one to a wasm-side BalanceTracker, which:
+        //   - walks the Arrow RecordBatches via LogReader/BlockReader,
+        //   - filters Transfer events touching the wallet,
+        //   - keeps U256 totals + a ring of the last N matched transfers,
+        //   - returns a JsValue delta we render to the DOM.
+        //
+        // Everything in this block is presentation: format BigInts, render
+        // the ledger table, compute % progress against the chain tip.
 
         function normalizeAddr(s) {
             s = (s || "").trim().toLowerCase();
@@ -380,43 +404,52 @@
             return s;
         }
         function paddedTopic(addr) {
-            // 32-byte left-padded address as it appears in indexed topic slots.
             return "0x" + "0".repeat(24) + addr.slice(2);
         }
-        function bytesEqualSuffix(haystack, needle) {
-            // True if the last `needle.length` bytes of `haystack` equal `needle`.
-            if (!haystack || haystack.length < needle.length) return false;
-            const off = haystack.length - needle.length;
-            for (let i = 0; i < needle.length; i++) {
-                if (haystack[off + i] !== needle[i]) return false;
-            }
-            return true;
+        // Decimal-string scale by 10^decimals, preserving sign.
+        function fmtUnits(decStr, decimals) {
+            if (decStr == null) return "—";
+            const neg = decStr.startsWith("-");
+            const abs = neg ? decStr.slice(1) : decStr;
+            if (decimals === 0) return (neg ? "-" : "") + abs;
+            const pad = abs.padStart(decimals + 1, "0");
+            const whole = pad.slice(0, pad.length - decimals);
+            const frac = pad.slice(pad.length - decimals).replace(/0+$/, "");
+            return (neg ? "-" : "") + whole + (frac ? "." + frac : "");
         }
-        function hexToBytes20(hex) {
-            const out = new Uint8Array(20);
-            for (let i = 0; i < 20; i++) {
-                out[i] = parseInt(hex.slice(2 + i * 2, 4 + i * 2), 16);
-            }
-            return out;
+        function fmtTimestamp(unixSec) {
+            if (unixSec == null) return "—";
+            const ms = Number(unixSec) * 1000;
+            const d = new Date(ms);
+            return d.toISOString().replace("T", " ").slice(0, 19) + " UTC";
         }
-        function bytesToBigIntBE(bytes) {
-            // Treat as big-endian unsigned integer (matches how uint256 is laid
-            // out in the data field of a Transfer event).
-            let v = 0n;
-            for (let i = 0; i < bytes.length; i++) v = (v << 8n) | BigInt(bytes[i]);
-            return v;
-        }
-        function fmtUnits(v, decimals) {
-            const neg = v < 0n;
-            const abs = neg ? -v : v;
-            const base = 10n ** BigInt(decimals);
-            const whole = abs / base;
-            const frac = abs % base;
-            let fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-            return (neg ? "-" : "") + whole.toString() + (fracStr ? "." + fracStr : "");
+        function shortAddr(a) {
+            if (!a || a.length < 12) return a ?? "";
+            return a.slice(0, 6) + "…" + a.slice(-4);
         }
 
         let balCancel = null;
+
+        function renderLedger(entries, decimals) {
+            const tbody = document.querySelector("#bal-ledger tbody");
+            tbody.innerHTML = "";
+            for (const e of entries) {
+                const tr = document.createElement("tr");
+                tr.style.borderBottom = "1px solid var(--border)";
+                const dirCell = e.direction === "in"
+                    ? `<span class="stat">in</span>`
+                    : `<span class="warn">out</span>`;
+                tr.innerHTML =
+                    `<td style="padding:4px 6px">${dirCell}</td>` +
+                    `<td style="padding:4px 6px">${Number(e.block_number).toLocaleString()}</td>` +
+                    `<td style="padding:4px 6px;color:var(--muted)">${fmtTimestamp(e.block_timestamp)}</td>` +
+                    `<td style="padding:4px 6px">${shortAddr(e.counterparty)}</td>` +
+                    `<td style="padding:4px 6px;text-align:right">${
+                        (e.direction === "in" ? "+" : "-") + fmtUnits(e.amount, decimals)
+                    }</td>`;
+                tbody.appendChild(tr);
+            }
+        }
 
         $("bal-run").addEventListener("click", async () => {
             if (balCancel) return;
@@ -431,32 +464,33 @@
                 if (!token || !wallet) throw new Error("token + wallet are required");
                 const fromBlock = Number($("bal-from").value);
                 const decimals = Number($("bal-decimals").value);
-                const walletBytes = hexToBytes20(wallet);
 
                 const c = makeClient();
-                // Probe height so we have a stop-block — stream_arrow will
-                // otherwise keep tailing the chain forever.
-                const height = await c.get_height();
+                // Probe height so we have a stop-block AND a denominator for
+                // the % progress display.
+                const height = Number(await c.get_height());
+                $("bal-tip").textContent = height.toLocaleString();
                 logEl.textContent = `tip = ${height}\nstreaming ${fromBlock} → ${height}\n`;
 
                 const query = {
                     from_block: fromBlock,
-                    to_block: Number(height),
+                    to_block: height,
                     logs: [
                         { address: [token], topics: [[TRANSFER_TOPIC0], [paddedTopic(wallet)], []] },
                         { address: [token], topics: [[TRANSFER_TOPIC0], [], [paddedTopic(wallet)]] },
                     ],
+                    // Block number/timestamp come from the joined blocks
+                    // table (default JoinMode joins blocks containing the
+                    // matched logs). BalanceTracker walks both tables in
+                    // Rust to attach a wall-clock timestamp to each entry.
                     field_selection: {
-                        log: ["topic0", "topic1", "topic2", "data", "block_number"],
+                        log: ["topic0", "topic1", "topic2", "data", "block_number", "transaction_hash", "log_index"],
+                        block: ["number", "timestamp"],
                     },
                 };
 
-                let balance = 0n;
-                let inAmt = 0n;
-                let outAmt = 0n;
-                let count = 0;
+                const tracker = new BalanceTracker(wallet, 10);
                 let chunks = 0;
-                let lastBlock = fromBlock;
                 let cancelled = false;
                 balCancel = () => { cancelled = true; };
                 $("bal-stop").disabled = false;
@@ -465,52 +499,41 @@
 
                 const t0 = performance.now();
                 const stream = await c.stream_arrow(query, null);
+                const span = Math.max(1, height - fromBlock);
 
                 while (!cancelled) {
                     const chunk = await stream.next();
                     if (!chunk) break;
                     chunks++;
-                    if (chunk.logs.byteLength === 0) {
-                        lastBlock = Number(chunk.next_block);
-                        $("bal-block").textContent = lastBlock.toLocaleString();
-                        $("bal-chunks").textContent = chunks;
-                        continue;
-                    }
-                    // Zero-copy decode: tableFromIPC maps the IPC buffer; column
-                    // vectors hand back Uint8Array views into that same buffer.
-                    const table = tableFromIPC(chunk.logs);
-                    const t1Vec = table.getChild("topic1");
-                    const t2Vec = table.getChild("topic2");
-                    const dVec  = table.getChild("data");
-                    const bVec  = table.getChild("block_number");
-                    const n = table.numRows;
-                    for (let i = 0; i < n; i++) {
-                        const t1 = t1Vec?.get(i);
-                        const t2 = t2Vec?.get(i);
-                        const d  = dVec?.get(i);
-                        if (!d) continue;
-                        const amt = bytesToBigIntBE(d);
-                        const isFrom = bytesEqualSuffix(t1, walletBytes);
-                        const isTo   = bytesEqualSuffix(t2, walletBytes);
-                        if (isFrom) { balance -= amt; outAmt += amt; count++; }
-                        if (isTo)   { balance += amt; inAmt  += amt; count++; }
-                    }
-                    lastBlock = Number(chunk.next_block);
-                    $("bal-value").textContent = fmtUnits(balance, decimals);
-                    $("bal-count").textContent = count;
-                    $("bal-in").textContent  = "+" + fmtUnits(inAmt, decimals);
-                    $("bal-out").textContent = "-" + fmtUnits(outAmt, decimals);
-                    $("bal-block").textContent = lastBlock.toLocaleString();
+                    const delta = tracker.process(chunk);
+                    const lastBlock = delta.last_block != null ? Number(delta.last_block) : null;
+                    const pct = lastBlock != null
+                        ? Math.min(100, ((lastBlock - fromBlock) / span) * 100)
+                        : 0;
+                    const elapsed = (performance.now() - t0) / 1000;
+                    const rate = elapsed > 0
+                        ? `${Math.round((lastBlock != null ? lastBlock - fromBlock : 0) / elapsed).toLocaleString()} blk/s`
+                        : "";
+
+                    $("bal-value").textContent = fmtUnits(delta.balance, decimals);
+                    $("bal-count").textContent = Number(delta.transfer_count).toLocaleString();
+                    $("bal-in").textContent  = "+" + fmtUnits(delta.in_total, decimals);
+                    $("bal-out").textContent = "-" + fmtUnits(delta.out_total, decimals);
+                    $("bal-block").textContent = lastBlock != null ? lastBlock.toLocaleString() : "—";
+                    $("bal-pct").textContent = `(${pct.toFixed(2)}%)`;
+                    $("bal-time").textContent = fmtTimestamp(delta.last_block_timestamp);
                     $("bal-chunks").textContent = chunks;
-                    // Yield to the UI between chunks so the DOM repaints.
+                    $("bal-rate").textContent = rate;
+                    if (delta.matches > 0) renderLedger(delta.ledger, decimals);
+
+                    // Let the DOM repaint between chunks.
                     await new Promise((r) => setTimeout(r, 0));
                 }
 
                 const elapsed = performance.now() - t0;
                 logEl.textContent +=
                     (cancelled ? "stopped" : "done") +
-                    ` — processed ${count} transfers in ${chunks} chunks ` +
-                    `(${(elapsed / 1000).toFixed(2)}s, last block ${lastBlock})\n`;
+                    ` — ${chunks} chunks in ${(elapsed / 1000).toFixed(2)}s\n`;
                 setStatus(cancelled ? "stopped" : "done", cancelled ? "warn" : "stat");
             } catch (e) {
                 $("bal-log").textContent += `error: ${e.message}\n`;

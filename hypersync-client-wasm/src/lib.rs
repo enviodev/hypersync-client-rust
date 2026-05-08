@@ -27,6 +27,8 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use wasm_bindgen::prelude::*;
 
+mod balance;
+
 #[wasm_bindgen(start)]
 pub fn _start() {
     #[cfg(feature = "console_error_panic_hook")]
@@ -399,7 +401,7 @@ fn dyn_sol_value_to_js(v: &DynSolValue, checksum_addresses: bool) -> JsValue {
     }
 }
 
-fn hex_prefixed(bytes: &[u8]) -> String {
+pub(crate) fn hex_prefixed(bytes: &[u8]) -> String {
     if bytes.is_empty() {
         return "0x".into();
     }
@@ -447,32 +449,24 @@ impl<'a> From<&'a QueryResponse> for SerializableQueryResponse<'a> {
     }
 }
 
-/// Result of a single `get_arrow` call. Each table is a separate Arrow IPC
-/// file (uncompressed) that JS can feed into `apache-arrow`'s `tableFromIPC`.
+/// Result of a single `get_arrow` call.
+///
+/// Wraps the original `hypersync_client::ArrowResponse` (which owns the
+/// `RecordBatch`es) behind an `Arc`, so that:
+///   * the per-table getters (`logs`, `blocks`, ...) can lazy-encode Arrow
+///     IPC bytes for JS-side consumers like `apache-arrow.tableFromIPC`, and
+///   * Rust-side consumers like [`BalanceTracker`] can iterate the
+///     `RecordBatch`es directly via the zero-copy readers in
+///     `hypersync_client::arrow_reader` without an IPC round-trip.
 #[wasm_bindgen]
-#[derive(Serialize)]
 pub struct ArrowResponse {
-    archive_height: Option<u64>,
-    next_block: u64,
-    total_execution_time: u64,
-    blocks: Vec<u8>,
-    transactions: Vec<u8>,
-    logs: Vec<u8>,
-    traces: Vec<u8>,
-    decoded_logs: Vec<u8>,
+    pub(crate) inner: Arc<hypersync_client::ArrowResponse>,
 }
 
 impl ArrowResponse {
     fn from_native(res: hypersync_client::ArrowResponse) -> Result<Self> {
         Ok(Self {
-            archive_height: res.archive_height,
-            next_block: res.next_block,
-            total_execution_time: res.total_execution_time,
-            blocks: encode_batches(&res.data.blocks).context("blocks")?,
-            transactions: encode_batches(&res.data.transactions).context("transactions")?,
-            logs: encode_batches(&res.data.logs).context("logs")?,
-            traces: encode_batches(&res.data.traces).context("traces")?,
-            decoded_logs: encode_batches(&res.data.decoded_logs).context("decoded_logs")?,
+            inner: Arc::new(res),
         })
     }
 }
@@ -481,35 +475,35 @@ impl ArrowResponse {
 impl ArrowResponse {
     #[wasm_bindgen(getter)]
     pub fn archive_height(&self) -> Option<u64> {
-        self.archive_height
+        self.inner.archive_height
     }
     #[wasm_bindgen(getter)]
     pub fn next_block(&self) -> u64 {
-        self.next_block
+        self.inner.next_block
     }
     #[wasm_bindgen(getter)]
     pub fn total_execution_time(&self) -> u64 {
-        self.total_execution_time
+        self.inner.total_execution_time
     }
     #[wasm_bindgen(getter)]
-    pub fn blocks(&self) -> Vec<u8> {
-        self.blocks.clone()
+    pub fn blocks(&self) -> Result<Vec<u8>, JsError> {
+        encode_batches(&self.inner.data.blocks).map_err(|e| JsError::new(&format!("{e:?}")))
     }
     #[wasm_bindgen(getter)]
-    pub fn transactions(&self) -> Vec<u8> {
-        self.transactions.clone()
+    pub fn transactions(&self) -> Result<Vec<u8>, JsError> {
+        encode_batches(&self.inner.data.transactions).map_err(|e| JsError::new(&format!("{e:?}")))
     }
     #[wasm_bindgen(getter)]
-    pub fn logs(&self) -> Vec<u8> {
-        self.logs.clone()
+    pub fn logs(&self) -> Result<Vec<u8>, JsError> {
+        encode_batches(&self.inner.data.logs).map_err(|e| JsError::new(&format!("{e:?}")))
     }
     #[wasm_bindgen(getter)]
-    pub fn traces(&self) -> Vec<u8> {
-        self.traces.clone()
+    pub fn traces(&self) -> Result<Vec<u8>, JsError> {
+        encode_batches(&self.inner.data.traces).map_err(|e| JsError::new(&format!("{e:?}")))
     }
     #[wasm_bindgen(getter)]
-    pub fn decoded_logs(&self) -> Vec<u8> {
-        self.decoded_logs.clone()
+    pub fn decoded_logs(&self) -> Result<Vec<u8>, JsError> {
+        encode_batches(&self.inner.data.decoded_logs).map_err(|e| JsError::new(&format!("{e:?}")))
     }
 }
 
@@ -585,14 +579,14 @@ mod tests {
 
         let resp = ArrowResponse::from_native(native).unwrap();
 
-        assert_eq!(resp.archive_height, Some(123));
-        assert_eq!(resp.next_block, 100);
-        assert_eq!(resp.total_execution_time, 42);
-        assert!(resp.blocks.is_empty());
-        assert!(resp.transactions.is_empty());
-        assert!(resp.logs.is_empty());
-        assert!(resp.traces.is_empty());
-        assert!(resp.decoded_logs.is_empty());
+        assert_eq!(resp.archive_height(), Some(123));
+        assert_eq!(resp.next_block(), 100);
+        assert_eq!(resp.total_execution_time(), 42);
+        assert!(resp.blocks().unwrap().is_empty());
+        assert!(resp.transactions().unwrap().is_empty());
+        assert!(resp.logs().unwrap().is_empty());
+        assert!(resp.traces().unwrap().is_empty());
+        assert!(resp.decoded_logs().unwrap().is_empty());
     }
 
     /// One non-empty table produces a non-empty IPC payload while siblings
@@ -612,10 +606,10 @@ mod tests {
 
         let resp = ArrowResponse::from_native(native).unwrap();
 
-        assert!(!resp.logs.is_empty());
-        assert!(resp.blocks.is_empty());
-        assert!(resp.transactions.is_empty());
-        assert!(resp.traces.is_empty());
-        assert!(resp.decoded_logs.is_empty());
+        assert!(!resp.logs().unwrap().is_empty());
+        assert!(resp.blocks().unwrap().is_empty());
+        assert!(resp.transactions().unwrap().is_empty());
+        assert!(resp.traces().unwrap().is_empty());
+        assert!(resp.decoded_logs().unwrap().is_empty());
     }
 }
