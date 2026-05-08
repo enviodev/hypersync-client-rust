@@ -224,6 +224,33 @@
             };
         }
 
+        // Both buttons hit the same endpoint and fetch the same Arrow IPC
+        // bytes from the server. The only difference is *where* the bytes
+        // get decoded into row objects:
+        //   get_arrow → bytes returned as-is, JS decodes via apache-arrow
+        //   get       → wasm decodes in Rust, marshals JS objects back
+
+        const bigintReplacer = (_, v) => (typeof v === "bigint" ? v.toString() : v);
+
+        function arrowRowToObject(table, i) {
+            const obj = {};
+            for (const f of table.schema.fields) {
+                const v = table.getChild(f.name)?.get(i);
+                if (v instanceof Uint8Array) {
+                    obj[f.name] =
+                        "0x" +
+                        Array.from(v)
+                            .map((b) => b.toString(16).padStart(2, "0"))
+                            .join("");
+                } else if (typeof v === "bigint") {
+                    obj[f.name] = v.toString();
+                } else {
+                    obj[f.name] = v;
+                }
+            }
+            return obj;
+        }
+
         $("run-arrow").addEventListener("click", async () => {
             queryOut.textContent = "querying...";
             try {
@@ -235,30 +262,31 @@
                 const logsTable = res.logs.byteLength > 0 ? tableFromIPC(res.logs) : null;
                 const blocksTable = res.blocks.byteLength > 0 ? tableFromIPC(res.blocks) : null;
                 const decoded = performance.now() - t2;
-                queryOut.textContent = JSON.stringify(
-                    {
-                        timing: {
-                            wasm_get_arrow_ms: +fetched.toFixed(1),
-                            js_arrow_decode_ms: +decoded.toFixed(1),
+                const sample = logsTable && logsTable.numRows > 0 ? arrowRowToObject(logsTable, 0) : null;
+                queryOut.textContent =
+                    `// path: get_arrow → Arrow IPC bytes returned to JS, decoded with apache-arrow\n` +
+                    JSON.stringify(
+                        {
+                            timing_ms: {
+                                wasm_fetch_and_recompress: +fetched.toFixed(1),
+                                js_arrow_decode: +decoded.toFixed(1),
+                                total: +(fetched + decoded).toFixed(1),
+                            },
+                            next_block: res.next_block.toString(),
+                            ipc_bytes: {
+                                blocks: res.blocks.byteLength,
+                                logs: res.logs.byteLength,
+                                transactions: res.transactions.byteLength,
+                            },
+                            row_counts: {
+                                blocks: blocksTable?.numRows ?? 0,
+                                logs: logsTable?.numRows ?? 0,
+                            },
+                            first_log_decoded_in_js: sample,
                         },
-                        next_block: res.next_block.toString(),
-                        archive_height: res.archive_height?.toString() ?? null,
-                        logs_rows: logsTable?.numRows ?? 0,
-                        blocks_rows: blocksTable?.numRows ?? 0,
-                        ipc_bytes: {
-                            blocks: res.blocks.byteLength,
-                            logs: res.logs.byteLength,
-                            transactions: res.transactions.byteLength,
-                        },
-                        first_log_address: logsTable
-                            ? "0x" + Array.from(logsTable.getChild("address")?.get(0) ?? [])
-                                .map((b) => b.toString(16).padStart(2, "0"))
-                                .join("")
-                            : null,
-                    },
-                    null,
-                    2,
-                );
+                        bigintReplacer,
+                        2,
+                    );
             } catch (e) {
                 queryOut.textContent = `error: ${e.message}`;
             }
@@ -270,16 +298,22 @@
                 const c = makeClient();
                 const t = performance.now();
                 const res = await c.get(makeQuery());
+                const total = performance.now() - t;
                 queryOut.textContent =
-                    `// took ${fmt(performance.now() - t)}\n` +
+                    `// path: get → Arrow IPC decoded in wasm/Rust, marshalled to JS as objects\n` +
                     JSON.stringify(
                         {
+                            timing_ms: {
+                                wasm_fetch_decode_marshal: +total.toFixed(1),
+                            },
                             next_block: res.next_block.toString(),
-                            blocks_count: res.data.blocks.flat().length,
-                            logs_count: res.data.logs.flat().length,
-                            first_log: res.data.logs[0]?.[0] ?? null,
+                            row_counts: {
+                                blocks: res.data.blocks.flat().length,
+                                logs: res.data.logs.flat().length,
+                            },
+                            first_log_decoded_in_rust: res.data.logs[0]?.[0] ?? null,
                         },
-                        (_, v) => (typeof v === "bigint" ? v.toString() : v),
+                        bigintReplacer,
                         2,
                     );
             } catch (e) {
