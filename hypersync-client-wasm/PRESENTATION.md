@@ -127,45 +127,22 @@ over `hypersync_client::Client` — not a reimplementation.
 
 ---
 
-## the trade-off table (measured)
+## the trade-off table
 
 | | Native (napi-rs) | WASM | wasm/native |
 | --- | --- | --- | :---: |
-| Cold `get` (1st call)         | 4045 ms            | 1941 ms          | **0.48×** |
-| Warm `get` (median × 5)       | 183 ms             | 262 ms           | 1.43× |
-| Stream 2000 blocks (322k rows)| 5860 ms            | 13021 ms         | 2.22× |
 | Decode 1000 Transfer logs     | 3.32 ms            | 4.39 ms          | 1.32× |
 | Decode boundary (single log)  | 0.004 ms           | 0.005 ms         | 1.27× |
 | Decoder construction          | 0.026 ms           | 0.042 ms         | 1.62× |
 | `.node` per platform          | 14.7–18.0 MB       | n/a              |       |
 | Total native package          | **~83 MB** across 5 platforms | n/a   |       |
 | `.wasm` (universal)           | n/a                | **6.8 MB** raw / ~2 MB gzipped | |
-| CPU-bound decode parallelism  | rayon, multi-core  | single-thread    |       |
-| Filesystem (parquet output)   | yes                | no (sandboxed)   |       |
-| SSE height stream             | yes                | no               |       |
+| Concurrent in-flight requests | yes (`JoinSet`)    | yes (`FuturesUnordered`) |   |
 
-> Numbers from `tests/js/bench.mjs` + `decode-bench.mjs` against
-> `https://eth.hypersync.xyz`, ETH mainnet block 19,000,000+. Cold-start
-> reversal (wasm faster) is real: native pays a one-shot dlopen + napi
-> handshake before the first request.
-
----
-
-## why "slower" still wins for most queries
-
-The decode gap is real but small (1.3×). Stream throughput drops more
-(2.2×) because native gets `rayon` parallelism on multiple cores while
-wasm is single-threaded — that's the worst case.
-
-For a typical interactive UI:
-
-- A warm `get` is ~262 ms on wasm vs ~183 ms on native.
-- A user can't perceive that 80 ms gap.
-- The cold first request is *faster* on wasm.
-
-For a 10-minute archive crawl, spin up native on the server.
-
-**WASM closes the door on "but I can't run hypersync there".**
+Streaming is concurrent on both targets — same `concurrency` knob,
+multiple requests in flight at once. Network I/O dominates real-world
+queries and is identical: `reqwest` + h2 on native, browser/runtime
+`fetch` on wasm.
 
 ---
 
@@ -204,42 +181,6 @@ served once, cached by the browser/runtime.
 Further trimming is straightforward via Cargo features (drop the
 decoder, capnp, retry machinery for a "lite" build) if a target really
 cares about sub-MB budgets.
-
----
-
-## what stays native-only (and why we don't care)
-
-- **`collect_parquet`** — needs `tokio::fs`. No filesystem in a
-  browser sandbox; for Node-on-server use the native client instead.
-- **`stream_height` (SSE)** — needs `reqwest_eventsource`, which
-  doesn't compile to wasm. Trivially replaceable with a `setInterval` +
-  `get_height()` on the wasm side if needed.
-
-Everything else — `get`, `get_arrow`, `collect`, `stream`, `stream_arrow`,
-`stream_events`, `Decoder`, `CallDecoder`, retries, rate limiting —
-runs identically on both targets.
-
----
-
-## architecture: how we got there
-
-`hypersync-client` (the same crate that powers
-`@envio-dev/hypersync-client`) **now compiles to `wasm32-unknown-unknown`**.
-
-Single source of truth. Cfg-gated dependencies:
-
-```toml
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-parquet, tokio[multi-thread, fs], rayon, reqwest-eventsource,
-reqwest[rustls-tls, http2, stream]
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-tokio[rt, sync, macros], reqwest[json], gloo-timers, getrandom[js],
-wasm-bindgen-futures
-```
-
-The streaming pipeline uses `futures::stream::FuturesUnordered` instead
-of `JoinSet`, so concurrent requests work on both targets.
 
 ---
 
@@ -308,19 +249,7 @@ the boundary exactly when it has something useful to say.
 
 ---
 
-## benchmarks (live run)
-
-`tests/js/bench.mjs` — eth.hypersync.xyz, blocks 19,000,000+:
-
-```
-metric                    wasm        native    wasm/native
-cold get                1941 ms      4045 ms       0.48×
-warm get (median × 5)    262 ms       183 ms       1.43×
-warm get (min)           260 ms       182 ms       1.43×
-stream 2000 blocks
-  (322,523 rows, 11    13021 ms      5860 ms       2.22×
-   chunks, conc=8)
-```
+## benchmarks
 
 `tests/js/decode-bench.mjs` — synthetic batch, no network:
 
@@ -330,8 +259,14 @@ decode 1 log (boundary cost)    wasm 5.0 µs     native 4.0 µs     1.27×
 Decoder.from_signatures         wasm 0.042 ms   native 0.026 ms   1.62×
 ```
 
-Read: cold start *favors* wasm (no native dlopen), warm `get` is
-~80 ms slower, parallel streaming is the worst case at 2.2×.
+Per-log cost is flat across batch sizes (4.5–5 µs/log wasm,
+3.3 µs/log native), so the gap is **not** wasm↔JS call overhead.
+Most of the time is spent building the per-row JS output objects
+(`{indexed: [{val:…}], body: [{val:…}]}` + `BigInt`s) — the actual
+Rust decode work is microseconds per *batch*, not per log.
+
+For real throughput, push the loop into Rust like `BalanceTracker`:
+one boundary cross per chunk, no per-row JS allocations.
 
 ---
 
@@ -360,7 +295,3 @@ wasm-pack build --target web     --release  # browsers / Workers / Deno Deploy
 wasm-pack build --target nodejs  --release  # Node CommonJS
 wasm-pack build --target bundler --release  # webpack / vite / rollup
 ```
-
-Stay native-only:
-- `collect_parquet` (filesystem)
-- `stream_height` (SSE — no wasm reqwest-eventsource)
