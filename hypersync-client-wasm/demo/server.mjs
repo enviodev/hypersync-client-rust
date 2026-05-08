@@ -8,6 +8,8 @@
 // Config (via env or .env next to this file, or CLI args):
 //   HYPERSYNC_URL     upstream (default: https://eth.hypersync.xyz)
 //   ENVIO_API_TOKEN   API token (UUID), optional
+//   ERC20_ADDRESS     prefill for the live-balance demo (optional)
+//   WALLET_ADDRESS    prefill for the live-balance demo (optional)
 //   PORT              local port (default: 8080)
 //
 // Run:
@@ -38,6 +40,8 @@ const port = Number(process.env.PORT ?? 8080);
 const upstream = (process.argv[2] ?? process.env.HYPERSYNC_URL ?? "https://eth.hypersync.xyz")
     .replace(/\/+$/, "");
 const apiToken = process.env.ENVIO_API_TOKEN ?? "";
+const erc20Address = process.env.ERC20_ADDRESS ?? "";
+const walletAddress = process.env.WALLET_ADDRESS ?? "";
 
 const app = express();
 
@@ -105,7 +109,12 @@ app.get("/config.json", (req, res) => {
     // when accessed via 127.0.0.1, the LAN IP, etc.
     const proto = req.protocol;
     const host = req.headers.host ?? `localhost:${port}`;
-    res.json({ hypersyncUrl: `${proto}://${host}/proxy`, apiToken });
+    res.json({
+        hypersyncUrl: `${proto}://${host}/proxy`,
+        apiToken,
+        erc20Address,
+        walletAddress,
+    });
 });
 
 app.use(express.static(here, { extensions: ["html"] }));
