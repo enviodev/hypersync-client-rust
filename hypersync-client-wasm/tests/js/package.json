@@ -1,0 +1,15 @@
+{
+  "name": "hypersync-client-wasm-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node query.test.mjs",
+    "test:stream": "node stream.test.mjs",
+    "bench": "node bench.mjs"
+  },
+  "dependencies": {
+    "@envio-dev/hypersync-client": "^1.3.0",
+    "apache-arrow": "^17.0.0"
+  }
+}

@@ -5,15 +5,21 @@
 // - `cargo package`: cargo copies the symlink target into the tarball, so
 //   include_str! finds README.md at the package root during verification.
 #![doc = include_str!("../README.md")]
-use std::time::Instant;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+#[cfg(not(target_arch = "wasm32"))]
 use futures::StreamExt;
 use hypersync_net_types::{hypersync_net_types_capnp, ArchiveHeight, ChainId, Query};
 use reqwest::{Method, StatusCode};
+// `web-time` is a drop-in replacement for `std::time::Instant` that compiles
+// on wasm32-unknown-unknown (uses `performance.now()` under the hood).
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest_eventsource::retry::ExponentialBackoff;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest_eventsource::{Event, EventSource};
+use web_time::Instant;
 
 pub mod arrow_reader;
 mod column_mapping;
@@ -21,6 +27,10 @@ mod config;
 mod decode;
 mod decode_call;
 mod from_arrow;
+// `parquet_out` writes to `tokio::fs`, which has no wasm equivalent. Other
+// modules below (stream, util, rayon_async) compile for both targets via cfg
+// gates inside their bodies.
+#[cfg(not(target_arch = "wasm32"))]
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
@@ -53,6 +63,96 @@ pub use types::{
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
 
+/// Runs CPU-bound work (capnp + arrow IPC parsing) outside of the async
+/// scheduler when possible.
+///
+/// On native we use `tokio::task::block_in_place` so the multi-thread runtime
+/// can keep servicing other tasks while one worker is decoding a response.
+/// On wasm there is no multi-thread runtime — the wasm event loop is the only
+/// thread — so we just invoke the closure directly.
+fn run_blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::task::block_in_place(f)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        f()
+    }
+}
+
+/// Sleep for `duration`, on whichever runtime is driving the caller.
+///
+/// `tokio::time::sleep` does not work on `wasm32-unknown-unknown`: tokio's
+/// internal `Instant::now()` falls back to `std::time::Instant::now()`,
+/// which panics. We use `gloo-timers`'s `TimeoutFuture` (a small wrapper
+/// around `setTimeout`) on wasm. On native we keep `tokio::time::sleep`.
+async fn sleep_compat(duration: Duration) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        tokio::time::sleep(duration).await;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // `setTimeout` takes a 32-bit ms; clamp to avoid overflow for
+        // very large `Duration`s (which we never produce in practice).
+        let ms = u32::try_from(duration.as_millis()).unwrap_or(u32::MAX);
+        gloo_timers::future::TimeoutFuture::new(ms).await;
+    }
+}
+
+/// Fire-and-forget spawn of a background async task.
+///
+/// On native we use `tokio::spawn`, which schedules onto whichever runtime
+/// is currently driving the caller (multi-thread runtime in production,
+/// single-thread `tokio::test` runtime in tests). On wasm there is no tokio
+/// runtime — `wasm_bindgen_futures::spawn_local` schedules onto the
+/// `Promise` micro-task queue that the host (browser / Node / Deno) is
+/// already running.
+///
+/// We do not retain the join handle. Callers synchronize via `mpsc` channels
+/// and treat the spawned task as detached.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn spawn_local_compat<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(fut);
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn spawn_local_compat<F>(fut: F)
+where
+    F: std::future::Future<Output = ()> + 'static,
+{
+    wasm_bindgen_futures::spawn_local(fut);
+}
+
+/// Construct a reqwest client with the right per-target options.
+///
+/// The native `ClientBuilder` exposes `no_gzip()` (we do not want reqwest to
+/// re-decompress arrow-ipc payloads, which the server may compress at the IPC
+/// layer) and `user_agent()`. The wasm `ClientBuilder` is much smaller — most
+/// transport options are determined by the host's `fetch` implementation —
+/// so we just construct a default client there.
+fn build_reqwest_client(_user_agent: &str) -> reqwest::Client {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        reqwest::Client::builder()
+            .no_gzip()
+            .user_agent(_user_agent)
+            .build()
+            .unwrap()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        reqwest::Client::builder().build().unwrap()
+    }
+}
+
 #[derive(Debug)]
 struct HttpClientWrapper {
     /// Mutable state that needs to be refreshed periodically
@@ -81,11 +181,7 @@ struct HttpClientWrapperInner {
 
 impl HttpClientWrapper {
     fn new(user_agent: String, api_token: String, timeout: Duration) -> Self {
-        let client = reqwest::Client::builder()
-            .no_gzip()
-            .user_agent(&user_agent)
-            .build()
-            .unwrap();
+        let client = build_reqwest_client(&user_agent);
 
         Self {
             inner: std::sync::Mutex::new(HttpClientWrapperInner {
@@ -105,11 +201,7 @@ impl HttpClientWrapper {
         // Check if client needs refresh due to age
         if inner.created_at.elapsed() > self.max_connection_age {
             // Recreate client to force new DNS lookup for failover scenarios
-            inner.client = reqwest::Client::builder()
-                .no_gzip()
-                .user_agent(&self.user_agent)
-                .build()
-                .unwrap();
+            inner.client = build_reqwest_client(&self.user_agent);
             inner.created_at = Instant::now();
         }
 
@@ -125,6 +217,8 @@ impl HttpClientWrapper {
             .bearer_auth(&self.api_token)
     }
 
+    // Used only by the SSE height stream, which is native-only.
+    #[cfg(not(target_arch = "wasm32"))]
     fn request_no_timeout(&self, method: Method, url: Url) -> reqwest::RequestBuilder {
         let client = self.get_client();
         client.request(method, url).bearer_auth(&self.api_token)
@@ -522,6 +616,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn collect_parquet(
         &self,
         path: &str,
@@ -613,7 +708,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -663,7 +758,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -804,9 +899,7 @@ impl Client {
 
         let bytes = res.bytes().await.context("read response body bytes")?;
 
-        let res = tokio::task::block_in_place(|| {
-            parse_query_response(&bytes).context("parse query response")
-        })?;
+        let res = run_blocking(|| parse_query_response(&bytes).context("parse query response"))?;
 
         Ok(ArrowImplResponse {
             response: res,
@@ -884,7 +977,7 @@ impl Client {
                 hypersync_net_types_capnp::cached_query_response::either::Which::QueryResponse(
                     query_response,
                 ) => {
-                    let res = tokio::task::block_in_place(|| {
+                    let res = run_blocking(|| {
                         let res = query_response?;
                         read_query_response(&res).context("parse query response cached")
                     })?;
@@ -951,9 +1044,7 @@ impl Client {
 
         let bytes = res.bytes().await.context("read response body bytes")?;
 
-        let res = tokio::task::block_in_place(|| {
-            parse_query_response(&bytes).context("parse query response")
-        })?;
+        let res = run_blocking(|| parse_query_response(&bytes).context("parse query response"))?;
 
         Ok(ArrowImplResponse {
             response: res,
@@ -1036,7 +1127,7 @@ impl Client {
                         "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                     );
                     err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens"));
-                    tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                    sleep_compat(Duration::from_secs(wait_secs)).await;
                     continue;
                 }
                 Err(HyperSyncResponseError::Other(e)) => {
@@ -1058,7 +1149,7 @@ impl Client {
                 self.inner.retry_backoff_ms,
             ));
 
-            tokio::time::sleep(base_ms + jitter).await;
+            sleep_compat(base_ms + jitter).await;
 
             base = std::cmp::min(
                 base + self.inner.retry_backoff_ms,
@@ -1113,7 +1204,7 @@ impl Client {
             .await
             .context("start inner stream")?;
 
-        tokio::spawn(async move {
+        spawn_local_compat(async move {
             while let Some(resp) = inner_rx.recv().await {
                 let msg = resp
                     .context("inner receiver")
@@ -1181,7 +1272,7 @@ impl Client {
             .await
             .context("start inner stream")?;
 
-        tokio::spawn(async move {
+        spawn_local_compat(async move {
             while let Some(resp) = inner_rx.recv().await {
                 let msg = resp
                     .context("inner receiver")
@@ -1315,7 +1406,7 @@ impl Client {
                 log::warn!(
                     "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                 );
-                tokio::time::sleep(Duration::from_secs(secs)).await;
+                sleep_compat(Duration::from_secs(secs)).await;
             }
         }
     }
@@ -1622,14 +1713,22 @@ impl ClientBuilder {
     }
 }
 
+// `stream_height` and its supporting types/helpers below are native-only.
+// They use `reqwest_eventsource` (not available on wasm) plus `tokio::spawn`
+// for the background reconnect task.
+
 /// 200ms
+#[cfg(not(target_arch = "wasm32"))]
 const INITIAL_RECONNECT_DELAY: Duration = Duration::from_millis(200);
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_RECONNECT_DELAY: Duration = Duration::from_secs(30);
 /// Timeout for detecting dead connections. Server sends keepalive pings every 5s,
 /// so we timeout after 15s (3x the ping interval).
+#[cfg(not(target_arch = "wasm32"))]
 const READ_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Events emitted by the height stream.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeightStreamEvent {
     /// Successfully connected or reconnected to the SSE stream.
@@ -1645,12 +1744,14 @@ pub enum HeightStreamEvent {
     },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 enum InternalStreamEvent {
     Publish(HeightStreamEvent),
     Ping,
     Unknown(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Client {
     fn get_es_stream(&self) -> Result<EventSource> {
         // Build the GET /height/sse request
@@ -1887,13 +1988,19 @@ pub enum HyperSyncResponseError {
 struct ArrowImplResponse {
     /// The parsed Arrow response data.
     response: ArrowResponse,
-    /// Size of the response body in bytes.
+    /// Size of the response body in bytes. Read by `stream` to adapt batch
+    /// size to the response-bytes ceiling/floor; unused on wasm where
+    /// streaming is disabled.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     response_bytes: u64,
     /// Rate limit information parsed from response headers.
     rate_limit: RateLimitInfo,
 }
 
-#[cfg(test)]
+// The existing tests exercise the SSE height stream and the multi-thread
+// runtime, neither of which are available on wasm. wasm-only tests live
+// elsewhere (see `hypersync-client-wasm/tests/`).
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     #[test]

@@ -1093,7 +1093,10 @@ impl<'a> TraceReader<'a> {
     }
 }
 
-#[cfg(test)]
+// Tests cover both pure parsing (wasm-clean) and integration scenarios that
+// hit `client.collect_arrow` plus the multi-threaded tokio runtime. Gate the
+// whole module to native for now.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use anyhow::Context;

@@ -113,6 +113,9 @@ mod tests {
         assert!(!info.is_rate_limited());
     }
 
+    // Uses `From<http::Response<&str>>` for `reqwest::Response` which is a
+    // native-only conversion in reqwest.
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_from_response_header_case_insensitive() {
         // Build an http::Response with mixed-case headers, then convert to reqwest::Response.

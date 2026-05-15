@@ -1,3 +1,10 @@
+// All transform helpers below (`apply_to_batch`, `map_l1_fee_scalar`,
+// `map_column`, etc.) are reachable only from the native-only `stream` module,
+// so on wasm they're dead code. We keep them in the same file (and re-exported
+// `ColumnMapping` / `DataType` types are still useful on wasm) and just
+// silence the warnings on wasm.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use alloy_primitives::I256;
@@ -12,6 +19,9 @@ use arrow::{
     compute,
     datatypes::{i256, DataType as ArrowDataType, Field, Schema},
 };
+// `apply_to_batch` uses rayon's parallel iterators on native for column-level
+// parallelism. Wasm has no thread pool, so we cfg-gate to serial iteration.
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use ruint::aliases::U256;
 use schemars::JsonSchema;
@@ -79,33 +89,44 @@ pub fn apply_to_batch(
         return Ok(batch.clone());
     }
 
+    let map_one = |col: &ArrayRef, field: &Arc<Field>| -> Result<(Field, ArrayRef)> {
+        let col = match mapping.get(field.name()) {
+            Some(&dt) => {
+                if field.name() == "l1_fee_scalar" {
+                    map_l1_fee_scalar(&**col, dt)
+                        .context(format!("apply cast to column '{}'", field.name()))?
+                } else {
+                    map_column(&**col, dt)
+                        .context(format!("apply cast to column '{}'", field.name()))?
+                }
+            }
+            None => col.clone(),
+        };
+
+        Ok((
+            Field::new(
+                field.name().clone(),
+                col.data_type().clone(),
+                field.is_nullable(),
+            ),
+            col,
+        ))
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
     let (fields, cols) = batch
         .columns()
         .par_iter()
         .zip(batch.schema().fields().par_iter())
-        .map(|(col, field)| {
-            let col = match mapping.get(field.name()) {
-                Some(&dt) => {
-                    if field.name() == "l1_fee_scalar" {
-                        map_l1_fee_scalar(&**col, dt)
-                            .context(format!("apply cast to column '{}'", field.name()))?
-                    } else {
-                        map_column(&**col, dt)
-                            .context(format!("apply cast to column '{}'", field.name()))?
-                    }
-                }
-                None => col.clone(),
-            };
+        .map(|(col, field)| map_one(col, field))
+        .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
-            Ok((
-                Field::new(
-                    field.name().clone(),
-                    col.data_type().clone(),
-                    field.is_nullable(),
-                ),
-                col,
-            ))
-        })
+    #[cfg(target_arch = "wasm32")]
+    let (fields, cols) = batch
+        .columns()
+        .iter()
+        .zip(batch.schema().fields().iter())
+        .map(|(col, field)| map_one(col, field))
         .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
     let schema = Arc::new(Schema::new(fields));

@@ -10,6 +10,9 @@ use arrow::{
     },
     datatypes::{DataType, Field, Schema},
 };
+// Rayon's parallel iterators are unavailable on wasm (single thread). The
+// `par_iter()` calls below fall back to serial iteration via cfg gates.
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 pub fn hex_encode_prefixed(bytes: &[u8]) -> String {
@@ -40,28 +43,38 @@ fn hex_encode_array(input: &BinaryArray, prefixed: bool) -> StringArray {
 }
 
 pub fn hex_encode_batch(batch: &RecordBatch, prefixed: bool) -> RecordBatch {
+    let map_one = |(col, field): (&ArrayRef, &Arc<Field>)| -> (Field, ArrayRef) {
+        let col: ArrayRef = match col.data_type() {
+            DataType::Binary => Arc::new(hex_encode_array(
+                col.as_any().downcast_ref().unwrap(),
+                prefixed,
+            )),
+            _ => col.clone(),
+        };
+
+        (
+            Field::new(
+                field.name().clone(),
+                col.data_type().clone(),
+                field.is_nullable(),
+            ),
+            col,
+        )
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
     let (fields, cols) = batch
         .columns()
         .par_iter()
         .zip(batch.schema().fields().par_iter())
-        .map(|(col, field)| {
-            let col: ArrayRef = match col.data_type() {
-                DataType::Binary => Arc::new(hex_encode_array(
-                    col.as_any().downcast_ref().unwrap(),
-                    prefixed,
-                )),
-                _ => col.clone(),
-            };
-
-            (
-                Field::new(
-                    field.name().clone(),
-                    col.data_type().clone(),
-                    field.is_nullable(),
-                ),
-                col,
-            )
-        })
+        .map(map_one)
+        .collect::<(Vec<_>, Vec<_>)>();
+    #[cfg(target_arch = "wasm32")]
+    let (fields, cols) = batch
+        .columns()
+        .iter()
+        .zip(batch.schema().fields().iter())
+        .map(map_one)
         .collect::<(Vec<_>, Vec<_>)>();
 
     let schema = Arc::new(Schema::new(fields));
@@ -82,19 +95,29 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
 
     let event = sig.resolve().context("resolve signature into event")?;
 
+    let decode_topic = |(decoder, topic_name): (&DynSolType, &&str)| -> Result<ArrayRef> {
+        let col = batch
+            .column_by_name(topic_name)
+            .context("get column")?
+            .as_binary_opt()
+            .context("column as binary")?;
+        let col = decode_col(col, decoder).context("decode column")?;
+        Ok::<_, anyhow::Error>(col)
+    };
+
+    #[cfg(not(target_arch = "wasm32"))]
     let topic_cols = event
         .indexed()
         .par_iter()
         .zip(["topic1", "topic2", "topic3"].par_iter())
-        .map(|(decoder, topic_name)| {
-            let col = batch
-                .column_by_name(topic_name)
-                .context("get column")?
-                .as_binary_opt()
-                .context("column as binary")?;
-            let col = decode_col(col, decoder).context("decode column")?;
-            Ok::<_, anyhow::Error>(col)
-        })
+        .map(decode_topic)
+        .collect::<Result<Vec<_>>>()?;
+    #[cfg(target_arch = "wasm32")]
+    let topic_cols = event
+        .indexed()
+        .iter()
+        .zip(["topic1", "topic2", "topic3"].iter())
+        .map(decode_topic)
         .collect::<Result<Vec<_>>>()?;
 
     let body_cols = {
@@ -158,20 +181,31 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
             );
         }
 
-        event
+        let body_decode = |(i, ty): (usize, &DynSolType)| -> Result<ArrayRef> {
+            decode_body_col(
+                decoded_tuples
+                    .iter()
+                    .map(|t| t.as_ref().map(|t| t.get(i).unwrap())),
+                ty,
+            )
+            .context("decode body column")
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let cols = event
             .body()
             .par_iter()
             .enumerate()
-            .map(|(i, ty)| {
-                decode_body_col(
-                    decoded_tuples
-                        .iter()
-                        .map(|t| t.as_ref().map(|t| t.get(i).unwrap())),
-                    ty,
-                )
-                .context("decode body column")
-            })
-            .collect::<Result<Vec<_>>>()?
+            .map(body_decode)
+            .collect::<Result<Vec<_>>>()?;
+        #[cfg(target_arch = "wasm32")]
+        let cols = event
+            .body()
+            .iter()
+            .enumerate()
+            .map(body_decode)
+            .collect::<Result<Vec<_>>>()?;
+        cols
     };
 
     let mut cols = topic_cols;
