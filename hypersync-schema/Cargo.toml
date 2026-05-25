@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-schema"
-version = "0.4.0"
+version = "0.5.0-arbitrum-test.0"
 edition = "2021"
 description = "schema utilities for hypersync"
 license = "MPL-2.0"
