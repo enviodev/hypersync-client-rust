@@ -902,6 +902,78 @@ impl<'a> TransactionReader<'a> {
         self.inner
             .get_nullable::<BinaryArray, Hash>(TransactionField::SourceHash.as_ref())
     }
+
+    /// Arbitrum Nitro L1 request ID.
+    pub fn request_id(&self) -> Result<Option<Hash>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Hash>(TransactionField::RequestId.as_ref())
+    }
+
+    /// Arbitrum Nitro retryable ticket ID.
+    pub fn ticket_id(&self) -> Result<Option<Hash>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Hash>(TransactionField::TicketId.as_ref())
+    }
+
+    /// Arbitrum Nitro fee refund address.
+    pub fn refund_to(&self) -> Result<Option<Address>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Address>(TransactionField::RefundTo.as_ref())
+    }
+
+    /// Arbitrum Nitro maximum gas refund.
+    pub fn max_refund(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::MaxRefund.as_ref())
+    }
+
+    /// Arbitrum Nitro submission fee refund.
+    pub fn submission_fee_refund(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::SubmissionFeeRefund.as_ref())
+    }
+
+    /// Arbitrum Nitro L1 base fee at time of submission.
+    pub fn l1_base_fee(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::L1BaseFee.as_ref())
+    }
+
+    /// Arbitrum Nitro total ETH deposited from L1.
+    pub fn deposit_value(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::DepositValue.as_ref())
+    }
+
+    /// Arbitrum Nitro destination address for the retry.
+    pub fn retry_to(&self) -> Result<Option<Address>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Address>(TransactionField::RetryTo.as_ref())
+    }
+
+    /// Arbitrum Nitro ETH value for the retry.
+    pub fn retry_value(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::RetryValue.as_ref())
+    }
+
+    /// Arbitrum Nitro calldata for the retry.
+    pub fn retry_data(&self) -> Result<Option<Data>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Data>(TransactionField::RetryData.as_ref())
+    }
+
+    /// Arbitrum Nitro beneficiary address.
+    pub fn beneficiary(&self) -> Result<Option<Address>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Address>(TransactionField::Beneficiary.as_ref())
+    }
+
+    /// Arbitrum Nitro maximum submission fee.
+    pub fn max_submission_fee(&self) -> Result<Option<Quantity>, ReadError> {
+        self.inner
+            .get_nullable::<BinaryArray, Quantity>(TransactionField::MaxSubmissionFee.as_ref())
+    }
 }
 
 /// Reader for trace data from Arrow batches.
@@ -1335,6 +1407,36 @@ mod tests {
                 TransactionField::SourceHash => {
                     assert_nullable(TransactionReader::source_hash, field)
                 }
+                TransactionField::RequestId => {
+                    assert_nullable(TransactionReader::request_id, field)
+                }
+                TransactionField::TicketId => assert_nullable(TransactionReader::ticket_id, field),
+                TransactionField::RefundTo => assert_nullable(TransactionReader::refund_to, field),
+                TransactionField::MaxRefund => {
+                    assert_nullable(TransactionReader::max_refund, field)
+                }
+                TransactionField::SubmissionFeeRefund => {
+                    assert_nullable(TransactionReader::submission_fee_refund, field)
+                }
+                TransactionField::L1BaseFee => {
+                    assert_nullable(TransactionReader::l1_base_fee, field)
+                }
+                TransactionField::DepositValue => {
+                    assert_nullable(TransactionReader::deposit_value, field)
+                }
+                TransactionField::RetryTo => assert_nullable(TransactionReader::retry_to, field),
+                TransactionField::RetryValue => {
+                    assert_nullable(TransactionReader::retry_value, field)
+                }
+                TransactionField::RetryData => {
+                    assert_nullable(TransactionReader::retry_data, field)
+                }
+                TransactionField::Beneficiary => {
+                    assert_nullable(TransactionReader::beneficiary, field)
+                }
+                TransactionField::MaxSubmissionFee => {
+                    assert_nullable(TransactionReader::max_submission_fee, field)
+                }
             }
         }
     }
@@ -1549,6 +1651,26 @@ mod tests {
                         }
                         TransactionField::Mint => assert_ok(transaction_reader.mint()),
                         TransactionField::SourceHash => assert_ok(transaction_reader.source_hash()),
+                        TransactionField::RequestId => assert_ok(transaction_reader.request_id()),
+                        TransactionField::TicketId => assert_ok(transaction_reader.ticket_id()),
+                        TransactionField::RefundTo => assert_ok(transaction_reader.refund_to()),
+                        TransactionField::MaxRefund => assert_ok(transaction_reader.max_refund()),
+                        TransactionField::SubmissionFeeRefund => {
+                            assert_ok(transaction_reader.submission_fee_refund())
+                        }
+                        TransactionField::L1BaseFee => assert_ok(transaction_reader.l1_base_fee()),
+                        TransactionField::DepositValue => {
+                            assert_ok(transaction_reader.deposit_value())
+                        }
+                        TransactionField::RetryTo => assert_ok(transaction_reader.retry_to()),
+                        TransactionField::RetryValue => assert_ok(transaction_reader.retry_value()),
+                        TransactionField::RetryData => assert_ok(transaction_reader.retry_data()),
+                        TransactionField::Beneficiary => {
+                            assert_ok(transaction_reader.beneficiary())
+                        }
+                        TransactionField::MaxSubmissionFee => {
+                            assert_ok(transaction_reader.max_submission_fee())
+                        }
                     }
                 }
             }

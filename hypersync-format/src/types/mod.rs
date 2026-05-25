@@ -107,6 +107,19 @@ pub struct Transaction {
     pub deposit_receipt_version: Option<Quantity>,
     pub mint: Option<Quantity>,
     pub source_hash: Option<Hash>,
+    // Arbitrum Nitro fields (L1→L2 messaging / retryable tickets)
+    pub request_id: Option<Hash>,
+    pub ticket_id: Option<Hash>,
+    pub refund_to: Option<Address>,
+    pub max_refund: Option<Quantity>,
+    pub submission_fee_refund: Option<Quantity>,
+    pub l1_base_fee: Option<Quantity>,
+    pub deposit_value: Option<Quantity>,
+    pub retry_to: Option<Address>,
+    pub retry_value: Option<Quantity>,
+    pub retry_data: Option<Data>,
+    pub beneficiary: Option<Address>,
+    pub max_submission_fee: Option<Quantity>,
 }
 
 /// Evm access list object

@@ -171,6 +171,18 @@ enum TransactionField {
     mint @43;
     sighash @44;
     sourceHash @45;
+    requestId @46;
+    ticketId @47;
+    refundTo @48;
+    maxRefund @49;
+    submissionFeeRefund @50;
+    l1BaseFee @51;
+    depositValue @52;
+    retryTo @53;
+    retryValue @54;
+    retryData @55;
+    beneficiary @56;
+    maxSubmissionFee @57;
 }
 
 enum LogField {

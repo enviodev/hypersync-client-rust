@@ -388,6 +388,30 @@ pub struct Transaction {
     pub sighash: Option<Data>,
     /// Source hash for optimism transactions
     pub source_hash: Option<Hash>,
+    /// Arbitrum Nitro: L1 request ID (ArbSubmitRetryableTx, ArbDepositTx, ArbContractTx)
+    pub request_id: Option<Hash>,
+    /// Arbitrum Nitro: retryable ticket ID (ArbRetryTx)
+    pub ticket_id: Option<Hash>,
+    /// Arbitrum Nitro: fee refund address (ArbRetryTx, ArbSubmitRetryableTx)
+    pub refund_to: Option<Address>,
+    /// Arbitrum Nitro: maximum gas refund (ArbRetryTx)
+    pub max_refund: Option<Quantity>,
+    /// Arbitrum Nitro: submission fee refund (ArbRetryTx)
+    pub submission_fee_refund: Option<Quantity>,
+    /// Arbitrum Nitro: L1 base fee at time of submission (ArbSubmitRetryableTx)
+    pub l1_base_fee: Option<Quantity>,
+    /// Arbitrum Nitro: total ETH deposited from L1 (ArbSubmitRetryableTx)
+    pub deposit_value: Option<Quantity>,
+    /// Arbitrum Nitro: destination address for the retry (ArbSubmitRetryableTx)
+    pub retry_to: Option<Address>,
+    /// Arbitrum Nitro: ETH value for the retry (ArbSubmitRetryableTx)
+    pub retry_value: Option<Quantity>,
+    /// Arbitrum Nitro: calldata for the retry (ArbSubmitRetryableTx)
+    pub retry_data: Option<Data>,
+    /// Arbitrum Nitro: beneficiary address (ArbSubmitRetryableTx)
+    pub beneficiary: Option<Address>,
+    /// Arbitrum Nitro: maximum submission fee (ArbSubmitRetryableTx)
+    pub max_submission_fee: Option<Quantity>,
 }
 
 /// Log object
@@ -539,6 +563,18 @@ mod tests {
             TransactionField::Mint => tx.mint.is_none(),
             TransactionField::Sighash => tx.sighash.is_none(),
             TransactionField::SourceHash => tx.source_hash.is_none(),
+            TransactionField::RequestId => tx.request_id.is_none(),
+            TransactionField::TicketId => tx.ticket_id.is_none(),
+            TransactionField::RefundTo => tx.refund_to.is_none(),
+            TransactionField::MaxRefund => tx.max_refund.is_none(),
+            TransactionField::SubmissionFeeRefund => tx.submission_fee_refund.is_none(),
+            TransactionField::L1BaseFee => tx.l1_base_fee.is_none(),
+            TransactionField::DepositValue => tx.deposit_value.is_none(),
+            TransactionField::RetryTo => tx.retry_to.is_none(),
+            TransactionField::RetryValue => tx.retry_value.is_none(),
+            TransactionField::RetryData => tx.retry_data.is_none(),
+            TransactionField::Beneficiary => tx.beneficiary.is_none(),
+            TransactionField::MaxSubmissionFee => tx.max_submission_fee.is_none(),
         }
     }
 

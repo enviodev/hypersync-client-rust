@@ -963,6 +963,18 @@ pub enum TransactionField {
     Mint,
     Sighash,
     SourceHash,
+    RequestId,
+    TicketId,
+    RefundTo,
+    MaxRefund,
+    SubmissionFeeRefund,
+    L1BaseFee,
+    DepositValue,
+    RetryTo,
+    RetryValue,
+    RetryData,
+    Beneficiary,
+    MaxSubmissionFee,
 }
 
 impl Ord for TransactionField {
@@ -1018,7 +1030,19 @@ impl TransactionField {
             | TransactionField::L1BlobBaseFeeScalar
             | TransactionField::L1BlockNumber
             | TransactionField::Mint
-            | TransactionField::SourceHash => true,
+            | TransactionField::SourceHash
+            | TransactionField::RequestId
+            | TransactionField::TicketId
+            | TransactionField::RefundTo
+            | TransactionField::MaxRefund
+            | TransactionField::SubmissionFeeRefund
+            | TransactionField::L1BaseFee
+            | TransactionField::DepositValue
+            | TransactionField::RetryTo
+            | TransactionField::RetryValue
+            | TransactionField::RetryData
+            | TransactionField::Beneficiary
+            | TransactionField::MaxSubmissionFee => true,
             TransactionField::BlockHash
             | TransactionField::BlockNumber
             | TransactionField::Gas
@@ -1145,6 +1169,42 @@ impl TransactionField {
             TransactionField::SourceHash => {
                 crate::hypersync_net_types_capnp::TransactionField::SourceHash
             }
+            TransactionField::RequestId => {
+                crate::hypersync_net_types_capnp::TransactionField::RequestId
+            }
+            TransactionField::TicketId => {
+                crate::hypersync_net_types_capnp::TransactionField::TicketId
+            }
+            TransactionField::RefundTo => {
+                crate::hypersync_net_types_capnp::TransactionField::RefundTo
+            }
+            TransactionField::MaxRefund => {
+                crate::hypersync_net_types_capnp::TransactionField::MaxRefund
+            }
+            TransactionField::SubmissionFeeRefund => {
+                crate::hypersync_net_types_capnp::TransactionField::SubmissionFeeRefund
+            }
+            TransactionField::L1BaseFee => {
+                crate::hypersync_net_types_capnp::TransactionField::L1BaseFee
+            }
+            TransactionField::DepositValue => {
+                crate::hypersync_net_types_capnp::TransactionField::DepositValue
+            }
+            TransactionField::RetryTo => {
+                crate::hypersync_net_types_capnp::TransactionField::RetryTo
+            }
+            TransactionField::RetryValue => {
+                crate::hypersync_net_types_capnp::TransactionField::RetryValue
+            }
+            TransactionField::RetryData => {
+                crate::hypersync_net_types_capnp::TransactionField::RetryData
+            }
+            TransactionField::Beneficiary => {
+                crate::hypersync_net_types_capnp::TransactionField::Beneficiary
+            }
+            TransactionField::MaxSubmissionFee => {
+                crate::hypersync_net_types_capnp::TransactionField::MaxSubmissionFee
+            }
         }
     }
 
@@ -1258,6 +1318,42 @@ impl TransactionField {
             }
             crate::hypersync_net_types_capnp::TransactionField::SourceHash => {
                 TransactionField::SourceHash
+            }
+            crate::hypersync_net_types_capnp::TransactionField::RequestId => {
+                TransactionField::RequestId
+            }
+            crate::hypersync_net_types_capnp::TransactionField::TicketId => {
+                TransactionField::TicketId
+            }
+            crate::hypersync_net_types_capnp::TransactionField::RefundTo => {
+                TransactionField::RefundTo
+            }
+            crate::hypersync_net_types_capnp::TransactionField::MaxRefund => {
+                TransactionField::MaxRefund
+            }
+            crate::hypersync_net_types_capnp::TransactionField::SubmissionFeeRefund => {
+                TransactionField::SubmissionFeeRefund
+            }
+            crate::hypersync_net_types_capnp::TransactionField::L1BaseFee => {
+                TransactionField::L1BaseFee
+            }
+            crate::hypersync_net_types_capnp::TransactionField::DepositValue => {
+                TransactionField::DepositValue
+            }
+            crate::hypersync_net_types_capnp::TransactionField::RetryTo => {
+                TransactionField::RetryTo
+            }
+            crate::hypersync_net_types_capnp::TransactionField::RetryValue => {
+                TransactionField::RetryValue
+            }
+            crate::hypersync_net_types_capnp::TransactionField::RetryData => {
+                TransactionField::RetryData
+            }
+            crate::hypersync_net_types_capnp::TransactionField::Beneficiary => {
+                TransactionField::Beneficiary
+            }
+            crate::hypersync_net_types_capnp::TransactionField::MaxSubmissionFee => {
+                TransactionField::MaxSubmissionFee
             }
         }
     }

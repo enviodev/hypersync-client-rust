@@ -210,6 +210,21 @@ impl TryFrom<TransactionReader<'_>> for Transaction {
         let mint = to_nested_opt(reader.mint()).context("read field mint")?;
         let sighash = to_nested_opt(reader.sighash()).context("read field sighash")?;
         let source_hash = to_nested_opt(reader.source_hash()).context("read field source_hash")?;
+        let request_id = to_nested_opt(reader.request_id()).context("read field request_id")?;
+        let ticket_id = to_nested_opt(reader.ticket_id()).context("read field ticket_id")?;
+        let refund_to = to_nested_opt(reader.refund_to()).context("read field refund_to")?;
+        let max_refund = to_nested_opt(reader.max_refund()).context("read field max_refund")?;
+        let submission_fee_refund = to_nested_opt(reader.submission_fee_refund())
+            .context("read field submission_fee_refund")?;
+        let l1_base_fee = to_nested_opt(reader.l1_base_fee()).context("read field l1_base_fee")?;
+        let deposit_value =
+            to_nested_opt(reader.deposit_value()).context("read field deposit_value")?;
+        let retry_to = to_nested_opt(reader.retry_to()).context("read field retry_to")?;
+        let retry_value = to_nested_opt(reader.retry_value()).context("read field retry_value")?;
+        let retry_data = to_nested_opt(reader.retry_data()).context("read field retry_data")?;
+        let beneficiary = to_nested_opt(reader.beneficiary()).context("read field beneficiary")?;
+        let max_submission_fee =
+            to_nested_opt(reader.max_submission_fee()).context("read field max_submission_fee")?;
 
         Ok(Self {
             block_hash,
@@ -258,6 +273,18 @@ impl TryFrom<TransactionReader<'_>> for Transaction {
             mint,
             sighash,
             source_hash,
+            request_id,
+            ticket_id,
+            refund_to,
+            max_refund,
+            submission_fee_refund,
+            l1_base_fee,
+            deposit_value,
+            retry_to,
+            retry_value,
+            retry_data,
+            beneficiary,
+            max_submission_fee,
         })
     }
 }

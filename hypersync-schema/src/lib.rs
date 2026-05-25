@@ -100,6 +100,18 @@ pub fn transaction() -> SchemaRef {
         Field::new("l1_block_number", quantity_dt(), NULLABLE),
         Field::new("mint", quantity_dt(), NULLABLE),
         Field::new("source_hash", hash_dt(), NULLABLE),
+        Field::new("request_id", hash_dt(), NULLABLE),
+        Field::new("ticket_id", hash_dt(), NULLABLE),
+        Field::new("refund_to", addr_dt(), NULLABLE),
+        Field::new("max_refund", quantity_dt(), NULLABLE),
+        Field::new("submission_fee_refund", quantity_dt(), NULLABLE),
+        Field::new("l1_base_fee", quantity_dt(), NULLABLE),
+        Field::new("deposit_value", quantity_dt(), NULLABLE),
+        Field::new("retry_to", addr_dt(), NULLABLE),
+        Field::new("retry_value", quantity_dt(), NULLABLE),
+        Field::new("retry_data", DataType::Binary, NULLABLE),
+        Field::new("beneficiary", addr_dt(), NULLABLE),
+        Field::new("max_submission_fee", quantity_dt(), NULLABLE),
     ])
     .into()
 }
