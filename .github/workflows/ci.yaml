@@ -45,11 +45,7 @@ jobs:
           override: true
       - uses: Swatinem/rust-cache@v2
       - name: Verify publishable crates package correctly
-        run: |
-          cargo package -p hypersync-format
-          cargo package -p hypersync-schema
-          cargo package -p hypersync-net-types
-          cargo package -p hypersync-client
+        run: cargo package -p hypersync-format -p hypersync-schema -p hypersync-net-types -p hypersync-client
 
   lint:
     runs-on: ubuntu-latest
