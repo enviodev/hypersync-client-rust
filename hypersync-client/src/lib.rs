@@ -1307,6 +1307,35 @@ impl Client {
         }
     }
 
+    /// Executes query and returns joined events along with rate limit
+    /// information from the server.
+    ///
+    /// Unlike [`get_events`](Self::get_events), this method does **not** retry
+    /// on HTTP 429 responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
+    pub async fn get_events_with_rate_limit(
+        &self,
+        mut query: Query,
+    ) -> Result<RateLimitResponse<Vec<simple_types::Event>>> {
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
+        match self.get_arrow_with_rate_limit(&query).await? {
+            RateLimitResponse::Success {
+                response,
+                rate_limit,
+            } => {
+                let converted =
+                    EventResponse::try_from_arrow_response(&response, &event_join_strategy)?;
+                Ok(RateLimitResponse::Success {
+                    response: converted,
+                    rate_limit,
+                })
+            }
+            RateLimitResponse::RateLimited(info) => Ok(RateLimitResponse::RateLimited(info)),
+        }
+    }
+
     /// Returns the most recently observed rate limit information, if any.
     ///
     /// Updated after every request (including inside streams). Returns `None`
