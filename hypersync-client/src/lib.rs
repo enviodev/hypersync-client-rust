@@ -1014,19 +1014,19 @@ impl Client {
 
     /// Internal implementation for get_arrow.
     ///
-    /// When `retry_on_rate_limit` is `false`, a 429 response is returned
+    /// When `wait_on_rate_limit` is `false`, a 429 response is returned
     /// immediately with the rate limit info instead of being retried.
     async fn get_arrow_with_size(
         &self,
         query: &Query,
-        retry_on_rate_limit: bool,
+        wait_on_rate_limit: bool,
     ) -> Result<ArrowImplResponse> {
         let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
         if self.inner.proactive_rate_limit_sleep {
-            if retry_on_rate_limit {
+            if wait_on_rate_limit {
                 self.wait_for_rate_limit().await;
             } else if let Some(rate_limit) = self.get_proactive_rate_limit_info() {
                 return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
@@ -1043,7 +1043,7 @@ impl Client {
                 }
                 Err(HyperSyncResponseError::RateLimited { rate_limit }) => {
                     self.update_rate_limit_state(&rate_limit);
-                    if !retry_on_rate_limit {
+                    if !wait_on_rate_limit {
                         return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
                             rate_limit
                         }));
