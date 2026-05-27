@@ -1045,9 +1045,9 @@ impl Client {
                     }
                     let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
                     log::warn!(
-                        "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
+                        "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                     );
-                    err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens"));
+                    err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens"));
                     tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                     continue;
                 }
@@ -1329,7 +1329,7 @@ impl Client {
         if let Some((secs, info)) = wait_info {
             if secs > 0 {
                 log::warn!(
-                    "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
+                    "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                 );
                 tokio::time::sleep(Duration::from_secs(secs)).await;
             }
@@ -1889,7 +1889,7 @@ pub enum HyperSyncResponseError {
     #[error("hypersync responded with 'payload too large' error")]
     PayloadTooLarge,
     /// Server responded with 429 Too Many Requests.
-    #[error("rate limited by server. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens")]
+    #[error("rate limited by server. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens")]
     RateLimited {
         /// Rate limit information from the 429 response headers.
         rate_limit: RateLimitInfo,
