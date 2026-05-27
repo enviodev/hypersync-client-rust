@@ -773,13 +773,18 @@ impl Client {
     async fn get_arrow_impl_json(
         &self,
         query: &Query,
+        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
         segments.push("arrow-ipc");
         std::mem::drop(segments);
-        let req = self.inner.http_client.request(Method::POST, url);
+        let req = if use_timeout {
+            self.inner.http_client.request(Method::POST, url)
+        } else {
+            self.inner.http_client.request_no_timeout(Method::POST, url)
+        };
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -828,6 +833,7 @@ impl Client {
     async fn get_arrow_impl_capnp(
         &self,
         query: &Query,
+        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
@@ -853,7 +859,13 @@ impl Client {
                 query_with_id
             };
 
-            let req = self.inner.http_client.request(Method::POST, url.clone());
+            let req = if use_timeout {
+                self.inner.http_client.request(Method::POST, url.clone())
+            } else {
+                self.inner
+                    .http_client
+                    .request_no_timeout(Method::POST, url.clone())
+            };
 
             let res = req
                 .body(query_with_id)
@@ -922,7 +934,11 @@ impl Client {
             bytes
         };
 
-        let req = self.inner.http_client.request(Method::POST, url);
+        let req = if use_timeout {
+            self.inner.http_client.request(Method::POST, url)
+        } else {
+            self.inner.http_client.request_no_timeout(Method::POST, url)
+        };
 
         let res = req
             .body(full_query_bytes)
@@ -966,12 +982,15 @@ impl Client {
     async fn get_arrow_impl(
         &self,
         query: &Query,
+        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut query = query.clone();
         loop {
             let res = match self.inner.serialization_format {
-                SerializationFormat::Json => self.get_arrow_impl_json(&query).await,
-                SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(&query).await,
+                SerializationFormat::Json => self.get_arrow_impl_json(&query, use_timeout).await,
+                SerializationFormat::CapnProto { .. } => {
+                    self.get_arrow_impl_capnp(&query, use_timeout).await
+                }
             };
             match res {
                 Ok(res) => return Ok(res),
@@ -1007,13 +1026,17 @@ impl Client {
 
     /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
-        self.get_arrow_with_size(query)
+        self.get_arrow_with_size(query, true)
             .await
             .map(|res| res.response)
     }
 
     /// Internal implementation for get_arrow.
-    async fn get_arrow_with_size(&self, query: &Query) -> Result<ArrowImplResponse> {
+    async fn get_arrow_with_size(
+        &self,
+        query: &Query,
+        use_timeout: bool,
+    ) -> Result<ArrowImplResponse> {
         let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
@@ -1024,7 +1047,7 @@ impl Client {
         }
 
         for _ in 0..self.inner.max_num_retries + 1 {
-            match self.get_arrow_impl(query).await {
+            match self.get_arrow_impl(query, use_timeout).await {
                 Ok(res) => {
                     self.update_rate_limit_state(&res.rate_limit);
                     return Ok(res);
@@ -1246,7 +1269,7 @@ impl Client {
         &self,
         query: &Query,
     ) -> Result<QueryResponseWithRateLimit<ArrowResponseData>> {
-        let result = self.get_arrow_with_size(query).await?;
+        let result = self.get_arrow_with_size(query, false).await?;
         Ok(QueryResponseWithRateLimit {
             response: result.response,
             rate_limit: result.rate_limit,

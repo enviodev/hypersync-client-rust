@@ -403,7 +403,7 @@ async fn run_query_to_end(
 
     loop {
         let result = client
-            .get_arrow_with_size(&query)
+            .get_arrow_with_size(&query, true)
             .await
             .context("get data")?;
         let resp = result.response;
