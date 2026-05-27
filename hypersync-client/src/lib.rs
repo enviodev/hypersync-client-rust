@@ -773,18 +773,13 @@ impl Client {
     async fn get_arrow_impl_json(
         &self,
         query: &Query,
-        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
         segments.push("query");
         segments.push("arrow-ipc");
         std::mem::drop(segments);
-        let req = if use_timeout {
-            self.inner.http_client.request(Method::POST, url)
-        } else {
-            self.inner.http_client.request_no_timeout(Method::POST, url)
-        };
+        let req = self.inner.http_client.request(Method::POST, url);
 
         let res = req.json(&query).send().await.context("execute http req")?;
 
@@ -833,7 +828,6 @@ impl Client {
     async fn get_arrow_impl_capnp(
         &self,
         query: &Query,
-        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut url = self.inner.url.clone();
         let mut segments = url.path_segments_mut().ok().context("get path segments")?;
@@ -859,13 +853,7 @@ impl Client {
                 query_with_id
             };
 
-            let req = if use_timeout {
-                self.inner.http_client.request(Method::POST, url.clone())
-            } else {
-                self.inner
-                    .http_client
-                    .request_no_timeout(Method::POST, url.clone())
-            };
+            let req = self.inner.http_client.request(Method::POST, url.clone());
 
             let res = req
                 .body(query_with_id)
@@ -934,11 +922,7 @@ impl Client {
             bytes
         };
 
-        let req = if use_timeout {
-            self.inner.http_client.request(Method::POST, url)
-        } else {
-            self.inner.http_client.request_no_timeout(Method::POST, url)
-        };
+        let req = self.inner.http_client.request(Method::POST, url);
 
         let res = req
             .body(full_query_bytes)
@@ -982,15 +966,12 @@ impl Client {
     async fn get_arrow_impl(
         &self,
         query: &Query,
-        use_timeout: bool,
     ) -> std::result::Result<ArrowImplResponse, HyperSyncResponseError> {
         let mut query = query.clone();
         loop {
             let res = match self.inner.serialization_format {
-                SerializationFormat::Json => self.get_arrow_impl_json(&query, use_timeout).await,
-                SerializationFormat::CapnProto { .. } => {
-                    self.get_arrow_impl_capnp(&query, use_timeout).await
-                }
+                SerializationFormat::Json => self.get_arrow_impl_json(&query).await,
+                SerializationFormat::CapnProto { .. } => self.get_arrow_impl_capnp(&query).await,
             };
             match res {
                 Ok(res) => return Ok(res),
@@ -1032,10 +1013,13 @@ impl Client {
     }
 
     /// Internal implementation for get_arrow.
+    ///
+    /// When `retry_on_rate_limit` is `false`, a 429 response is returned
+    /// immediately with the rate limit info instead of being retried.
     async fn get_arrow_with_size(
         &self,
         query: &Query,
-        use_timeout: bool,
+        retry_on_rate_limit: bool,
     ) -> Result<ArrowImplResponse> {
         let mut base = self.inner.retry_base_ms;
 
@@ -1047,13 +1031,18 @@ impl Client {
         }
 
         for _ in 0..self.inner.max_num_retries + 1 {
-            match self.get_arrow_impl(query, use_timeout).await {
+            match self.get_arrow_impl(query).await {
                 Ok(res) => {
                     self.update_rate_limit_state(&res.rate_limit);
                     return Ok(res);
                 }
                 Err(HyperSyncResponseError::RateLimited { rate_limit }) => {
                     self.update_rate_limit_state(&rate_limit);
+                    if !retry_on_rate_limit {
+                        return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
+                            rate_limit
+                        }));
+                    }
                     let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
                     log::warn!(
                         "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
@@ -1260,11 +1249,13 @@ impl Client {
         stream::stream_arrow(self, query, config).await
     }
 
-    /// Executes query with retries and returns the response in Arrow format along with
+    /// Executes query and returns the response in Arrow format along with
     /// rate limit information from the server.
     ///
-    /// This is useful for consumers that want to inspect rate limit headers and implement
-    /// their own rate limiting logic in external systems.
+    /// Unlike [`get_arrow`](Self::get_arrow), this method does **not** retry on
+    /// HTTP 429 responses. Instead it returns the rate limit info as a
+    /// [`HyperSyncResponseError::RateLimited`] error so the caller can handle
+    /// back-off externally. Other transient errors are still retried normally.
     pub async fn get_arrow_with_rate_limit(
         &self,
         query: &Query,
@@ -1276,11 +1267,13 @@ impl Client {
         })
     }
 
-    /// Executes query with retries and returns the response along with
+    /// Executes query and returns the response along with
     /// rate limit information from the server.
     ///
-    /// This is useful for consumers that want to inspect rate limit headers and implement
-    /// their own rate limiting logic in external systems.
+    /// Unlike [`get`](Self::get), this method does **not** retry on HTTP 429
+    /// responses. Instead it returns the rate limit info as a
+    /// [`HyperSyncResponseError::RateLimited`] error so the caller can handle
+    /// back-off externally. Other transient errors are still retried normally.
     pub async fn get_with_rate_limit(
         &self,
         query: &Query,
