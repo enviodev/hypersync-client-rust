@@ -47,7 +47,7 @@ pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use rate_limit::RateLimitInfo;
 pub use types::{
-    ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, QueryResponseWithRateLimit,
+    ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, RateLimitResponse,
 };
 
 use crate::parse_response::read_query_response;
@@ -1258,38 +1258,53 @@ impl Client {
     /// rate limit information from the server.
     ///
     /// Unlike [`get_arrow`](Self::get_arrow), this method does **not** retry on
-    /// HTTP 429 responses. Instead it returns the rate limit info as a
-    /// [`HyperSyncResponseError::RateLimited`] error so the caller can handle
-    /// back-off externally. Other transient errors are still retried normally.
+    /// HTTP 429 responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
     pub async fn get_arrow_with_rate_limit(
         &self,
         query: &Query,
-    ) -> Result<QueryResponseWithRateLimit<ArrowResponseData>> {
-        let result = self.get_arrow_with_size(query, false).await?;
-        Ok(QueryResponseWithRateLimit {
-            response: result.response,
-            rate_limit: result.rate_limit,
-        })
+    ) -> Result<RateLimitResponse<ArrowResponseData>> {
+        match self.get_arrow_with_size(query, false).await {
+            Ok(result) => Ok(RateLimitResponse::Success {
+                response: result.response,
+                rate_limit: result.rate_limit,
+            }),
+            Err(e) => match e.downcast::<HyperSyncResponseError>() {
+                Ok(HyperSyncResponseError::RateLimited { rate_limit }) => {
+                    Ok(RateLimitResponse::RateLimited(rate_limit))
+                }
+                Ok(other) => Err(other.into()),
+                Err(e) => Err(e),
+            },
+        }
     }
 
     /// Executes query and returns the response along with
     /// rate limit information from the server.
     ///
     /// Unlike [`get`](Self::get), this method does **not** retry on HTTP 429
-    /// responses. Instead it returns the rate limit info as a
-    /// [`HyperSyncResponseError::RateLimited`] error so the caller can handle
-    /// back-off externally. Other transient errors are still retried normally.
+    /// responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
     pub async fn get_with_rate_limit(
         &self,
         query: &Query,
-    ) -> Result<QueryResponseWithRateLimit<ResponseData>> {
-        let result = self.get_arrow_with_rate_limit(query).await?;
-        let converted =
-            QueryResponse::try_from(&result.response).context("convert arrow response")?;
-        Ok(QueryResponseWithRateLimit {
-            response: converted,
-            rate_limit: result.rate_limit,
-        })
+    ) -> Result<RateLimitResponse<ResponseData>> {
+        match self.get_arrow_with_rate_limit(query).await? {
+            RateLimitResponse::Success {
+                response,
+                rate_limit,
+            } => {
+                let converted =
+                    QueryResponse::try_from(&response).context("convert arrow response")?;
+                Ok(RateLimitResponse::Success {
+                    response: converted,
+                    rate_limit,
+                })
+            }
+            RateLimitResponse::RateLimited(info) => Ok(RateLimitResponse::RateLimited(info)),
+        }
     }
 
     /// Returns the most recently observed rate limit information, if any.
