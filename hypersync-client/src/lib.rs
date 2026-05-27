@@ -1025,9 +1025,14 @@ impl Client {
 
         let mut err = anyhow!("");
 
-        // Proactive throttling: if we know we're rate limited, wait before sending
         if self.inner.proactive_rate_limit_sleep {
-            self.wait_for_rate_limit().await;
+            if retry_on_rate_limit {
+                self.wait_for_rate_limit().await;
+            } else if let Some(rate_limit) = self.get_proactive_rate_limit_info() {
+                return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
+                    rate_limit
+                }));
+            }
         }
 
         for _ in 0..self.inner.max_num_retries + 1 {
@@ -1300,6 +1305,30 @@ impl Client {
             .map(|(info, _captured_at)| info.clone())
     }
 
+    /// Returns the current rate limit info if the client is known to be rate-limited
+    /// and the reset window has not yet elapsed.
+    fn get_proactive_rate_limit_info(&self) -> Option<RateLimitInfo> {
+        let state = self
+            .inner
+            .rate_limit_state
+            .lock()
+            .expect("rate_limit_state mutex poisoned");
+        match state.as_ref() {
+            Some((info, captured_at)) if info.is_rate_limited() => {
+                let remaining_wait = info.suggested_wait_secs().map(|secs| {
+                    let elapsed = captured_at.elapsed().as_secs();
+                    secs.saturating_sub(elapsed)
+                });
+                if remaining_wait.unwrap_or(0) > 0 {
+                    Some(info.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Waits until the current rate limit window resets, if the client is rate limited.
     ///
     /// Returns immediately if:
@@ -1309,24 +1338,8 @@ impl Client {
     /// This method is useful for consumers who want to explicitly wait before making
     /// requests, for example when coordinating rate limits across multiple systems.
     pub async fn wait_for_rate_limit(&self) {
-        let wait_info = {
-            let state = self
-                .inner
-                .rate_limit_state
-                .lock()
-                .expect("rate_limit_state mutex poisoned");
-            match state.as_ref() {
-                Some((info, captured_at)) if info.is_rate_limited() => {
-                    info.suggested_wait_secs().map(|secs| {
-                        let elapsed = captured_at.elapsed().as_secs();
-                        let remaining_wait = secs.saturating_sub(elapsed);
-                        (remaining_wait, info.clone())
-                    })
-                }
-                _ => None,
-            }
-        };
-        if let Some((secs, info)) = wait_info {
+        if let Some(info) = self.get_proactive_rate_limit_info() {
+            let secs = info.suggested_wait_secs().unwrap_or(0);
             if secs > 0 {
                 log::warn!(
                     "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
