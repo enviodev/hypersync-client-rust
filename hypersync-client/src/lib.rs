@@ -47,7 +47,7 @@ pub use decode::Decoder;
 pub use decode_call::CallDecoder;
 pub use rate_limit::RateLimitInfo;
 pub use types::{
-    ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, QueryResponseWithRateLimit,
+    ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, RateLimitResponse,
 };
 
 use crate::parse_response::read_query_response;
@@ -1007,20 +1007,33 @@ impl Client {
 
     /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
-        self.get_arrow_with_size(query)
+        const WAIT_ON_RATE_LIMIT: bool = true;
+        self.get_arrow_with_size(query, WAIT_ON_RATE_LIMIT)
             .await
             .map(|res| res.response)
     }
 
     /// Internal implementation for get_arrow.
-    async fn get_arrow_with_size(&self, query: &Query) -> Result<ArrowImplResponse> {
+    ///
+    /// When `wait_on_rate_limit` is `false`, a 429 response is returned
+    /// immediately with the rate limit info instead of being retried.
+    async fn get_arrow_with_size(
+        &self,
+        query: &Query,
+        wait_on_rate_limit: bool,
+    ) -> Result<ArrowImplResponse> {
         let mut base = self.inner.retry_base_ms;
 
         let mut err = anyhow!("");
 
-        // Proactive throttling: if we know we're rate limited, wait before sending
         if self.inner.proactive_rate_limit_sleep {
-            self.wait_for_rate_limit().await;
+            if wait_on_rate_limit {
+                self.wait_for_rate_limit().await;
+            } else if let Some(rate_limit) = self.get_proactive_rate_limit_info() {
+                return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
+                    rate_limit
+                }));
+            }
         }
 
         for _ in 0..self.inner.max_num_retries + 1 {
@@ -1031,11 +1044,16 @@ impl Client {
                 }
                 Err(HyperSyncResponseError::RateLimited { rate_limit }) => {
                     self.update_rate_limit_state(&rate_limit);
+                    if !wait_on_rate_limit {
+                        return Err(anyhow::anyhow!(HyperSyncResponseError::RateLimited {
+                            rate_limit
+                        }));
+                    }
                     let wait_secs = rate_limit.suggested_wait_secs().unwrap_or(1) + 1;
                     log::warn!(
-                        "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
+                        "rate limited by server ({rate_limit}), waiting {wait_secs}s before retry. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                     );
-                    err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens"));
+                    err = err.context(format!("rate limited by server ({rate_limit}). To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens"));
                     tokio::time::sleep(Duration::from_secs(wait_secs)).await;
                     continue;
                 }
@@ -1237,38 +1255,87 @@ impl Client {
         stream::stream_arrow(self, query, config).await
     }
 
-    /// Executes query with retries and returns the response in Arrow format along with
+    /// Executes query and returns the response in Arrow format along with
     /// rate limit information from the server.
     ///
-    /// This is useful for consumers that want to inspect rate limit headers and implement
-    /// their own rate limiting logic in external systems.
+    /// Unlike [`get_arrow`](Self::get_arrow), this method does **not** retry on
+    /// HTTP 429 responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
     pub async fn get_arrow_with_rate_limit(
         &self,
         query: &Query,
-    ) -> Result<QueryResponseWithRateLimit<ArrowResponseData>> {
-        let result = self.get_arrow_with_size(query).await?;
-        Ok(QueryResponseWithRateLimit {
-            response: result.response,
-            rate_limit: result.rate_limit,
-        })
+    ) -> Result<RateLimitResponse<ArrowResponseData>> {
+        const WAIT_ON_RATE_LIMIT: bool = false;
+        match self.get_arrow_with_size(query, WAIT_ON_RATE_LIMIT).await {
+            Ok(result) => Ok(RateLimitResponse::Success {
+                response: result.response,
+                rate_limit: result.rate_limit,
+            }),
+            Err(e) => match e.downcast::<HyperSyncResponseError>() {
+                Ok(HyperSyncResponseError::RateLimited { rate_limit }) => {
+                    Ok(RateLimitResponse::RateLimited(rate_limit))
+                }
+                Ok(other) => Err(other.into()),
+                Err(e) => Err(e),
+            },
+        }
     }
 
-    /// Executes query with retries and returns the response along with
+    /// Executes query and returns the response along with
     /// rate limit information from the server.
     ///
-    /// This is useful for consumers that want to inspect rate limit headers and implement
-    /// their own rate limiting logic in external systems.
+    /// Unlike [`get`](Self::get), this method does **not** retry on HTTP 429
+    /// responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
     pub async fn get_with_rate_limit(
         &self,
         query: &Query,
-    ) -> Result<QueryResponseWithRateLimit<ResponseData>> {
-        let result = self.get_arrow_with_rate_limit(query).await?;
-        let converted =
-            QueryResponse::try_from(&result.response).context("convert arrow response")?;
-        Ok(QueryResponseWithRateLimit {
-            response: converted,
-            rate_limit: result.rate_limit,
-        })
+    ) -> Result<RateLimitResponse<ResponseData>> {
+        match self.get_arrow_with_rate_limit(query).await? {
+            RateLimitResponse::Success {
+                response,
+                rate_limit,
+            } => {
+                let converted =
+                    QueryResponse::try_from(&response).context("convert arrow response")?;
+                Ok(RateLimitResponse::Success {
+                    response: converted,
+                    rate_limit,
+                })
+            }
+            RateLimitResponse::RateLimited(info) => Ok(RateLimitResponse::RateLimited(info)),
+        }
+    }
+
+    /// Executes query and returns joined events along with rate limit
+    /// information from the server.
+    ///
+    /// Unlike [`get_events`](Self::get_events), this method does **not** retry
+    /// on HTTP 429 responses. Instead it returns
+    /// [`RateLimitResponse::RateLimited`] so the caller can implement their own
+    /// back-off. Other transient errors are still retried normally.
+    pub async fn get_events_with_rate_limit(
+        &self,
+        mut query: Query,
+    ) -> Result<RateLimitResponse<Vec<simple_types::Event>>> {
+        let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
+        event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
+        match self.get_arrow_with_rate_limit(&query).await? {
+            RateLimitResponse::Success {
+                response,
+                rate_limit,
+            } => {
+                let converted =
+                    EventResponse::try_from_arrow_response(&response, &event_join_strategy)?;
+                Ok(RateLimitResponse::Success {
+                    response: converted,
+                    rate_limit,
+                })
+            }
+            RateLimitResponse::RateLimited(info) => Ok(RateLimitResponse::RateLimited(info)),
+        }
     }
 
     /// Returns the most recently observed rate limit information, if any.
@@ -1284,6 +1351,30 @@ impl Client {
             .map(|(info, _captured_at)| info.clone())
     }
 
+    /// Returns the current rate limit info if the client is known to be rate-limited
+    /// and the reset window has not yet elapsed.
+    fn get_proactive_rate_limit_info(&self) -> Option<RateLimitInfo> {
+        let state = self
+            .inner
+            .rate_limit_state
+            .lock()
+            .expect("rate_limit_state mutex poisoned");
+        match state.as_ref() {
+            Some((info, captured_at)) if info.is_rate_limited() => {
+                let remaining_wait = info.suggested_wait_secs().map(|secs| {
+                    let elapsed = captured_at.elapsed().as_secs();
+                    secs.saturating_sub(elapsed)
+                });
+                if remaining_wait.unwrap_or(0) > 0 {
+                    Some(info.clone())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Waits until the current rate limit window resets, if the client is rate limited.
     ///
     /// Returns immediately if:
@@ -1293,27 +1384,11 @@ impl Client {
     /// This method is useful for consumers who want to explicitly wait before making
     /// requests, for example when coordinating rate limits across multiple systems.
     pub async fn wait_for_rate_limit(&self) {
-        let wait_info = {
-            let state = self
-                .inner
-                .rate_limit_state
-                .lock()
-                .expect("rate_limit_state mutex poisoned");
-            match state.as_ref() {
-                Some((info, captured_at)) if info.is_rate_limited() => {
-                    info.suggested_wait_secs().map(|secs| {
-                        let elapsed = captured_at.elapsed().as_secs();
-                        let remaining_wait = secs.saturating_sub(elapsed);
-                        (remaining_wait, info.clone())
-                    })
-                }
-                _ => None,
-            }
-        };
-        if let Some((secs, info)) = wait_info {
+        if let Some(info) = self.get_proactive_rate_limit_info() {
+            let secs = info.suggested_wait_secs().unwrap_or(0);
             if secs > 0 {
                 log::warn!(
-                    "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
+                    "rate limit exhausted ({info}), proactively waiting {secs}s for window reset. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens"
                 );
                 tokio::time::sleep(Duration::from_secs(secs)).await;
             }
@@ -1873,7 +1948,7 @@ pub enum HyperSyncResponseError {
     #[error("hypersync responded with 'payload too large' error")]
     PayloadTooLarge,
     /// Server responded with 429 Too Many Requests.
-    #[error("rate limited by server. To increase your rate limits, upgrade your plan at https://app.envio.dev/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens")]
+    #[error("rate limited by server. To increase your rate limits, upgrade your plan at https://envio.dev/app/api-tokens. For more info: https://docs.envio.dev/docs/HyperSync/api-tokens")]
     RateLimited {
         /// Rate limit information from the 429 response headers.
         rate_limit: RateLimitInfo,

@@ -125,15 +125,21 @@ pub type ArrowResponse = QueryResponse<ArrowResponseData>;
 /// Alias for Event oriented, vectorized QueryResponse
 pub type EventResponse = QueryResponse<Vec<Event>>;
 
-/// Response that includes rate limit information from the server.
+/// Response from a `_with_rate_limit` method.
 ///
-/// Returned by [`crate::Client::get_with_rate_limit`] and [`crate::Client::get_arrow_with_rate_limit`].
-/// Use this when you need to inspect rate limit headers for external monitoring or
-/// coordination across systems.
+/// On a successful query the `Success` variant contains both the response data
+/// and the rate limit headers. When the server responds with HTTP 429, the
+/// `RateLimited` variant is returned immediately (without internal retry) so
+/// the caller can implement their own back-off.
 #[derive(Debug, Clone)]
-pub struct QueryResponseWithRateLimit<T = ResponseData> {
-    /// The query response data.
-    pub response: QueryResponse<T>,
-    /// Rate limit information from response headers (if present).
-    pub rate_limit: RateLimitInfo,
+pub enum RateLimitResponse<T = ResponseData> {
+    /// The query succeeded.
+    Success {
+        /// The query response data.
+        response: QueryResponse<T>,
+        /// Rate limit information from response headers (if present).
+        rate_limit: RateLimitInfo,
+    },
+    /// The server responded with 429 Too Many Requests.
+    RateLimited(RateLimitInfo),
 }
