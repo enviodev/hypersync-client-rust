@@ -401,9 +401,10 @@ async fn run_query_to_end(
 
     let mut query = query;
 
+    const WAIT_ON_RATE_LIMIT: bool = true;
     loop {
         let result = client
-            .get_arrow_with_size(&query, true)
+            .get_arrow_with_size(&query, WAIT_ON_RATE_LIMIT)
             .await
             .context("get data")?;
         let resp = result.response;

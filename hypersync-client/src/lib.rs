@@ -1007,7 +1007,8 @@ impl Client {
 
     /// Executes query with retries and returns the response in Arrow format.
     pub async fn get_arrow(&self, query: &Query) -> Result<ArrowResponse> {
-        self.get_arrow_with_size(query, true)
+        const WAIT_ON_RATE_LIMIT: bool = true;
+        self.get_arrow_with_size(query, WAIT_ON_RATE_LIMIT)
             .await
             .map(|res| res.response)
     }
@@ -1265,7 +1266,8 @@ impl Client {
         &self,
         query: &Query,
     ) -> Result<RateLimitResponse<ArrowResponseData>> {
-        match self.get_arrow_with_size(query, false).await {
+        const WAIT_ON_RATE_LIMIT: bool = false;
+        match self.get_arrow_with_size(query, WAIT_ON_RATE_LIMIT).await {
             Ok(result) => Ok(RateLimitResponse::Success {
                 response: result.response,
                 rate_limit: result.rate_limit,
