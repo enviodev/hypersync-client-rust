@@ -58,7 +58,13 @@ stream yields.
   a request before its assigned end, the remainder becomes a *gap* to be picked up later.
 - **Earliest-hole-first scheduling.** A single scheduler task owns all state (no locks). The
   next free worker always takes the lowest-start range still needed — which naturally
-  prioritises truncation gaps (earlier in block space) over extending the frontier.
+  prioritises truncation gaps (earlier in block space) over extending the frontier. This is
+  also what lets us **start from a deliberately overestimated batch size and work backwards**
+  instead of creeping forward in many tiny, conservative ranges: an over-large request that
+  the server truncates simply leaves a gap that gets backfilled. Because overshoot is
+  self-correcting this way, **no hard `max_batch_size` cap is needed** — the only bound on a
+  request is the hole it sits in (the next chunk's start, or `to_block`) plus the server's
+  own response-size limit.
 - **Local, per-request size projection.** Each request's block span is projected from the
   byte-density of the nearest already-completed neighbour, aiming at a single configured
   target. The shared atomic `step`, the generation counter, and `BlockRangeIterator` are all
@@ -116,9 +122,11 @@ struct CompletedChunk {
 // All owned by the single scheduler task — no locks.
 delivered_up_to: u64,                       // watermark (starts at fast-track next_block)
 frontier:        u64,                        // highest block assigned-or-completed
+upper_bound:     u64,                        // exclusive top: to_block, or live archive height
 holes:           BTreeMap<u64 /*start*/, u64 /*end*/>,
 completed:       BTreeMap<u64 /*start*/, CompletedChunk>,
 in_flight:       JoinSet<FetchResult>,
+buffered_bytes:  u64,                        // Σ size_bytes of undelivered `completed` chunks
 last_density:    Option<f64>,                // bytes/block of most recent bounded response
 // running entity counts for max_num_* limits
 ```
@@ -131,52 +139,91 @@ last_density:    Option<f64>,                // bytes/block of most recent bound
 
 ```text
 seed:
+  open_ended  = query.to_block.is_none()
+  upper_bound = query.to_block, else archive height (fast-track resp / initial get_height())
   delivered_up_to = frontier = fast_track.next_block
-  holes = { frontier : to_block }            # one frontier hole
+  holes = { frontier : upper_bound }         # one frontier hole
   last_density = None                        # → first wave uses config.batch_size
 
 loop:
   # (a) fill the pipeline
   while in_flight.len() < concurrency:
-      H = holes.first()                      # lowest start = gaps before frontier
+      H = holes.first()                      # lowest start first → critical path before look-ahead
       if H is None: break
-      if H is the frontier hole
-         and in_flight.len() + completed.len() >= prefetch_cap:
-          break                              # throttle look-ahead; never blocks gap-fills
+      # consumer backpressure: once the undelivered buffer is full, pause *look-ahead* fetches.
+      # The hole at the watermark (H.start == delivered_up_to) is always allowed — it is the
+      # data delivery is waiting on, so exempting it serves the consumer AND avoids deadlock.
+      if H.start != delivered_up_to and buffered_bytes >= max_buffered_bytes:
+          break
       blocks  = project_blocks(anchor_below(H.start))   # §7
-      req_end = min(H.start + blocks, H.end) # cap at next chunk's start / to_block
+      req_end = min(H.start + blocks, H.end) # cap at next chunk's start / upper_bound
       move [H.start, req_end) : holes → in_flight ; shrink/remove H ; bump frontier
       spawn fetch(H.start, req_end)          # ONE get_arrow_with_size, then map_responses
 
   if in_flight.is_empty() and holes.is_empty():
-      break                                  # done
+      break                                  # done (bounded: hit to_block; open-ended: caught up)
 
   # (b) take one completion
   r = in_flight.join_next().await
   completed.insert(r.start, CompletedChunk { r.next_block, r.size_bytes, r.resp })
+  buffered_bytes += r.size_bytes
   if r.next_block < r.req_end:               # truncated → residual gap
       insert/merge hole [r.next_block, r.req_end)
   last_density = r.size_bytes / (r.next_block - r.start)
   update_warning_counter(truncated = r.next_block < r.req_end, size = r.size_bytes)   # §9
+  if open_ended and r.archive_height = Some(h) and h > upper_bound:   # chain advanced mid-stream
+      upper_bound = h
+      extend/open the frontier hole so the top hole reaches upper_bound
 
   # (c) drain contiguous deliveries
   while let Some(c) = completed.first() where c.start == delivered_up_to:
-      completed.pop_first()
-      tx.send(Ok(c.resp)).await              # backpressure here pauses the whole loop
+      c = completed.pop_first()
+      buffered_bytes -= c.size_bytes         # leaves the reorder buffer (enters the channel)
+      tx.send(Ok(c.resp)).await              # consumer backpressure pauses the whole loop here
       delivered_up_to = c.next_block
       accumulate entity counts
       if any max_num_* exceeded: return      # close the stream
 ```
 
-- `prefetch_cap = concurrency * 2` (mirrors v1's queue bound). A single slow gap can never
-  cause unbounded look-ahead, because frontier extension is throttled while gap-fills (lowest
-  holes) are always allowed.
+- **Consumer backpressure / memory** is bounded by `max_buffered_bytes` (config): the total
+  bytes of fetched-but-undelivered chunks in `completed`. Once it is reached the scheduler
+  stops launching *look-ahead* fetches — workers idle rather than race ahead of a slow
+  consumer — **except** the hole at the watermark, which is always allowed (it is the data the
+  consumer is waiting on, and exempting it prevents a deadlock where buffered look-ahead blocks
+  the very gap needed to drain it). In-flight fetches stay capped at `concurrency` and the
+  output channel keeps its `concurrency * 2` capacity, so resident memory is roughly
+  `max_buffered_bytes + (concurrency * 3) * response_size`. This bytes bound replaces v1's
+  count-based queue cap, which gave unpredictable memory as response sizes varied.
 - **Adjacent holes are merged** on insert: a residual gap `[next_block, req_end)` abuts the
   hole that already starts at `req_end`, so they coalesce to keep `holes` tidy and keep each
   hole's `end` equal to its true upper neighbour.
 - **`map_responses`** (hex encoding, log decoding, column mapping, reverse) runs **inside the
   fetch task** (on the rayon pool), so decode work parallelises across workers instead of
   running serially in the consumer.
+
+### `to_block` and the chain head
+
+Two modes, distinguished by whether `query.to_block` is set:
+
+- **Bounded** (`to_block` given): `upper_bound = to_block`, fixed. The run terminates when
+  `delivered_up_to == to_block`.
+- **Open-ended** (no `to_block`): `upper_bound` tracks the **archive height**. It is seeded
+  once at start (the fast-track response's `archive_height`, falling back to an initial
+  `get_height()`) and then advanced on **every** response to `max(upper_bound,
+  resp.archive_height)`. The frontier hole always extends to the current `upper_bound`, so if
+  the chain advances during a long stream the engine keeps going, and it only stops once it
+  has genuinely **caught up** — `holes` and `in_flight` both empty with
+  `delivered_up_to == upper_bound`, i.e. a response's `next_block` has reached the live
+  archive height.
+
+This fixes a stale-snapshot problem in v1, which resolved `to_block` to `get_height()` **once**
+up front: a stream that ran for a while could stop short of a head that advanced while it was
+running. Following the response-reported `archive_height` means we always finish at the live
+tip. (This is a "catch up to the head and stop" sync, not an indefinite live subscription —
+once caught up with no work pending, the stream ends.)
+
+Open-ended follow-to-head applies to **forward** streaming; in reverse the top is the start
+snapshot, since a reverse stream moves *away* from the head.
 
 ---
 
@@ -195,9 +242,9 @@ target  = config.response_bytes_target          # single knob, e.g. 400_000
 bytes   = anchor.size_bytes
 blocks  = anchor.next_block - anchor.start
 factor  = target / bytes                        # proportional controller
-projected = clamp(round(blocks * factor), min_batch_size, max_batch_size)
+projected = max(round(blocks * factor), min_batch_size)   # no upper clamp — overshoot is safe
 req_end   = min(h_start + projected, hole.end)  # gap → next chunk's from_block;
-                                                #  frontier → to_block
+                                                #  frontier → to_block (bounds the overshoot)
 ```
 
 We deliberately use a **single target** rather than a `[floor, ceiling]` dead-band:
@@ -213,8 +260,11 @@ We deliberately use a **single target** rather than a `[floor, ceiling]` dead-ba
   most requests *complete their assigned range without server truncation* (rare gaps, smooth
   delivery), at the cost of slightly more requests than aiming at the ceiling would.
 
-If `anchor.size_bytes` is ~0 (e.g. an empty bounded range), `factor` explodes and
-`projected` clamps to `max_batch_size` — sparse regions are fast-scanned automatically.
+If `anchor.size_bytes` is ~0 (e.g. an empty bounded range), `factor` explodes and `projected`
+is bounded only by the hole's end (`to_block` for the frontier) — so a sparse region is
+fast-scanned in a single over-large request, and any server truncation is simply backfilled.
+This is the same "overestimate and work backwards" mechanism as §3, and it is why no hard
+maximum block range is required.
 
 ---
 
@@ -275,8 +325,9 @@ upper limit, where truncation is expected and normal.
   `[start, next_block)`; it is delivered as one stream item, in block order — identical to
   v1's observable behaviour.
 - Delivery is gated on contiguity with `delivered_up_to`; `tx` is a bounded mpsc
-  (`capacity = concurrency * 2`), so a slow consumer applies backpressure that naturally
-  pauses scheduling.
+  (`capacity = concurrency * 2`) and the undelivered reorder buffer is capped by
+  `max_buffered_bytes`, so a slow consumer applies backpressure that pauses *look-ahead*
+  fetching (see §6) while still allowing the watermark hole to be filled.
 - `archive_height` and `rollback_guard` pass through per response unchanged.
 
 ---
@@ -309,20 +360,22 @@ existing `tests/api_test.rs` continues to provide real-endpoint parity coverage.
 
 ## 13. Configuration changes (breaking)
 
-`StreamConfig` collapses the two-field byte band into one target. This is a **breaking
-change** to the config surface; released as a deliberate minor (these params are rarely
-tuned).
+`StreamConfig` collapses the two-field byte band into a single target, drops `max_batch_size`
+(overshoot is now self-correcting — see §3 and §7), and adds `max_buffered_bytes` (consumer
+backpressure — see §6). This is a **breaking change** to the config surface; released as a
+deliberate minor (these params are rarely tuned).
 
 ```diff
  pub struct StreamConfig {
      ...
-     pub batch_size: u64,            // first-wave size + fallback until density is known
-     pub max_batch_size: u64,        // hard clamp on projected blocks
-     pub min_batch_size: u64,        // hard clamp on projected blocks
+     pub batch_size: u64,            // initial (deliberately overestimated) size + fallback
+     pub min_batch_size: u64,        // hard lower clamp on projected blocks (avoids tiny ranges)
      pub concurrency: usize,         // 0 => error, 1 => sequential, >=2 => scheduler
+-    pub max_batch_size: u64,           // default 200_000 — removed; overshoot self-corrects
 -    pub response_bytes_ceiling: u64,   // default 500_000
 -    pub response_bytes_floor: u64,     // default 250_000
 +    pub response_bytes_target: u64,    // default 400_000 — projection aims each response here
++    pub max_buffered_bytes: u64,       // NEW — cap on undelivered reorder-buffer bytes
      ...
  }
 ```
@@ -332,8 +385,9 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
 | field | role in v2 |
 |---|---|
 | `response_bytes_target` | projection target; `/2` is the internal warning threshold |
-| `min_batch_size` / `max_batch_size` | hard clamps on projected block count |
-| `batch_size` | first-wave size + fallback before any density is measured |
+| `max_buffered_bytes` | cap on undelivered reorder-buffer bytes; throttles look-ahead under consumer backpressure |
+| `min_batch_size` | hard lower clamp on projected block count (avoids tiny ranges) |
+| `batch_size` | initial, deliberately-overestimated size + fallback before any density is measured |
 | `concurrency` | `0` errors, `1` sequential, `>=2` scheduler |
 
 ---
@@ -344,8 +398,9 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
    change in `config.rs`. Update tests and `tests/api_test.rs`.
 2. **Node** (`hypersync-client-node`) and **Python** (`hypersync-client-python`) — thin
    bindings that convert their own `StreamConfig` into the core one. Each needs the same
-   mechanical edit: drop `response_bytes_floor` / `response_bytes_ceiling`, add
-   `response_bytes_target`, update the conversion (`From` / `try_convert`). Then bump the
+   mechanical edit: drop `response_bytes_floor` / `response_bytes_ceiling` / `max_batch_size`,
+   add `response_bytes_target` and `max_buffered_bytes`, update the conversion
+   (`From` / `try_convert`). Then bump the
    `hypersync-client` dependency, rebuild (napi addon / maturin wheel), refresh
    `index.d.ts` / type stubs, and note the change in the changelog. During development the
    binding crates can point at this branch via a path/git dependency; on release they move
@@ -358,6 +413,6 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
 
 ## 15. Notes / future
 
-- The target could later be biased toward `response_bytes_ceiling`-style throughput (fewer,
-  bigger requests) or exposed as an explicit tuning knob if demand appears.
+- The target could later be biased higher (fewer, bigger requests, with more
+  truncation/backfill) or exposed as an explicit tuning knob if demand appears.
 - `log::trace!` per scheduled range is worth adding for debugging the scheduler.
