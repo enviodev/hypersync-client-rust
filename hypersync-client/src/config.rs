@@ -144,16 +144,21 @@ pub struct StreamConfig {
     /// Determines formatting of binary columns numbers into utf8 hex.
     #[serde(default)]
     pub hex_output: HexOutput,
-    /// Initial batch size. Size would be adjusted based on response size during execution.
+    /// Initial, deliberately-overestimated batch size, used for the first wave of
+    /// requests and as a fallback before any response density has been measured.
     #[serde(default = "StreamConfig::default_batch_size")]
     pub batch_size: u64,
-    /// Maximum batch size that could be used during dynamic adjustment.
-    #[serde(default = "StreamConfig::default_max_batch_size")]
-    pub max_batch_size: u64,
-    /// Minimum batch size that could be used during dynamic adjustment.
+    /// Optional hard upper cap on the number of blocks fetched in a single
+    /// request. `None` (the default) means no cap: an over-large request that the
+    /// server truncates simply leaves a gap that is backfilled, so overshoot is
+    /// self-correcting. Set it to bound blocks-per-chunk explicitly.
+    #[serde(default)]
+    pub max_batch_size: Option<u64>,
+    /// Hard lower clamp on the projected block count, to avoid tiny ranges.
     #[serde(default = "StreamConfig::default_min_batch_size")]
     pub min_batch_size: u64,
     /// Number of async threads that would be spawned to execute different block ranges of queries.
+    /// `0` is an error, `1` streams sequentially, `>= 2` uses the projecting scheduler.
     #[serde(default = "StreamConfig::default_concurrency")]
     pub concurrency: usize,
     /// Max number of blocks to fetch in a single request.
@@ -168,12 +173,15 @@ pub struct StreamConfig {
     /// Max number of traces to fetch in a single request.
     #[serde(default)]
     pub max_num_traces: Option<usize>,
-    /// Size of a response in bytes from which step size will be lowered
-    #[serde(default = "StreamConfig::default_response_bytes_ceiling")]
-    pub response_bytes_ceiling: u64,
-    /// Size of a response in bytes from which step size will be increased
-    #[serde(default = "StreamConfig::default_response_bytes_floor")]
-    pub response_bytes_floor: u64,
+    /// Target response size in bytes. Each request's block span is projected from
+    /// the most recently observed byte-density to aim each response at this size.
+    #[serde(default = "StreamConfig::default_response_bytes_target")]
+    pub response_bytes_target: u64,
+    /// Optional cap on the bytes of fetched-but-undelivered chunks held in the
+    /// reorder buffer (consumer backpressure). `None` (the default) resolves at
+    /// stream start to `2 * concurrency * response_bytes_target`.
+    #[serde(default)]
+    pub max_buffered_bytes: Option<u64>,
     /// Stream data in reverse order
     #[serde(default = "StreamConfig::default_reverse")]
     pub reverse: bool,
@@ -198,15 +206,15 @@ impl Default for StreamConfig {
             event_signature: None,
             hex_output: HexOutput::default(),
             batch_size: Self::default_batch_size(),
-            max_batch_size: Self::default_max_batch_size(),
+            max_batch_size: None,
             min_batch_size: Self::default_min_batch_size(),
             concurrency: Self::default_concurrency(),
             max_num_blocks: None,
             max_num_transactions: None,
             max_num_logs: None,
             max_num_traces: None,
-            response_bytes_ceiling: Self::default_response_bytes_ceiling(),
-            response_bytes_floor: Self::default_response_bytes_floor(),
+            response_bytes_target: Self::default_response_bytes_target(),
+            max_buffered_bytes: None,
             reverse: Self::default_reverse(),
         }
     }
@@ -223,24 +231,14 @@ impl StreamConfig {
         1000
     }
 
-    /// Default maximum batch size
-    pub const fn default_max_batch_size() -> u64 {
-        200_000
-    }
-
     /// Default minimum batch size
     pub const fn default_min_batch_size() -> u64 {
         200
     }
 
-    /// Default response bytes ceiling for dynamic batch adjustment
-    pub const fn default_response_bytes_ceiling() -> u64 {
-        500_000
-    }
-
-    /// Default response bytes floor for dynamic batch adjustment
-    pub const fn default_response_bytes_floor() -> u64 {
-        250_000
+    /// Default target response size in bytes that projection aims each response at
+    pub const fn default_response_bytes_target() -> u64 {
+        400_000
     }
 
     /// Default reverse streaming setting
@@ -301,10 +299,10 @@ mod tests {
         // Check that all defaults are applied correctly
         assert_eq!(default_config.concurrency, 10);
         assert_eq!(default_config.batch_size, 1000);
-        assert_eq!(default_config.max_batch_size, 200_000);
+        assert_eq!(default_config.max_batch_size, None);
         assert_eq!(default_config.min_batch_size, 200);
-        assert_eq!(default_config.response_bytes_ceiling, 500_000);
-        assert_eq!(default_config.response_bytes_floor, 250_000);
+        assert_eq!(default_config.response_bytes_target, 400_000);
+        assert_eq!(default_config.max_buffered_bytes, None);
         assert!(!default_config.reverse);
         assert_eq!(default_config.hex_output, HexOutput::NoEncode);
         assert!(default_config.column_mapping.is_none());
@@ -334,6 +332,15 @@ mod tests {
         assert!(partial_config.reverse);
         assert_eq!(partial_config.batch_size, 500);
         assert_eq!(partial_config.concurrency, 10); // should use default
-        assert_eq!(partial_config.max_batch_size, 200_000); // should use default
+        assert_eq!(partial_config.max_batch_size, None); // should use default
+        assert_eq!(partial_config.response_bytes_target, 400_000); // should use default
+        assert_eq!(partial_config.max_buffered_bytes, None); // should use default
+
+        // Explicitly setting the new optional caps round-trips.
+        let explicit_json = r#"{"max_batch_size": 50000, "response_bytes_target": 800000, "max_buffered_bytes": 1048576}"#;
+        let explicit_config: StreamConfig = serde_json::from_str(explicit_json).unwrap();
+        assert_eq!(explicit_config.max_batch_size, Some(50_000));
+        assert_eq!(explicit_config.response_bytes_target, 800_000);
+        assert_eq!(explicit_config.max_buffered_bytes, Some(1_048_576));
     }
 }

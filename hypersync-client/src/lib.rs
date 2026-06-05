@@ -1260,6 +1260,30 @@ impl Client {
         stream::stream_arrow(self, query, config).await
     }
 
+    /// Like [`stream_arrow`](Self::stream_arrow), but reports streaming metrics to
+    /// the given [`StreamObserver`].
+    ///
+    /// The engine calls [`StreamObserver::on_request`] for every completed HTTP
+    /// request, [`StreamObserver::on_progress`] once per scheduler iteration, and
+    /// [`StreamObserver::on_finish`] with the final [`StreamSummary`]. Pass an
+    /// `Arc<`[`StreamMetrics`]`>` for a ready-made aggregate handle you can read
+    /// during or after the stream, or implement the trait for custom exporters.
+    ///
+    /// This is the only entry point that does any metrics work; the plain
+    /// `stream*` methods have zero observability overhead.
+    ///
+    /// [`StreamMetrics`]: crate::StreamMetrics
+    /// [`StreamObserver`]: crate::StreamObserver
+    /// [`StreamSummary`]: crate::StreamSummary
+    pub async fn stream_arrow_with_observer(
+        &self,
+        query: Query,
+        config: StreamConfig,
+        observer: Arc<dyn crate::StreamObserver>,
+    ) -> Result<mpsc::Receiver<Result<ArrowResponse>>> {
+        stream::stream_arrow_with_observer(self, query, config, observer).await
+    }
+
     /// Executes query and returns the response in Arrow format along with
     /// rate limit information from the server.
     ///
