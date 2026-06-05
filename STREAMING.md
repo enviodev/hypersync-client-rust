@@ -420,9 +420,76 @@ bound memory more tightly, or higher to allow deeper buffering.
    `stream_handlers.go`); a manual port for parity is a **deferred follow-up**, not part of
    this change.
 
+Surfacing the metrics handle (§15) in node/python is a small fast-follow on top of the config
+edits above; the tuning CLI itself is Rust and usable by any caller via a query JSON.
+
 ---
 
-## 15. Notes / future
+## 15. Observability & tuning
+
+The dynamic knobs (`response_bytes_target`, `concurrency`, `max_batch_size`,
+`max_buffered_bytes`) are only useful if their effect is measurable. The engine records
+per-request metrics and an aggregate summary — used both to pick good library defaults and by
+end users to tune their own config.
+
+### Per-request metrics (`RequestStats`)
+
+Recorded as each request completes:
+
+| field | meaning |
+|---|---|
+| `from_block`, `requested_end`, `next_block` | requested vs actually-covered range |
+| `requested_blocks` / `actual_blocks` / `projected_blocks` | sizing intent vs reality (projection pre-clamp) |
+| `response_bytes`, `target_bytes`, `size_ratio` | **response size vs target** (`response_bytes / target_bytes`) |
+| `bytes_per_block` | observed density |
+| `truncated` | `next_block < requested_end` (server stopped early) |
+| `kind` | frontier vs gap-fill |
+| `duration` | request latency |
+
+### Aggregate summary (`StreamSummary`)
+
+Rolled up across all requests, readable live and at end-of-stream:
+
+- `num_requests`, `num_truncated` → truncation rate
+- `total_bytes`, `total_blocks`, `wall_clock` → `blocks/s`, `bytes/s`
+- **size-vs-target distribution**: mean `size_ratio`, p50/p90/p99 `response_bytes`, and
+  histogram buckets relative to target (`<0.25 / 0.25–0.5 / 0.5–0.75 / 0.75–1.0 / 1.0–1.25 /
+  >1.25 ×target`)
+- mean/median `bytes_per_block`; block-range size min/mean/max
+- `max_buffered_bytes_observed`, mean in-flight (spot buffer / concurrency saturation)
+- frontier vs gap-fill counts
+
+These answer the tuning questions directly: are responses landing near `response_bytes_target`?
+how often do we truncate? is throughput limited by `concurrency` or by `max_buffered_bytes`?
+
+### How metrics get out
+
+*Recommended:* an aggregate **`StreamMetrics` handle** (atomics + small fixed histograms behind
+an `Arc`) that the engine updates and the caller reads during/after the stream — cheap and
+binding-friendly (node/python expose it as a getter object). Plus, in Rust, an optional
+**`StreamObserver`** trait (`on_request(&RequestStats)`, `on_finish(&StreamSummary)`) attached
+via a `#[serde(skip)]` config field, for power users wiring custom exporters. *(See the open
+question.)*
+
+### Tuning tool (`examples/tune_stream`)
+
+A standalone runnable example: give it a query (JSON) + block range and a grid of configs
+(varying `response_bytes_target`, `concurrency`, `max_batch_size`, `max_buffered_bytes`); it
+runs each and prints a comparison table of the summary metrics, so you can pick the best
+(highest throughput, sizes near target, low truncation). Because it takes a query JSON it is
+usable by **any** user regardless of client language; a single-run mode prints one config's
+report, and behind a flag it `log::debug!`s one `RequestStats` line per request for ad-hoc
+inspection.
+
+### Open question
+
+Ship (a) the aggregate handle only, (b) handle **+** Rust `StreamObserver` trait, or (c) a
+per-request side-channel of `RequestStats`? Recommendation: **(b)** — the handle covers
+everyone including bindings, the observer covers Rust power users, at low complexity.
+
+---
+
+## 16. Notes / future
 
 - The target could later be biased higher (fewer, bigger requests, with more
   truncation/backfill) or exposed as an explicit tuning knob if demand appears.
