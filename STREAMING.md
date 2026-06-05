@@ -462,14 +462,26 @@ Rolled up across all requests, readable live and at end-of-stream:
 These answer the tuning questions directly: are responses landing near `response_bytes_target`?
 how often do we truncate? is throughput limited by `concurrency` or by `max_buffered_bytes`?
 
-### How metrics get out
+### API — explicit, opt-in, additive
 
-*Recommended:* an aggregate **`StreamMetrics` handle** (atomics + small fixed histograms behind
-an `Arc`) that the engine updates and the caller reads during/after the stream — cheap and
-binding-friendly (node/python expose it as a getter object). Plus, in Rust, an optional
-**`StreamObserver`** trait (`on_request(&RequestStats)`, `on_finish(&StreamSummary)`) attached
-via a `#[serde(skip)]` config field, for power users wiring custom exporters. *(See the open
-question.)*
+A **`StreamMetrics`** aggregate handle **plus** a **`StreamObserver`** trait, exposed
+**explicitly** — with **no change to the existing `stream` / `stream_arrow` / `stream_events`
+signatures** and **without** touching the serializable `StreamConfig`:
+
+- `StreamObserver` (public trait): `on_request(&self, &RequestStats)` and
+  `on_finish(&self, &StreamSummary)`.
+- `StreamMetrics` (public): a built-in `StreamObserver` that aggregates into the
+  `StreamSummary` above; a cheap cloneable `Arc` handle the caller reads live or after the run.
+- A dedicated entry point — e.g. `stream_arrow_with_observer(query, config, observer)` —
+  carries the observer. Callers who don't want metrics keep using today's methods unchanged,
+  with zero overhead. The observer is passed **explicitly** rather than stashed on
+  `StreamConfig`, so config stays pure serde data and the existing API is untouched.
+
+**Zero overhead when unused.** The whole metrics path is gated behind the optional observer:
+with none attached (the default — today's `stream*` methods), the engine builds no
+`RequestStats`, starts no timers, and updates no histograms — it only reuses values it already
+computes for scheduling. `RequestStats` is assembled and the hooks fire **only** when an
+observer is present, so callers that don't opt in pay nothing.
 
 ### Tuning tool (`examples/tune_stream`)
 
@@ -481,11 +493,11 @@ usable by **any** user regardless of client language; a single-run mode prints o
 report, and behind a flag it `log::debug!`s one `RequestStats` line per request for ad-hoc
 inspection.
 
-### Open question
+### Rollout
 
-Ship (a) the aggregate handle only, (b) handle **+** Rust `StreamObserver` trait, or (c) a
-per-request side-channel of `RequestStats`? Recommendation: **(b)** — the handle covers
-everyone including bindings, the observer covers Rust power users, at low complexity.
+Land `StreamMetrics` + `StreamObserver` + `tune_stream` in the **Rust core first** (enough to
+choose library defaults). Surfacing the `StreamMetrics` handle in node/python is a
+**fast-follow** after the main version bump, not part of the initial binding update.
 
 ---
 
