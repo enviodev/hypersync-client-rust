@@ -167,11 +167,17 @@ struct CompletedChunk {
 
 /// Result handed back from a worker task.
 struct FetchResult {
+    /// First block of the request (inclusive).
     start: u64,
+    /// Requested exclusive end of the request.
     req_end: u64,
+    /// Block span the projector aimed for, before clamping to the hole.
     projected_blocks: u64,
+    /// Whether this request extended the frontier or backfilled a gap.
     kind: RequestKind,
+    /// Wall-clock latency of the fetch (request + map).
     duration: Duration,
+    /// The fetched outcome, or the error that the fetch failed with.
     outcome: Result<FetchOutcome>,
 }
 
@@ -184,9 +190,13 @@ enum Flow {
 
 /// All scheduler state, owned by a single task — no locks.
 struct Scheduler {
+    /// Stream in reverse (high → low) block order.
     reverse: bool,
+    /// Query had no `to_block`; follow the live archive height to the head.
     open_ended: bool,
+    /// Stream configuration (sizing knobs, entity limits, mapping).
     config: StreamConfig,
+    /// Injectable per-request fetch (the real client, or a mock in tests).
     fetcher: Arc<dyn Fetcher>,
 
     /// Exclusive top: `to_block`, or the (live) archive height when open-ended.
@@ -196,25 +206,38 @@ struct Scheduler {
     /// Forward: `delivered_up_to`. Reverse: `delivered_down_to`.
     watermark: u64,
 
+    /// Un-fetched, un-assigned ranges, keyed by `start` → exclusive `end`.
     holes: BTreeMap<u64, u64>,
+    /// Fetched chunks awaiting in-order delivery, keyed by `start`.
     completed: BTreeMap<u64, CompletedChunk>,
+    /// Currently-running fetch tasks (at most `concurrency`).
     in_flight: JoinSet<FetchResult>,
 
+    /// Σ `size_bytes` of undelivered `completed` chunks (the reorder buffer).
     buffered_bytes: u64,
+    /// Backpressure cap on `buffered_bytes` for look-ahead fetches.
     max_buffered_bytes: u64,
+    /// Bytes/block of the most recent completed response, used for projection.
     last_density: Option<f64>,
 
+    /// Running entity counts (delivered so far) for the `max_num_*` limits.
     num_blocks: usize,
     num_transactions: usize,
     num_logs: usize,
     num_traces: usize,
 
+    /// Consecutive truncated-and-small responses; resets on a healthy one.
     warn_counter: u32,
+    /// Whether the warning has fired for the current run (suppresses repeats).
     warned: bool,
+    /// Total warnings emitted this stream (for test observability).
     warnings_emitted: usize,
 
+    /// Optional user metrics observer; `None` ⇒ zero metrics overhead.
     observer: Option<Arc<dyn StreamObserver>>,
+    /// Internal aggregator backing `on_finish`'s summary (only when observed).
     agg: Option<Arc<StreamMetrics>>,
+    /// When the stream started, for the summary's wall-clock / throughput.
     start: Instant,
 }
 
