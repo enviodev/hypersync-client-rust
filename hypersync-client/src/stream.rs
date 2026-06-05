@@ -9,7 +9,7 @@
 //! the stream still yields exactly one `ArrowResponse` per HTTP response in block
 //! order — a drop-in for consumers.
 //!
-//! See `STREAMING.md` for the full design.
+//! See `docs/STREAMING.md` for the full design.
 
 use std::{
     collections::BTreeMap,
