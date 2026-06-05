@@ -44,8 +44,16 @@ use crate::{
 /// We always wait out server rate limits inside the streaming engine.
 const WAIT_ON_RATE_LIMIT: bool = true;
 
-/// After this many consecutive truncated-and-small responses, emit one warning.
-const WARN_THRESHOLD: u32 = 5;
+/// Emit a warning after this many *consecutive* responses that are both
+/// truncated and small (`< response_bytes_target / 2`).
+///
+/// The counter resets on any healthy response (one that either reaches its
+/// requested end or lands near the target), so normal streams — even broad ones
+/// doing thousands of chunks — keep the run short and never trip this. It is set
+/// deliberately high so it only fires when the server is *persistently* capping
+/// responses well below target (a genuine execution-time/scan limit), which is
+/// the only case where the warning's advice actually helps.
+const WARN_THRESHOLD: u32 = 100;
 
 /// `concurrency == 0` is an error; `1` is sequential; `>= 2` uses the scheduler.
 fn check_concurrency(concurrency: usize) -> Result<()> {
@@ -1189,23 +1197,65 @@ mod tests {
         assert_partition(&chunks, 0, 2_000, false);
     }
 
-    #[tokio::test]
-    async fn warns_on_persistent_small_truncation() {
-        // Always truncated and always small (< target/2) => one warning after the
-        // threshold, and coverage still completes via backfill.
-        let cover = |from: u64, to: u64| {
-            let next = (from + 100).min(to);
-            (next, 1000u64, None)
-        };
-        let (chunks, warns) = run_core_test(false, false, cfg(2), 0, 3_000, cover, None).await;
-        assert_partition(&chunks, 0, 3_000, false);
-        // At least one warning fires once 5 consecutive small truncations accrue.
-        // (A fully-covered small gap is "healthy" and resets the counter, so the
-        // warning can recur — what matters is that it triggers.)
-        assert!(
-            warns >= 1,
-            "a warning should fire on persistent small truncation"
-        );
+    fn bare_scheduler() -> Scheduler {
+        let fetcher: Arc<dyn Fetcher> = Arc::new(MockFetcher {
+            cover: Box::new(cover_full(100)),
+        });
+        Scheduler::new(false, false, cfg(2), fetcher, None)
+    }
+
+    #[test]
+    fn warning_fires_once_per_sustained_run() {
+        let mut s = bare_scheduler();
+        let small = s.config.response_bytes_target / 2 - 1;
+
+        // A sustained run of truncated-and-small responses warns exactly once.
+        for _ in 0..WARN_THRESHOLD {
+            s.update_warning(true, small);
+        }
+        assert_eq!(s.warnings_emitted, 1);
+
+        // Still suppressed while the same run continues.
+        for _ in 0..WARN_THRESHOLD {
+            s.update_warning(true, small);
+        }
+        assert_eq!(s.warnings_emitted, 1);
+
+        // A healthy response resets; a fresh sustained run warns again.
+        s.update_warning(false, small);
+        for _ in 0..WARN_THRESHOLD {
+            s.update_warning(true, small);
+        }
+        assert_eq!(s.warnings_emitted, 2);
+    }
+
+    #[test]
+    fn warning_silent_when_runs_are_broken() {
+        // Truncated-and-small responses that never reach the threshold in a row
+        // (a healthy response keeps resetting the counter) must never warn — this
+        // is the common case for broad/compact queries the server caps below
+        // target on row-count/time rather than on bytes.
+        let mut s = bare_scheduler();
+        let small = s.config.response_bytes_target / 2 - 1;
+        for _ in 0..(WARN_THRESHOLD * 3) {
+            for _ in 0..(WARN_THRESHOLD - 1) {
+                s.update_warning(true, small);
+            }
+            s.update_warning(false, small);
+        }
+        assert_eq!(s.warnings_emitted, 0);
+    }
+
+    #[test]
+    fn warning_ignores_large_truncations() {
+        // Truncated but not small => server hit a response-size limit, which is
+        // normal/expected; no warning.
+        let mut s = bare_scheduler();
+        let large = s.config.response_bytes_target;
+        for _ in 0..(WARN_THRESHOLD * 2) {
+            s.update_warning(true, large);
+        }
+        assert_eq!(s.warnings_emitted, 0);
     }
 
     #[tokio::test]

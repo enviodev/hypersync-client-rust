@@ -310,8 +310,17 @@ response-size limit.
 - Maintain a counter of **consecutive** completed requests where
   `next_block < req_end` (truncated) **and** `size_bytes < response_bytes_target / 2` (small).
 - Any healthy response resets the counter.
-- When the counter reaches `WARN_THRESHOLD` (internal constant, default `5`), emit one
+- When the counter reaches `WARN_THRESHOLD` (internal constant, default `100`), emit one
   `log::warn!` and suppress further warnings until the counter resets, e.g.:
+
+  The threshold is deliberately high. Because the counter resets on every healthy response,
+  normal streams — even broad/compact ones doing thousands of chunks, where the server
+  routinely caps a query below target on row-count/time and so returns *truncated-and-small*
+  responses — keep their consecutive runs short and never trip it. Only a server that is
+  *persistently* capping responses well below target (with essentially no healthy responses to
+  break the run) sustains a run this long, which is exactly the case the advice below addresses.
+  A smaller threshold fired on healthy compact queries (e.g. all-ERC20-transfers selecting only
+  a couple of narrow columns), which was pure noise.
 
   > hypersync stream: N consecutive responses were truncated before the requested block
   > range end while staying under half of `response_bytes_target` (T bytes). This usually
