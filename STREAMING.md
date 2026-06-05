@@ -1,6 +1,8 @@
 # Streaming engine design
 
-Status: **proposed** — design agreed, implementation pending.
+Status: **implemented** (Rust core) — `hypersync-client/src/stream.rs` rewritten,
+`StreamConfig` updated, metrics in `hypersync-client/src/metrics.rs`, tuning CLI in
+`examples/tune_stream`. Node/Python rollout (§14) is a follow-up.
 Scope: redesign the `stream_arrow` engine in `hypersync-client/src/stream.rs`, then roll
 the (rebuilt) core out to the node and python bindings. The Go client is a separate
 reimplementation and is **out of scope** for this change.
@@ -468,11 +470,12 @@ A **`StreamMetrics`** aggregate handle **plus** a **`StreamObserver`** trait, ex
 **explicitly** — with **no change to the existing `stream` / `stream_arrow` / `stream_events`
 signatures** and **without** touching the serializable `StreamConfig`:
 
-- `StreamObserver` (public trait): `on_request(&self, &RequestStats)` and
-  `on_finish(&self, &StreamSummary)`.
+- `StreamObserver` (public trait): `on_request(&self, &RequestStats)`,
+  `on_progress(&self, in_flight, buffered_bytes)` (per scheduler iteration, default no-op),
+  and `on_finish(&self, &StreamSummary)` (default no-op).
 - `StreamMetrics` (public): a built-in `StreamObserver` that aggregates into the
   `StreamSummary` above; a cheap cloneable `Arc` handle the caller reads live or after the run.
-- A dedicated entry point — e.g. `stream_arrow_with_observer(query, config, observer)` —
+- A dedicated entry point — `stream_arrow_with_observer(query, config, observer)` —
   carries the observer. Callers who don't want metrics keep using today's methods unchanged,
   with zero overhead. The observer is passed **explicitly** rather than stashed on
   `StreamConfig`, so config stays pure serde data and the existing API is untouched.
