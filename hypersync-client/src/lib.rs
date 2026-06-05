@@ -21,6 +21,7 @@ mod config;
 mod decode;
 mod decode_call;
 mod from_arrow;
+pub mod metrics;
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
@@ -45,6 +46,10 @@ pub use config::HexOutput;
 pub use config::{ClientConfig, SerializationFormat, StreamConfig};
 pub use decode::Decoder;
 pub use decode_call::CallDecoder;
+pub use metrics::{
+    RequestKind, RequestStats, StreamMetrics, StreamObserver, StreamSummary, NUM_SIZE_BUCKETS,
+    SIZE_BUCKET_LABELS,
+};
 pub use rate_limit::RateLimitInfo;
 pub use types::{
     ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, RateLimitResponse,
