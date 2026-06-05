@@ -9,7 +9,8 @@ use arrow::{
 use hypersync_client::{
     preset_query,
     simple_types::{self, Transaction},
-    Client, ColumnMapping, HexOutput, SerializationFormat, StreamConfig,
+    Client, ColumnMapping, HexOutput, SerializationFormat, StreamConfig, StreamMetrics,
+    StreamObserver,
 };
 use hypersync_format::{Address, Data, FilterWrapper, FixedSizeData, Hex, LogArgument, Quantity};
 use hypersync_net_types::{
@@ -874,4 +875,103 @@ async fn test_api_capnp_client() {
             break;
         }
     }
+}
+
+/// v2 engine parity: a bounded forward stream delivers a contiguous, fully
+/// covering, strictly increasing sequence of responses, and the observer sees
+/// the run's aggregate metrics.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_arrow_with_observer_contiguity() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let from_block = 18_000_000u64;
+    let to_block = 18_050_000u64;
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": from_block,
+        "to_block": to_block,
+        "logs": [{
+            "topics": [["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]],
+        }],
+        "field_selection": { "log": ["block_number", "log_index"] },
+    }))
+    .unwrap();
+
+    let metrics = Arc::new(StreamMetrics::new());
+    let observer: Arc<dyn StreamObserver> = metrics.clone();
+    let mut rx = client
+        .stream_arrow_with_observer(query, StreamConfig::default(), observer)
+        .await
+        .unwrap();
+
+    let mut prev = from_block;
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        assert!(
+            res.next_block > prev,
+            "responses must advance: prev={prev} next={}",
+            res.next_block
+        );
+        prev = res.next_block;
+    }
+    assert_eq!(prev, to_block, "stream must cover the full range");
+
+    let summary = metrics.summary();
+    assert!(summary.num_requests > 0, "observer saw requests");
+    assert!(summary.total_bytes > 0, "observer saw bytes");
+    assert_eq!(
+        summary.total_blocks,
+        to_block - from_block,
+        "every block counted exactly once"
+    );
+}
+
+/// v2 engine parity: a reverse stream delivers blocks in globally descending
+/// order across all responses.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_reverse_ordering() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": 18_000_000,
+        "to_block": 18_050_000,
+        "logs": [{
+            "topics": [["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]],
+        }],
+        "field_selection": { "log": ["block_number"] },
+    }))
+    .unwrap();
+
+    let config = StreamConfig {
+        reverse: true,
+        ..Default::default()
+    };
+    let mut rx = client.stream_arrow(query, config).await.unwrap();
+
+    let mut last: Option<u64> = None;
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        for batch in res.data.logs {
+            let block_number = batch
+                .column_by_name("block_number")
+                .unwrap()
+                .as_primitive::<UInt64Type>();
+            for bn in block_number.iter().flatten() {
+                if let Some(prev) = last {
+                    assert!(bn <= prev, "reverse must be non-increasing: {prev} -> {bn}");
+                }
+                last = Some(bn);
+            }
+        }
+    }
+    assert!(last.is_some(), "reverse stream returned data");
 }
