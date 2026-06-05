@@ -62,9 +62,10 @@ stream yields.
   also what lets us **start from a deliberately overestimated batch size and work backwards**
   instead of creeping forward in many tiny, conservative ranges: an over-large request that
   the server truncates simply leaves a gap that gets backfilled. Because overshoot is
-  self-correcting this way, **no hard `max_batch_size` cap is needed** — the only bound on a
-  request is the hole it sits in (the next chunk's start, or `to_block`) plus the server's
-  own response-size limit.
+  self-correcting this way, a hard `max_batch_size` cap is **no longer required** — by default
+  the only bound on a request is the hole it sits in (the next chunk's start, or `upper_bound`)
+  plus the server's own response-size limit. `max_batch_size` stays available as an *optional*
+  cap for callers who want to bound the number of blocks per chunk.
 - **Local, per-request size projection.** Each request's block span is projected from the
   byte-density of the nearest already-completed neighbour, aiming at a single configured
   target. The shared atomic `step`, the generation counter, and `BlockRangeIterator` are all
@@ -242,9 +243,10 @@ target  = config.response_bytes_target          # single knob, e.g. 400_000
 bytes   = anchor.size_bytes
 blocks  = anchor.next_block - anchor.start
 factor  = target / bytes                        # proportional controller
-projected = max(round(blocks * factor), min_batch_size)   # no upper clamp — overshoot is safe
+projected = max(round(blocks * factor), min_batch_size)   # no upper clamp by default
+if max_batch_size = Some(m): projected = min(projected, m)   # optional hard cap on blocks/chunk
 req_end   = min(h_start + projected, hole.end)  # gap → next chunk's from_block;
-                                                #  frontier → to_block (bounds the overshoot)
+                                                #  frontier → upper_bound (bounds the overshoot)
 ```
 
 We deliberately use a **single target** rather than a `[floor, ceiling]` dead-band:
@@ -261,10 +263,11 @@ We deliberately use a **single target** rather than a `[floor, ceiling]` dead-ba
   delivery), at the cost of slightly more requests than aiming at the ceiling would.
 
 If `anchor.size_bytes` is ~0 (e.g. an empty bounded range), `factor` explodes and `projected`
-is bounded only by the hole's end (`to_block` for the frontier) — so a sparse region is
-fast-scanned in a single over-large request, and any server truncation is simply backfilled.
-This is the same "overestimate and work backwards" mechanism as §3, and it is why no hard
-maximum block range is required.
+is bounded only by the hole's end (`upper_bound` for the frontier) unless `max_batch_size` is
+set — so by default a sparse region is fast-scanned in a single over-large request, and any
+server truncation is simply backfilled. This is the same "overestimate and work backwards"
+mechanism as §3, which is why a hard maximum block range is not *required* — though
+`max_batch_size` can still impose one when a caller wants to bound blocks per chunk.
 
 ---
 
@@ -360,8 +363,9 @@ existing `tests/api_test.rs` continues to provide real-endpoint parity coverage.
 
 ## 13. Configuration changes (breaking)
 
-`StreamConfig` collapses the two-field byte band into a single target, drops `max_batch_size`
-(overshoot is now self-correcting — see §3 and §7), and adds `max_buffered_bytes` (consumer
+`StreamConfig` collapses the two-field byte band into a single target, makes `max_batch_size`
+optional (`None` ⇒ no cap, since overshoot self-corrects — see §3 and §7), and adds
+`max_buffered_bytes` (consumer
 backpressure — see §6). This is a **breaking change** to the config surface; released as a
 deliberate minor (these params are rarely tuned).
 
@@ -371,9 +375,10 @@ deliberate minor (these params are rarely tuned).
      pub batch_size: u64,            // initial (deliberately overestimated) size + fallback
      pub min_batch_size: u64,        // hard lower clamp on projected blocks (avoids tiny ranges)
      pub concurrency: usize,         // 0 => error, 1 => sequential, >=2 => scheduler
--    pub max_batch_size: u64,           // default 200_000 — removed; overshoot self-corrects
+-    pub max_batch_size: u64,           // was: default 200_000, always applied
 -    pub response_bytes_ceiling: u64,   // default 500_000
 -    pub response_bytes_floor: u64,     // default 250_000
++    pub max_batch_size: Option<u64>,   // now optional — None ⇒ no cap on blocks/chunk
 +    pub response_bytes_target: u64,    // default 400_000 — projection aims each response here
 +    pub max_buffered_bytes: Option<u64>,  // NEW — reorder-buffer byte cap; None ⇒ 2×concurrency×target
      ...
@@ -387,6 +392,7 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
 | `response_bytes_target` | projection target; `/2` is the internal warning threshold |
 | `max_buffered_bytes` | cap on undelivered reorder-buffer bytes (`None` ⇒ `2 × concurrency × response_bytes_target`); throttles look-ahead under consumer backpressure |
 | `min_batch_size` | hard lower clamp on projected block count (avoids tiny ranges) |
+| `max_batch_size` | optional hard upper clamp on blocks/chunk (`None` ⇒ no cap; overshoot self-corrects) |
 | `batch_size` | initial, deliberately-overestimated size + fallback before any density is measured |
 | `concurrency` | `0` errors, `1` sequential, `>=2` scheduler |
 
@@ -403,8 +409,8 @@ bound memory more tightly, or higher to allow deeper buffering.
    change in `config.rs`. Update tests and `tests/api_test.rs`.
 2. **Node** (`hypersync-client-node`) and **Python** (`hypersync-client-python`) — thin
    bindings that convert their own `StreamConfig` into the core one. Each needs the same
-   mechanical edit: drop `response_bytes_floor` / `response_bytes_ceiling` / `max_batch_size`,
-   add `response_bytes_target` and `max_buffered_bytes`, update the conversion
+   mechanical edit: drop `response_bytes_floor` / `response_bytes_ceiling`, make `max_batch_size`
+   optional, add `response_bytes_target` and `max_buffered_bytes`, update the conversion
    (`From` / `try_convert`). Then bump the
    `hypersync-client` dependency, rebuild (napi addon / maturin wheel), refresh
    `index.d.ts` / type stubs, and note the change in the changelog. During development the
