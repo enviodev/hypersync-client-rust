@@ -375,7 +375,7 @@ deliberate minor (these params are rarely tuned).
 -    pub response_bytes_ceiling: u64,   // default 500_000
 -    pub response_bytes_floor: u64,     // default 250_000
 +    pub response_bytes_target: u64,    // default 400_000 — projection aims each response here
-+    pub max_buffered_bytes: u64,       // NEW — cap on undelivered reorder-buffer bytes
++    pub max_buffered_bytes: Option<u64>,  // NEW — reorder-buffer byte cap; None ⇒ 2×concurrency×target
      ...
  }
 ```
@@ -385,10 +385,15 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
 | field | role in v2 |
 |---|---|
 | `response_bytes_target` | projection target; `/2` is the internal warning threshold |
-| `max_buffered_bytes` | cap on undelivered reorder-buffer bytes; throttles look-ahead under consumer backpressure |
+| `max_buffered_bytes` | cap on undelivered reorder-buffer bytes (`None` ⇒ `2 × concurrency × response_bytes_target`); throttles look-ahead under consumer backpressure |
 | `min_batch_size` | hard lower clamp on projected block count (avoids tiny ranges) |
 | `batch_size` | initial, deliberately-overestimated size + fallback before any density is measured |
 | `concurrency` | `0` errors, `1` sequential, `>=2` scheduler |
+
+`max_buffered_bytes` defaults to `None`, resolved at stream start to `2 × concurrency ×
+response_bytes_target` (≈ 8 MB at the default `concurrency = 10`), so look-ahead stays
+proportional to the worker count (matching v1's effective queue depth). Set it explicitly to
+bound memory more tightly, or higher to allow deeper buffering.
 
 ---
 
