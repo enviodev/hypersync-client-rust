@@ -82,7 +82,7 @@ stream yields.
 At any instant the range `[delivered_up_to, to_block)` (forward) is tiled into four kinds of
 region:
 
-```
+```text
 forward stream, blocks increasing →
 
  delivered_up_to                                   frontier
@@ -479,10 +479,11 @@ Rolled up across all requests, readable live and at end-of-stream:
 
 - `num_requests`, `num_truncated` → truncation rate
 - `total_bytes`, `total_blocks`, `wall_clock` → `blocks/s`, `bytes/s`
-- **size-vs-target distribution**: mean `size_ratio`, p50/p90/p99 `response_bytes`, and
-  histogram buckets relative to target (`<0.25 / 0.25–0.5 / 0.5–0.75 / 0.75–1.0 / 1.0–1.25 /
-  >1.25 ×target`)
-- mean/median `bytes_per_block`; block-range size min/mean/max
+- **size-vs-target distribution**: mean `size_ratio` and histogram buckets relative to target
+  (`<0.25 / 0.25–0.5 / 0.5–0.75 / 0.75–1.0 / 1.0–1.25 / >1.25 ×target`). Exact percentiles
+  aren't exposed on `StreamSummary`; a custom `StreamObserver` can collect raw `RequestStats`
+  for those.
+- mean `bytes_per_block`; block-range size min/mean/max
 - `max_buffered_bytes_observed`, mean in-flight (spot buffer / concurrency saturation)
 - frontier vs gap-fill counts
 

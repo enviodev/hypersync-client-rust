@@ -589,8 +589,21 @@ impl Scheduler {
             }
         };
 
-        // Defensive: a response must make progress and not over-claim its range.
-        let covered = outcome.next_block.clamp(fr.start + 1, fr.req_end);
+        // A valid response makes progress and stays within the requested range.
+        // Anything else (no progress, or over-claiming past req_end) would
+        // silently drop or duplicate blocks, so fail loudly rather than fabricate
+        // coverage.
+        let covered = outcome.next_block;
+        if covered <= fr.start || covered > fr.req_end {
+            tx.send(Err(anyhow!(
+                "server returned next_block {covered} outside the requested range [{}..{})",
+                fr.start,
+                fr.req_end,
+            )))
+            .await
+            .ok();
+            return Flow::Stop;
+        }
         let truncated = covered < fr.req_end;
 
         self.report_request(
@@ -694,7 +707,15 @@ impl Scheduler {
                     return;
                 }
             };
-            let covered = outcome.next_block.max(req_start + 1);
+            let covered = outcome.next_block;
+            if covered <= req_start || covered > req_end {
+                tx.send(Err(anyhow!(
+                    "server returned next_block {covered} outside the requested range [{req_start}..{req_end})"
+                )))
+                .await
+                .ok();
+                return;
+            }
             let truncated = covered < req_end;
             self.report_request(
                 req_start,
