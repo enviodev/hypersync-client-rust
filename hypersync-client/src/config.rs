@@ -184,7 +184,11 @@ pub struct StreamConfig {
     /// so the pipeline stays full even for byte-heavy queries whose responses far
     /// exceed the target (otherwise a single response could exceed the cap and
     /// throttle look-ahead to near-sequential). Set an explicit value to bound
-    /// memory; an explicit cap is honoured verbatim and never grown.
+    /// memory; an explicit cap is honoured verbatim and never grown. `Some(0)` is
+    /// valid and means "no look-ahead buffer": only the chunk delivery is
+    /// currently waiting on is fetched, so the stream runs effectively
+    /// sequentially with minimal memory (it still completes — the watermark chunk
+    /// is always allowed through).
     #[serde(default)]
     pub max_buffered_bytes: Option<u64>,
     /// Stream data in reverse order

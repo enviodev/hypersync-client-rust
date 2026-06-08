@@ -259,10 +259,13 @@ impl Scheduler {
         observer: Option<Arc<dyn StreamObserver>>,
     ) -> Self {
         let max_buffered_adaptive = config.max_buffered_bytes.is_none();
+        // An explicit cap is honoured verbatim (including 0, which leaves only the
+        // watermark hole schedulable — sequential, minimal buffer, no deadlock).
+        // The adaptive default is always >= 2 (concurrency >= 1, target floored
+        // at 1), so it never lands at 0.
         let max_buffered_bytes = config
             .max_buffered_bytes
-            .unwrap_or_else(|| 2 * config.concurrency as u64 * config.response_bytes_target.max(1))
-            .max(1);
+            .unwrap_or_else(|| 2 * config.concurrency as u64 * config.response_bytes_target.max(1));
         let agg = observer.as_ref().map(|_| Arc::new(StreamMetrics::new()));
         Self {
             reverse,
@@ -1395,6 +1398,31 @@ mod tests {
         assert_eq!(s.max_buffered_bytes, 5_000_000);
         s.note_response_size(50_000_000);
         assert_eq!(s.max_buffered_bytes, 5_000_000, "explicit cap is honoured");
+    }
+
+    #[test]
+    fn explicit_zero_buffer_is_honored_verbatim() {
+        let mut config = cfg(2);
+        config.max_buffered_bytes = Some(0);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(MockFetcher {
+            cover: Box::new(cover_full(100)),
+        });
+        let mut s = Scheduler::new(false, false, config, fetcher, None);
+        assert_eq!(s.max_buffered_bytes, 0, "0 is honoured, not clamped to 1");
+        s.note_response_size(50_000_000);
+        assert_eq!(s.max_buffered_bytes, 0, "explicit 0 is never grown");
+    }
+
+    #[tokio::test]
+    async fn zero_buffer_completes_without_deadlock() {
+        // A 0-byte look-ahead cap leaves only the watermark hole schedulable;
+        // the stream must still fully cover the range (the watermark exemption
+        // prevents a deadlock).
+        let mut config = cfg(4);
+        config.max_buffered_bytes = Some(0);
+        let (chunks, _) =
+            run_core_test(false, false, config, 0, 20_000, cover_full(100), None).await;
+        assert_partition(&chunks, 0, 20_000, false);
     }
 
     #[tokio::test]
