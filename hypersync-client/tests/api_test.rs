@@ -793,36 +793,41 @@ async fn test_small_bloom_filter_query() {
     assert_eq!(num_txns, 21);
 }
 
+/// Exercises decoding an event with `string` parameters into Arrow utf8.
+///
+/// Originally targeted the mev-commit chain's `CommitmentStored` event, but that
+/// chain was deprecated (removed 2025-12-08). Repurposed to ENS
+/// `NameRegistered(string name, ...)` on eth mainnet, which has the same
+/// string-decode characteristic.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_decode_string_param_into_arrow() {
     let client = Arc::new(
         Client::builder()
-            .url("https://mev-commit.hypersync.xyz")
+            .url("https://eth.hypersync.xyz")
             .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
 
+    // ENS ETHRegistrarController + NameRegistered topic0 (the 6-arg variant).
     let query: Query = serde_json::from_value(serde_json::json!({
-        "from_block": 0,
+        "from_block": 18000000,
+        "to_block": 18050000,
         "logs": [{
-            "address": ["0xCAC68D97a56b19204Dd3dbDC103CB24D47A825A3"],
-            "topics": [["0xe44dd4d002deb2c79cf08ce285a9d80c69753f31ca65c8e49f0a60d27ed9fea3"]],
+            "address": ["0x253553366Da8546fC250F225fe3d25d0C782303b"],
+            "topics": [["0x69e37f151eb98a09618ddaa80c8cfaf1ce5996867c489f45b555b412271ebf27"]],
         }],
         "field_selection": {
-            "log": ["block_number", "topic0", "topic1", "topic2", "topic3", "data", "address"],
+            "log": ["block_number", "topic0", "topic1", "topic2", "data", "address"],
         }
     }))
     .unwrap();
 
     let conf = StreamConfig {
         event_signature: Some(
-            "CommitmentStored(bytes32 indexed commitmentIndex, address bidder, address commiter, \
-             uint256 bid, uint64 blockNumber, bytes32 bidHash, uint64 decayStartTimeStamp, uint64 \
-             decayEndTimeStamp, string txnHash, string revertingTxHashes, bytes32 commitmentHash, \
-             bytes bidSignature, bytes commitmentSignature, uint64 dispatchTimestamp, bytes \
-             sharedSecretKey)"
+            "NameRegistered(string name, bytes32 indexed label, address indexed owner, \
+             uint256 baseCost, uint256 premium, uint256 expires)"
                 .into(),
         ),
         ..Default::default()
@@ -830,7 +835,27 @@ async fn test_decode_string_param_into_arrow() {
 
     let data = client.collect_arrow(query, conf).await.unwrap();
 
-    dbg!(data.data.decoded_logs);
+    // The `name` string parameter must decode into a non-empty utf8 column.
+    let mut total = 0usize;
+    let mut sample: Option<String> = None;
+    for batch in &data.data.decoded_logs {
+        let names = batch
+            .column_by_name("name")
+            .expect("decoded `name` column present")
+            .as_string::<i32>();
+        for n in names.iter().flatten() {
+            total += 1;
+            if sample.is_none() && !n.is_empty() {
+                sample = Some(n.to_string());
+            }
+        }
+    }
+    assert!(
+        total > 0,
+        "expected decoded NameRegistered rows with a string `name`"
+    );
+    assert!(sample.is_some(), "expected at least one non-empty ENS name");
+    println!("decoded {total} ENS names, e.g. {sample:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
