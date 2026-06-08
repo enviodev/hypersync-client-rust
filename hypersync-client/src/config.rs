@@ -178,8 +178,13 @@ pub struct StreamConfig {
     #[serde(default = "StreamConfig::default_response_bytes_target")]
     pub response_bytes_target: u64,
     /// Optional cap on the bytes of fetched-but-undelivered chunks held in the
-    /// reorder buffer (consumer backpressure). `None` (the default) resolves at
-    /// stream start to `2 * concurrency * response_bytes_target`.
+    /// reorder buffer (consumer backpressure). `None` (the default) is
+    /// **adaptive**: it starts at `2 * concurrency * response_bytes_target` and
+    /// grows to `2 * concurrency * max(response_bytes_target, largest_response)`
+    /// so the pipeline stays full even for byte-heavy queries whose responses far
+    /// exceed the target (otherwise a single response could exceed the cap and
+    /// throttle look-ahead to near-sequential). Set an explicit value to bound
+    /// memory; an explicit cap is honoured verbatim and never grown.
     #[serde(default)]
     pub max_buffered_bytes: Option<u64>,
     /// Stream data in reverse order
@@ -244,6 +249,58 @@ impl StreamConfig {
     /// Default reverse streaming setting
     pub const fn default_reverse() -> bool {
         false
+    }
+
+    /// Preset for **dense** workloads: queries that match a lot of data per block
+    /// (busy contracts, all-logs, popular ERC-20 transfers).
+    ///
+    /// Such streams are throughput-bound and scale well with parallelism, so this
+    /// raises `concurrency` above the default. The default `response_bytes_target`
+    /// (400 KB) is already a good fit — benchmarking showed dense responses
+    /// plateau near that size, and pushing the target higher mostly adds
+    /// truncation/backfill rather than bigger responses.
+    ///
+    /// `max_buffered_bytes` is left unset so the adaptive default applies. If you
+    /// have plenty of rate-limit headroom you can push `concurrency` higher still.
+    pub fn dense() -> Self {
+        Self {
+            concurrency: 20,
+            response_bytes_target: Self::default_response_bytes_target(),
+            ..Self::default()
+        }
+    }
+
+    /// Preset for **sparse** workloads: selective queries over wide block ranges
+    /// (rare events, low-volume contracts) where most blocks match nothing.
+    ///
+    /// Here latency, not bytes, dominates, and benchmarking showed that *high*
+    /// concurrency actually hurts: extra workers just fragment a large empty
+    /// region into more (smaller) requests. So this keeps concurrency moderate and
+    /// raises `batch_size` so the first wave covers a lot of ground before
+    /// per-request projection kicks in — an over-estimate that self-corrects via
+    /// backfill if it hits a dense patch.
+    pub fn sparse() -> Self {
+        Self {
+            concurrency: Self::default_concurrency(),
+            batch_size: 20_000,
+            ..Self::default()
+        }
+    }
+
+    /// Preset for **archival / byte-heavy** workloads: full block + transaction
+    /// pulls (e.g. `include_all_blocks` with wide field selection) where each
+    /// response is many megabytes.
+    ///
+    /// These streams are bounded by the reorder buffer, not concurrency: a single
+    /// response can dwarf `response_bytes_target`, so the adaptive
+    /// `max_buffered_bytes` default (left unset here) is what keeps the pipeline
+    /// full — in benchmarks it roughly doubled throughput versus a buffer sized to
+    /// the target. Concurrency past ~10–15 gives little extra here.
+    pub fn archival() -> Self {
+        Self {
+            concurrency: 12,
+            ..Self::default()
+        }
     }
 }
 
@@ -342,5 +399,29 @@ mod tests {
         assert_eq!(explicit_config.max_batch_size, Some(50_000));
         assert_eq!(explicit_config.response_bytes_target, 800_000);
         assert_eq!(explicit_config.max_buffered_bytes, Some(1_048_576));
+    }
+
+    #[test]
+    fn test_stream_config_presets() {
+        // Dense: more parallelism, default target, adaptive buffer.
+        let dense = StreamConfig::dense();
+        assert_eq!(dense.concurrency, 20);
+        assert_eq!(dense.response_bytes_target, 400_000);
+        assert_eq!(dense.max_buffered_bytes, None);
+
+        // Sparse: moderate concurrency, big first wave.
+        let sparse = StreamConfig::sparse();
+        assert_eq!(sparse.concurrency, 10);
+        assert_eq!(sparse.batch_size, 20_000);
+        assert_eq!(sparse.max_buffered_bytes, None);
+
+        // Archival: modest concurrency, relies on adaptive buffer.
+        let archival = StreamConfig::archival();
+        assert_eq!(archival.concurrency, 12);
+        assert_eq!(archival.max_buffered_bytes, None);
+
+        // Presets keep the rest of the defaults.
+        assert_eq!(dense.min_batch_size, StreamConfig::default_min_batch_size());
+        assert!(!sparse.reverse);
     }
 }

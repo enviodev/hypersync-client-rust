@@ -302,31 +302,30 @@ is a single worker and nothing to pipeline against.
 
 ## 9. Warnings
 
-A genuinely-helpful diagnostic for the pathological case where **batch-size tuning cannot
-help**: the server keeps truncating responses *before* the requested range end while the
-responses are *small* — which points at a server execution-time / scan limit rather than a
-response-size limit.
+A genuinely-helpful diagnostic for the one pathological case where **batch-size tuning cannot
+help**: the server keeps truncating responses to *fewer blocks than our smallest projected
+range* while those responses are also *tiny* — which points at a server execution-time / scan
+limit rather than a response-size limit. It fires **at most once per stream** and is tuned to
+stay silent on healthy streams.
 
-- Maintain a counter of **consecutive** completed requests where
-  `next_block < req_end` (truncated) **and** `size_bytes < response_bytes_target / 2` (small).
-- Any healthy response resets the counter.
-- When the counter reaches `WARN_THRESHOLD` (internal constant, default `100`), emit one
-  `log::warn!` and suppress further warnings until the counter resets, e.g.:
+- A response is **bad** when all three hold: `next_block < req_end` (truncated) **and**
+  `size_bytes < response_bytes_target / 2` (tiny) **and** `actual_blocks < min_batch_size`
+  (stalled — the server couldn't even cover our minimum projected range).
+- Maintain a counter of **consecutive bad** responses; any non-bad response resets it.
+- When the counter reaches `WARN_THRESHOLD` (internal constant, default `100`), emit **one**
+  `log::warn!` and then stay silent for the rest of the stream.
 
-  The threshold is deliberately high. Because the counter resets on every healthy response,
-  normal streams — even broad/compact ones doing thousands of chunks, where the server
-  routinely caps a query below target on row-count/time and so returns *truncated-and-small*
-  responses — keep their consecutive runs short and never trip it. Only a server that is
-  *persistently* capping responses well below target (with essentially no healthy responses to
-  break the run) sustains a run this long, which is exactly the case the advice below addresses.
-  A smaller threshold fired on healthy compact queries (e.g. all-ERC20-transfers selecting only
-  a couple of narrow columns), which was pure noise.
+  The third condition is what makes this quiet. Empirically, broad/compact queries (e.g.
+  all-ERC20-transfers selecting only a couple of narrow columns) are routinely truncated and
+  under-target — but they still cover a *healthy* block range (well above `min_batch_size`) and
+  stream fast, so they are **not** bad and never warn. Earlier versions keyed only on
+  truncated-and-tiny and fired on these healthy streams — pure noise. Requiring the stall, a
+  long consecutive run, and a one-shot latch reserves the warning for genuinely stuck queries.
 
-  > hypersync stream: N consecutive responses were truncated before the requested block
-  > range end while staying under half of `response_bytes_target` (T bytes). This usually
-  > means the server is hitting an execution-time/scan limit rather than a response-size
-  > limit, so batch-size tuning won't help — consider narrowing the query (more selective
-  > filters) or lowering `max_batch_size`.
+  > hypersync stream: N consecutive responses were truncated to fewer than min_batch_size (M)
+  > blocks while staying under half of `response_bytes_target` (T bytes). The server is hitting
+  > an execution-time/scan limit, not a response-size limit, so batch-size tuning won't help —
+  > narrow the query with more selective filters (address/topic) or a smaller block range.
 
 Scoped to the projected path (`concurrency >= 2`); the sequential path always queries to the
 upper limit, where truncation is expected and normal.
@@ -401,16 +400,33 @@ Unchanged fields: `column_mapping`, `event_signature`, `hex_output`, `max_num_*`
 | field | role in v2 |
 |---|---|
 | `response_bytes_target` | projection target; `/2` is the internal warning threshold |
-| `max_buffered_bytes` | cap on undelivered reorder-buffer bytes (`None` ⇒ `2 × concurrency × response_bytes_target`); throttles look-ahead under consumer backpressure |
+| `max_buffered_bytes` | cap on undelivered reorder-buffer bytes (`None` ⇒ adaptive, see below); throttles look-ahead under consumer backpressure |
 | `min_batch_size` | hard lower clamp on projected block count (avoids tiny ranges) |
 | `max_batch_size` | optional hard upper clamp on blocks/chunk (`None` ⇒ no cap; overshoot self-corrects) |
 | `batch_size` | initial, deliberately-overestimated size + fallback before any density is measured |
 | `concurrency` | `0` errors, `1` sequential, `>=2` scheduler |
 
-`max_buffered_bytes` defaults to `None`, resolved at stream start to `2 × concurrency ×
-response_bytes_target` (≈ 8 MB at the default `concurrency = 10`), so look-ahead stays
-proportional to the worker count (matching v1's effective queue depth). Set it explicitly to
-bound memory more tightly, or higher to allow deeper buffering.
+`max_buffered_bytes` defaults to `None`, which is **adaptive**: it starts at `2 × concurrency ×
+response_bytes_target` (≈ 8 MB at `concurrency = 10`) and grows to `2 × concurrency × max(target,
+largest_response_seen)` as responses arrive. This matters because the server size-limits *its*
+way — byte-heavy queries (e.g. full block+transaction pulls) routinely return responses many
+times larger than `response_bytes_target`. A fixed target-based cap would then be smaller than a
+single response, so the first undelivered chunk would trip backpressure and throttle look-ahead
+to ~1–2 in-flight — collapsing concurrency exactly where each request is most expensive. In a
+live benchmark this adaptive default roughly **doubled** throughput on a full block+tx pull
+(mean in-flight ~2 → ~8) versus the old fixed cap. Set `max_buffered_bytes` explicitly to bound
+memory; an explicit value is honoured verbatim and never grown.
+
+### Workload presets
+
+`StreamConfig` ships tested constructors for common shapes, each leaving `max_buffered_bytes`
+unset so the adaptive default applies:
+
+- `StreamConfig::dense()` — busy contracts / all-logs; higher `concurrency` (20), default target.
+- `StreamConfig::sparse()` — rare events over wide ranges; moderate `concurrency` with a larger
+  `batch_size` (high concurrency just fragments sparse regions into more requests).
+- `StreamConfig::archival()` — full block+tx pulls; modest `concurrency`, leaning on the adaptive
+  buffer (the real lever for byte-heavy streams).
 
 ---
 

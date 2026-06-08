@@ -44,15 +44,17 @@ use crate::{
 /// We always wait out server rate limits inside the streaming engine.
 const WAIT_ON_RATE_LIMIT: bool = true;
 
-/// Emit a warning after this many *consecutive* responses that are both
-/// truncated and small (`< response_bytes_target / 2`).
+/// Emit the (single, per-stream) diagnostic warning only after this many
+/// *consecutive* genuinely-bad responses — ones that are truncated, tiny in bytes
+/// (`< response_bytes_target / 2`), AND cover fewer than `min_batch_size` blocks.
 ///
-/// The counter resets on any healthy response (one that either reaches its
-/// requested end or lands near the target), so normal streams — even broad ones
-/// doing thousands of chunks — keep the run short and never trip this. It is set
-/// deliberately high so it only fires when the server is *persistently* capping
-/// responses well below target (a genuine execution-time/scan limit), which is
-/// the only case where the warning's advice actually helps.
+/// Any response that isn't bad on all three counts resets the counter, and the
+/// warning fires at most once per stream (see [`Scheduler::update_warning`]).
+/// Together with the strict condition this keeps it silent for healthy streams —
+/// including broad/compact queries the server row/time-caps below target while
+/// still covering a normal block range — and only speaks up when the server is
+/// persistently stalling below our smallest projected range, the one case where
+/// batch-size tuning genuinely can't help.
 const WARN_THRESHOLD: u32 = 100;
 
 /// `concurrency == 0` is an error; `1` is sequential; `>= 2` uses the scheduler.
@@ -217,6 +219,13 @@ struct Scheduler {
     buffered_bytes: u64,
     /// Backpressure cap on `buffered_bytes` for look-ahead fetches.
     max_buffered_bytes: u64,
+    /// Whether the cap above is auto-managed (user left `max_buffered_bytes`
+    /// unset). When true it grows to hold ~2 responses per worker even if the
+    /// server returns responses far larger than `response_bytes_target`; an
+    /// explicit user cap is honoured verbatim and never grown.
+    max_buffered_adaptive: bool,
+    /// Largest response body seen so far, driving the adaptive cap.
+    max_observed_response: u64,
     /// Bytes/block of the most recent completed response, used for projection.
     last_density: Option<f64>,
 
@@ -249,9 +258,11 @@ impl Scheduler {
         fetcher: Arc<dyn Fetcher>,
         observer: Option<Arc<dyn StreamObserver>>,
     ) -> Self {
+        let max_buffered_adaptive = config.max_buffered_bytes.is_none();
         let max_buffered_bytes = config
             .max_buffered_bytes
-            .unwrap_or_else(|| 2 * config.concurrency as u64 * config.response_bytes_target.max(1));
+            .unwrap_or_else(|| 2 * config.concurrency as u64 * config.response_bytes_target.max(1))
+            .max(1);
         let agg = observer.as_ref().map(|_| Arc::new(StreamMetrics::new()));
         Self {
             reverse,
@@ -266,6 +277,8 @@ impl Scheduler {
             in_flight: JoinSet::new(),
             buffered_bytes: 0,
             max_buffered_bytes,
+            max_buffered_adaptive,
+            max_observed_response: 0,
             last_density: None,
             num_blocks: 0,
             num_transactions: 0,
@@ -396,19 +409,46 @@ impl Scheduler {
         self.holes.insert(old, new);
     }
 
-    fn update_warning(&mut self, truncated: bool, size_bytes: u64) {
+    /// Grow the adaptive reorder-buffer cap so it can hold ~2 responses per
+    /// worker even when the server returns responses far larger than
+    /// `response_bytes_target` (byte-heavy queries it size-caps above target).
+    /// No-op when the user set an explicit `max_buffered_bytes`.
+    fn note_response_size(&mut self, size_bytes: u64) {
+        if !self.max_buffered_adaptive || size_bytes <= self.max_observed_response {
+            return;
+        }
+        self.max_observed_response = size_bytes;
+        let basis = self.config.response_bytes_target.max(size_bytes).max(1);
+        let grown = 2 * self.config.concurrency as u64 * basis;
+        if grown > self.max_buffered_bytes {
+            self.max_buffered_bytes = grown;
+        }
+    }
+
+    /// Flag a genuinely pathological pattern, fired **at most once per stream**:
+    /// the server keeps truncating responses *and* the responses are both tiny in
+    /// bytes (`< response_bytes_target / 2`) and cover fewer blocks than
+    /// `min_batch_size` — i.e. it can't even deliver our smallest projected range,
+    /// which points at an execution-time/scan limit that batch-size tuning can't
+    /// fix. Healthy "small but fine" responses (which cover a normal block range,
+    /// just under target bytes) reset the counter and never warn.
+    fn update_warning(&mut self, truncated: bool, size_bytes: u64, actual_blocks: u64) {
+        if self.warned {
+            return; // one warning per stream is enough — never spam.
+        }
         let small = size_bytes < self.config.response_bytes_target / 2;
-        if truncated && small {
+        let stalled = actual_blocks < self.config.min_batch_size;
+        if truncated && small && stalled {
             self.warn_counter += 1;
-            if self.warn_counter >= WARN_THRESHOLD && !self.warned {
+            if self.warn_counter >= WARN_THRESHOLD {
                 log::warn!(
-                    "hypersync stream: {} consecutive responses were truncated before the \
-                     requested block range end while staying under half of \
-                     `response_bytes_target` ({} bytes). This usually means the server is hitting \
-                     an execution-time/scan limit rather than a response-size limit, so batch-size \
-                     tuning won't help — consider narrowing the query (more selective filters) or \
-                     lowering `max_batch_size`.",
+                    "hypersync stream: {} consecutive responses were truncated to fewer than \
+                     min_batch_size ({}) blocks while staying under half of `response_bytes_target` \
+                     ({} bytes). The server is hitting an execution-time/scan limit, not a \
+                     response-size limit, so batch-size tuning won't help — narrow the query with \
+                     more selective filters (address/topic) or a smaller block range.",
                     self.warn_counter,
+                    self.config.min_batch_size,
                     self.config.response_bytes_target,
                 );
                 self.warned = true;
@@ -416,7 +456,6 @@ impl Scheduler {
             }
         } else {
             self.warn_counter = 0;
-            self.warned = false;
         }
     }
 
@@ -566,6 +605,7 @@ impl Scheduler {
         );
 
         self.buffered_bytes += outcome.size_bytes;
+        self.note_response_size(outcome.size_bytes);
         self.completed.insert(
             fr.start,
             CompletedChunk {
@@ -591,7 +631,7 @@ impl Scheduler {
             self.holes.insert(gap_start, gap_end);
         }
 
-        self.update_warning(truncated, outcome.size_bytes);
+        self.update_warning(truncated, outcome.size_bytes, blocks);
 
         if self.open_ended && !self.reverse {
             if let Some(h) = outcome.archive_height {
@@ -1221,64 +1261,119 @@ mod tests {
     }
 
     fn bare_scheduler() -> Scheduler {
+        let mut config = cfg(2);
+        config.min_batch_size = 200;
         let fetcher: Arc<dyn Fetcher> = Arc::new(MockFetcher {
             cover: Box::new(cover_full(100)),
         });
-        Scheduler::new(false, false, cfg(2), fetcher, None)
+        Scheduler::new(false, false, config, fetcher, None)
     }
 
+    // A "bad" response: truncated, tiny in bytes, AND covering fewer than
+    // min_batch_size blocks (server stalled below our smallest projected range).
+    const BAD_BLOCKS: u64 = 50; // < min_batch_size (200)
+
     #[test]
-    fn warning_fires_once_per_sustained_run() {
+    fn warning_fires_at_most_once_per_stream() {
         let mut s = bare_scheduler();
         let small = s.config.response_bytes_target / 2 - 1;
 
-        // A sustained run of truncated-and-small responses warns exactly once.
+        // A sustained run of bad responses warns exactly once.
         for _ in 0..WARN_THRESHOLD {
-            s.update_warning(true, small);
+            s.update_warning(true, small, BAD_BLOCKS);
         }
         assert_eq!(s.warnings_emitted, 1);
 
-        // Still suppressed while the same run continues.
+        // It never warns again this stream — not while the run continues, and not
+        // even after a healthy response and a brand-new bad run. No log spam.
         for _ in 0..WARN_THRESHOLD {
-            s.update_warning(true, small);
+            s.update_warning(true, small, BAD_BLOCKS);
+        }
+        s.update_warning(false, small, BAD_BLOCKS);
+        for _ in 0..(WARN_THRESHOLD * 2) {
+            s.update_warning(true, small, BAD_BLOCKS);
         }
         assert_eq!(s.warnings_emitted, 1);
-
-        // A healthy response resets; a fresh sustained run warns again.
-        s.update_warning(false, small);
-        for _ in 0..WARN_THRESHOLD {
-            s.update_warning(true, small);
-        }
-        assert_eq!(s.warnings_emitted, 2);
     }
 
     #[test]
     fn warning_silent_when_runs_are_broken() {
-        // Truncated-and-small responses that never reach the threshold in a row
-        // (a healthy response keeps resetting the counter) must never warn — this
-        // is the common case for broad/compact queries the server caps below
-        // target on row-count/time rather than on bytes.
+        // Bad responses that never reach the threshold in a row (a healthy
+        // response keeps resetting the counter) must never warn.
         let mut s = bare_scheduler();
         let small = s.config.response_bytes_target / 2 - 1;
         for _ in 0..(WARN_THRESHOLD * 3) {
             for _ in 0..(WARN_THRESHOLD - 1) {
-                s.update_warning(true, small);
+                s.update_warning(true, small, BAD_BLOCKS);
             }
-            s.update_warning(false, small);
+            s.update_warning(false, small, BAD_BLOCKS);
+        }
+        assert_eq!(s.warnings_emitted, 0);
+    }
+
+    #[test]
+    fn warning_silent_for_healthy_small_responses() {
+        // The common compact-query case: truncated and under target bytes, but
+        // covering a healthy block range (>= min_batch_size). The server is just
+        // row/time-capping a fine stream — this must NOT warn, even forever.
+        let mut s = bare_scheduler();
+        let small = s.config.response_bytes_target / 2 - 1;
+        let healthy_blocks = s.config.min_batch_size + 10;
+        for _ in 0..(WARN_THRESHOLD * 5) {
+            s.update_warning(true, small, healthy_blocks);
         }
         assert_eq!(s.warnings_emitted, 0);
     }
 
     #[test]
     fn warning_ignores_large_truncations() {
-        // Truncated but not small => server hit a response-size limit, which is
-        // normal/expected; no warning.
+        // Truncated but not small (byte-heavy query hitting the size cap) =>
+        // normal/expected; no warning even if block coverage is small.
         let mut s = bare_scheduler();
         let large = s.config.response_bytes_target;
         for _ in 0..(WARN_THRESHOLD * 2) {
-            s.update_warning(true, large);
+            s.update_warning(true, large, BAD_BLOCKS);
         }
         assert_eq!(s.warnings_emitted, 0);
+    }
+
+    #[test]
+    fn adaptive_buffer_grows_for_large_responses() {
+        // Default (unset) buffer: 2 * concurrency * target.
+        let mut s = bare_scheduler();
+        let concurrency = s.config.concurrency as u64;
+        let target = s.config.response_bytes_target;
+        assert_eq!(s.max_buffered_bytes, 2 * concurrency * target);
+
+        // A response far larger than target grows the cap to hold ~2 per worker.
+        let big = 12_000_000;
+        s.note_response_size(big);
+        assert_eq!(s.max_buffered_bytes, 2 * concurrency * big);
+
+        // Smaller subsequent responses don't shrink it.
+        s.note_response_size(1000);
+        assert_eq!(s.max_buffered_bytes, 2 * concurrency * big);
+    }
+
+    #[test]
+    fn adaptive_buffer_ignores_sub_target_responses() {
+        let mut s = bare_scheduler();
+        let initial = s.max_buffered_bytes;
+        s.note_response_size(s.config.response_bytes_target / 4);
+        assert_eq!(s.max_buffered_bytes, initial);
+    }
+
+    #[test]
+    fn explicit_buffer_is_never_grown() {
+        let mut config = cfg(2);
+        config.max_buffered_bytes = Some(5_000_000);
+        let fetcher: Arc<dyn Fetcher> = Arc::new(MockFetcher {
+            cover: Box::new(cover_full(100)),
+        });
+        let mut s = Scheduler::new(false, false, config, fetcher, None);
+        assert_eq!(s.max_buffered_bytes, 5_000_000);
+        s.note_response_size(50_000_000);
+        assert_eq!(s.max_buffered_bytes, 5_000_000, "explicit cap is honoured");
     }
 
     #[tokio::test]
