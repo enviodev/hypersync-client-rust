@@ -975,3 +975,85 @@ async fn test_stream_reverse_ordering() {
     }
     assert!(last.is_some(), "reverse stream returned data");
 }
+
+/// Collects every `number` value from an all-blocks stream, in arrival order.
+async fn collect_streamed_block_numbers(reverse: bool) -> Vec<u64> {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let from_block = 18_000_000u64;
+    let to_block = 18_010_000u64;
+    // Select a few heavyweight block fields (logs_bloom is 256 bytes/block) so
+    // the range spans many responses — this actually exercises the scheduler's
+    // out-of-order completion + contiguity-gated delivery, not a single chunk.
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": from_block,
+        "to_block": to_block,
+        "include_all_blocks": true,
+        "field_selection": { "block": ["number", "hash", "logs_bloom"] }
+    }))
+    .unwrap();
+
+    let config = StreamConfig {
+        reverse,
+        ..Default::default()
+    };
+    let mut rx = client.stream_arrow(query, config).await.unwrap();
+
+    let mut numbers = Vec::new();
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        for batch in res.data.blocks {
+            let col = batch
+                .column_by_name("number")
+                .expect("number column present")
+                .as_primitive::<UInt64Type>();
+            numbers.extend(col.iter().map(|n| n.expect("block number non-null")));
+        }
+    }
+    numbers
+}
+
+/// v2 engine parity: streaming **all blocks** over a range returns every block
+/// number exactly once, contiguous and strictly in order — the partition
+/// invariant, verified against real chain data rather than a mock.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_all_blocks_contiguous_forward() {
+    let numbers = collect_streamed_block_numbers(false).await;
+    let expected: Vec<u64> = (18_000_000..18_010_000).collect();
+    assert_eq!(
+        numbers.len(),
+        expected.len(),
+        "expected {} blocks, got {}",
+        expected.len(),
+        numbers.len()
+    );
+    assert_eq!(
+        numbers, expected,
+        "block numbers must be contiguous and ascending with no gaps or duplicates"
+    );
+}
+
+/// Same, in reverse: every block number exactly once, contiguous and strictly
+/// descending.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_all_blocks_contiguous_reverse() {
+    let numbers = collect_streamed_block_numbers(true).await;
+    let expected: Vec<u64> = (18_000_000..18_010_000).rev().collect();
+    assert_eq!(
+        numbers.len(),
+        expected.len(),
+        "expected {} blocks, got {}",
+        expected.len(),
+        numbers.len()
+    );
+    assert_eq!(
+        numbers, expected,
+        "block numbers must be contiguous and descending with no gaps or duplicates"
+    );
+}
