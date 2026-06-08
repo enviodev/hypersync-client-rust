@@ -35,6 +35,25 @@ jobs:
       - name: Test
         run: cargo test
 
+  integration_tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The live tests need the API token secret, which GitHub does not expose to
+    # PRs from forks — skip there. They still run on push to main and on PRs from
+    # branches within this repo.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Run live integration tests
+        env:
+          ENVIO_API_TOKEN: ${{ secrets.ENVIO_API_TOKEN }}
+        run: cargo test -p hypersync-client --test api_test -- --ignored
+
   package:
     runs-on: ubuntu-latest
     steps:

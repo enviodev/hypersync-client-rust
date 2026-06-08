@@ -9,7 +9,8 @@ use arrow::{
 use hypersync_client::{
     preset_query,
     simple_types::{self, Transaction},
-    Client, ColumnMapping, HexOutput, SerializationFormat, StreamConfig,
+    Client, ColumnMapping, HexOutput, SerializationFormat, StreamConfig, StreamMetrics,
+    StreamObserver,
 };
 use hypersync_format::{Address, Data, FilterWrapper, FixedSizeData, Hex, LogArgument, Quantity};
 use hypersync_net_types::{
@@ -792,36 +793,41 @@ async fn test_small_bloom_filter_query() {
     assert_eq!(num_txns, 21);
 }
 
+/// Exercises decoding an event with `string` parameters into Arrow utf8.
+///
+/// Originally targeted the mev-commit chain's `CommitmentStored` event, but that
+/// chain was deprecated (removed 2025-12-08). Repurposed to ENS
+/// `NameRegistered(string name, ...)` on eth mainnet, which has the same
+/// string-decode characteristic.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore]
 async fn test_decode_string_param_into_arrow() {
     let client = Arc::new(
         Client::builder()
-            .url("https://mev-commit.hypersync.xyz")
+            .url("https://eth.hypersync.xyz")
             .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
             .build()
             .unwrap(),
     );
 
+    // ENS ETHRegistrarController + NameRegistered topic0 (the 6-arg variant).
     let query: Query = serde_json::from_value(serde_json::json!({
-        "from_block": 0,
+        "from_block": 18000000,
+        "to_block": 18050000,
         "logs": [{
-            "address": ["0xCAC68D97a56b19204Dd3dbDC103CB24D47A825A3"],
-            "topics": [["0xe44dd4d002deb2c79cf08ce285a9d80c69753f31ca65c8e49f0a60d27ed9fea3"]],
+            "address": ["0x253553366Da8546fC250F225fe3d25d0C782303b"],
+            "topics": [["0x69e37f151eb98a09618ddaa80c8cfaf1ce5996867c489f45b555b412271ebf27"]],
         }],
         "field_selection": {
-            "log": ["block_number", "topic0", "topic1", "topic2", "topic3", "data", "address"],
+            "log": ["block_number", "topic0", "topic1", "topic2", "data", "address"],
         }
     }))
     .unwrap();
 
     let conf = StreamConfig {
         event_signature: Some(
-            "CommitmentStored(bytes32 indexed commitmentIndex, address bidder, address commiter, \
-             uint256 bid, uint64 blockNumber, bytes32 bidHash, uint64 decayStartTimeStamp, uint64 \
-             decayEndTimeStamp, string txnHash, string revertingTxHashes, bytes32 commitmentHash, \
-             bytes bidSignature, bytes commitmentSignature, uint64 dispatchTimestamp, bytes \
-             sharedSecretKey)"
+            "NameRegistered(string name, bytes32 indexed label, address indexed owner, \
+             uint256 baseCost, uint256 premium, uint256 expires)"
                 .into(),
         ),
         ..Default::default()
@@ -829,7 +835,27 @@ async fn test_decode_string_param_into_arrow() {
 
     let data = client.collect_arrow(query, conf).await.unwrap();
 
-    dbg!(data.data.decoded_logs);
+    // The `name` string parameter must decode into a non-empty utf8 column.
+    let mut total = 0usize;
+    let mut sample: Option<String> = None;
+    for batch in &data.data.decoded_logs {
+        let names = batch
+            .column_by_name("name")
+            .expect("decoded `name` column present")
+            .as_string::<i32>();
+        for n in names.iter().flatten() {
+            total += 1;
+            if sample.is_none() && !n.is_empty() {
+                sample = Some(n.to_string());
+            }
+        }
+    }
+    assert!(
+        total > 0,
+        "expected decoded NameRegistered rows with a string `name`"
+    );
+    assert!(sample.is_some(), "expected at least one non-empty ENS name");
+    println!("decoded {total} ENS names, e.g. {sample:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -874,4 +900,185 @@ async fn test_api_capnp_client() {
             break;
         }
     }
+}
+
+/// v2 engine parity: a bounded forward stream delivers a contiguous, fully
+/// covering, strictly increasing sequence of responses, and the observer sees
+/// the run's aggregate metrics.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_arrow_with_observer_contiguity() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let from_block = 18_000_000u64;
+    let to_block = 18_050_000u64;
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": from_block,
+        "to_block": to_block,
+        "logs": [{
+            "topics": [["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]],
+        }],
+        "field_selection": { "log": ["block_number", "log_index"] },
+    }))
+    .unwrap();
+
+    let metrics = Arc::new(StreamMetrics::new());
+    let observer: Arc<dyn StreamObserver> = metrics.clone();
+    let mut rx = client
+        .stream_arrow_with_observer(query, StreamConfig::default(), observer)
+        .await
+        .unwrap();
+
+    let mut prev = from_block;
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        assert!(
+            res.next_block > prev,
+            "responses must advance: prev={prev} next={}",
+            res.next_block
+        );
+        prev = res.next_block;
+    }
+    assert_eq!(prev, to_block, "stream must cover the full range");
+
+    let summary = metrics.summary();
+    assert!(summary.num_requests > 0, "observer saw requests");
+    assert!(summary.total_bytes > 0, "observer saw bytes");
+    assert_eq!(
+        summary.total_blocks,
+        to_block - from_block,
+        "every block counted exactly once"
+    );
+}
+
+/// v2 engine parity: a reverse stream delivers blocks in globally descending
+/// order across all responses.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_reverse_ordering() {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": 18_000_000,
+        "to_block": 18_050_000,
+        "logs": [{
+            "topics": [["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]],
+        }],
+        "field_selection": { "log": ["block_number"] },
+    }))
+    .unwrap();
+
+    let config = StreamConfig {
+        reverse: true,
+        ..Default::default()
+    };
+    let mut rx = client.stream_arrow(query, config).await.unwrap();
+
+    let mut last: Option<u64> = None;
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        for batch in res.data.logs {
+            let block_number = batch
+                .column_by_name("block_number")
+                .unwrap()
+                .as_primitive::<UInt64Type>();
+            for bn in block_number.iter().flatten() {
+                if let Some(prev) = last {
+                    assert!(bn <= prev, "reverse must be non-increasing: {prev} -> {bn}");
+                }
+                last = Some(bn);
+            }
+        }
+    }
+    assert!(last.is_some(), "reverse stream returned data");
+}
+
+/// Collects every `number` value from an all-blocks stream, in arrival order.
+async fn collect_streamed_block_numbers(reverse: bool) -> Vec<u64> {
+    let client = Client::builder()
+        .url("https://eth.hypersync.xyz")
+        .api_token(std::env::var(ENVIO_API_TOKEN).unwrap())
+        .build()
+        .unwrap();
+
+    let from_block = 18_000_000u64;
+    let to_block = 18_010_000u64;
+    // Select a few heavyweight block fields (logs_bloom is 256 bytes/block) so
+    // the range spans many responses — this actually exercises the scheduler's
+    // out-of-order completion + contiguity-gated delivery, not a single chunk.
+    let query: Query = serde_json::from_value(serde_json::json!({
+        "from_block": from_block,
+        "to_block": to_block,
+        "include_all_blocks": true,
+        "field_selection": { "block": ["number", "hash", "logs_bloom"] }
+    }))
+    .unwrap();
+
+    let config = StreamConfig {
+        reverse,
+        ..Default::default()
+    };
+    let mut rx = client.stream_arrow(query, config).await.unwrap();
+
+    let mut numbers = Vec::new();
+    while let Some(res) = rx.recv().await {
+        let res = res.unwrap();
+        for batch in res.data.blocks {
+            let col = batch
+                .column_by_name("number")
+                .expect("number column present")
+                .as_primitive::<UInt64Type>();
+            numbers.extend(col.iter().map(|n| n.expect("block number non-null")));
+        }
+    }
+    numbers
+}
+
+/// v2 engine parity: streaming **all blocks** over a range returns every block
+/// number exactly once, contiguous and strictly in order — the partition
+/// invariant, verified against real chain data rather than a mock.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_all_blocks_contiguous_forward() {
+    let numbers = collect_streamed_block_numbers(false).await;
+    let expected: Vec<u64> = (18_000_000..18_010_000).collect();
+    assert_eq!(
+        numbers.len(),
+        expected.len(),
+        "expected {} blocks, got {}",
+        expected.len(),
+        numbers.len()
+    );
+    assert_eq!(
+        numbers, expected,
+        "block numbers must be contiguous and ascending with no gaps or duplicates"
+    );
+}
+
+/// Same, in reverse: every block number exactly once, contiguous and strictly
+/// descending.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore]
+async fn test_stream_all_blocks_contiguous_reverse() {
+    let numbers = collect_streamed_block_numbers(true).await;
+    let expected: Vec<u64> = (18_000_000..18_010_000).rev().collect();
+    assert_eq!(
+        numbers.len(),
+        expected.len(),
+        "expected {} blocks, got {}",
+        expected.len(),
+        numbers.len()
+    );
+    assert_eq!(
+        numbers, expected,
+        "block numbers must be contiguous and descending with no gaps or duplicates"
+    );
 }

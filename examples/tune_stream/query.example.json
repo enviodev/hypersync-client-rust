@@ -1,0 +1,14 @@
+{
+  "from_block": 18000000,
+  "to_block": 18100000,
+  "logs": [
+    {
+      "topics": [
+        ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"]
+      ]
+    }
+  ],
+  "field_selection": {
+    "log": ["data", "topic0", "topic1", "topic2", "topic3"]
+  }
+}
