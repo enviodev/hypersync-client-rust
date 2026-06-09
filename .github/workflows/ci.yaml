@@ -70,6 +70,33 @@ jobs:
           cargo package -p hypersync-net-types
           cargo package -p hypersync-client
 
+  # The capnp-generated code is committed rather than built from build.rs, so it
+  # can drift from the schema if someone edits the .capnp file without
+  # regenerating. Regenerate here and fail if the committed code is stale. The
+  # plugin version is pinned exactly: the generated code's bytes depend on the
+  # capnpc-rust version, so a floating "^0.23" would produce spurious diffs.
+  check_capnp_generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: Swatinem/rust-cache@v2
+      - name: Install capnp schema compiler
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          sudo apt-get install -y capnproto libcapnp-dev
+      - name: Install capnpc-rust plugin
+        run: cargo install capnpc --version "=0.23.2"
+      - name: Regenerate capnp code
+        run: make -C hypersync-net-types generate_capnp_types
+      - name: Verify committed capnp code is up to date
+        run: |
+          git diff --exit-code -- hypersync-net-types/src/__generated__ \
+            || (echo "::error::Committed capnp code is out of date. Run 'make -C hypersync-net-types generate_capnp_types' (with capnpc 0.23.2) and commit the result." && exit 1)
+
   lint:
     runs-on: ubuntu-latest
     steps:
