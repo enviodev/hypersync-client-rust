@@ -78,6 +78,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      # The capnpc plugin and the `capnp` runtime are released in lockstep, so
+      # the Dockerfile's pinned capnpc must match every `capnp` Cargo dependency.
+      - name: Check capnpc version matches the capnp dependency
+        run: |
+          expected=$(sed -nE 's/^ARG CAPNPC_VERSION=([0-9]+\.[0-9]+).*/\1/p' hypersync-net-types/capnp-codegen.Dockerfile)
+          status=0
+          for f in $(grep -rl -E '^capnp = "' --include=Cargo.toml .); do
+            ver=$(sed -nE 's/^capnp = "([0-9]+\.[0-9]+).*/\1/p' "$f")
+            if [ "$ver" != "$expected" ]; then
+              echo "::error file=$f::capnp = \"$ver\" does not match the pinned capnpc $expected in capnp-codegen.Dockerfile"
+              status=1
+            fi
+          done
+          [ "$status" -eq 0 ] && echo "capnp/capnpc versions aligned ($expected)"
+          exit $status
       - name: Regenerate capnp code
         run: make -C hypersync-net-types generate_capnp_types
       - name: Verify committed capnp code is up to date
