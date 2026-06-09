@@ -1,0 +1,4 @@
+# Keep the build context minimal: only the schema is needed for codegen.
+# If the schema ever `import`s another .capnp file, un-ignore it here too.
+*
+!hypersync_net_types.capnp
