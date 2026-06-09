@@ -70,11 +70,6 @@ jobs:
           cargo package -p hypersync-net-types
           cargo package -p hypersync-client
 
-  # The capnp-generated code is committed rather than built from build.rs, so it
-  # can drift from the schema if someone edits the .capnp file without
-  # regenerating. Regenerate here and fail if the committed code is stale. The
-  # plugin version is pinned exactly: the generated code's bytes depend on the
-  # capnpc-rust version, so a floating "^0.23" would produce spurious diffs.
   check_capnp_generated:
     runs-on: ubuntu-latest
     steps:
