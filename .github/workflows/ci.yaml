@@ -74,23 +74,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - uses: Swatinem/rust-cache@v2
-      - name: Install capnp schema compiler
-        run: |
-          export DEBIAN_FRONTEND=noninteractive
-          sudo apt-get install -y capnproto libcapnp-dev
-      - name: Install capnpc-rust plugin
-        run: cargo install capnpc --version "=0.23.2"
       - name: Regenerate capnp code
         run: make -C hypersync-net-types generate_capnp_types
       - name: Verify committed capnp code is up to date
         run: |
           git diff --exit-code -- hypersync-net-types/src/__generated__ \
-            || (echo "::error::Committed capnp code is out of date. Run 'make -C hypersync-net-types generate_capnp_types' (with capnpc 0.23.2) and commit the result." && exit 1)
+            || (echo "::error::Committed capnp code is out of date. Run 'make -C hypersync-net-types generate_capnp_types' and commit the result." && exit 1)
 
   lint:
     runs-on: ubuntu-latest
