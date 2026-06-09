@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+# All jobs only read the repo (build/test/lint/package/codegen-check/fuzz).
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
