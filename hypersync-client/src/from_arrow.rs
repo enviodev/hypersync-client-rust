@@ -31,8 +31,15 @@ fn to_nested_opt<T>(val: Result<Option<T>, arrow_reader::ReadError>) -> anyhow::
 
 impl TryFrom<LogReader<'_>> for Log {
     type Error = anyhow::Error;
-
     fn try_from(reader: LogReader<'_>) -> Result<Self, Self::Error> {
+        Log::try_from(&reader)
+    }
+}
+
+impl<'a> TryFrom<&'a LogReader<'_>> for Log {
+    type Error = anyhow::Error;
+
+    fn try_from(reader: &'a LogReader<'_>) -> Result<Self, Self::Error> {
         let removed = to_nested_opt(reader.removed()).context("read field removed")?;
         let log_index = to_opt(reader.log_index()).context("read field log_index")?;
         let transaction_index =
@@ -68,8 +75,15 @@ impl TryFrom<LogReader<'_>> for Log {
 
 impl TryFrom<BlockReader<'_>> for Block {
     type Error = anyhow::Error;
-
     fn try_from(reader: BlockReader<'_>) -> Result<Self, Self::Error> {
+        Block::try_from(&reader)
+    }
+}
+
+impl<'a> TryFrom<&'a BlockReader<'_>> for Block {
+    type Error = anyhow::Error;
+
+    fn try_from(reader: &'a BlockReader<'_>) -> Result<Self, Self::Error> {
         let number = to_opt(reader.number()).context("read field number")?;
         let hash = to_opt(reader.hash()).context("read field hash")?;
         let parent_hash = to_opt(reader.parent_hash()).context("read field parent_hash")?;
@@ -142,8 +156,15 @@ impl TryFrom<BlockReader<'_>> for Block {
 
 impl TryFrom<TransactionReader<'_>> for Transaction {
     type Error = anyhow::Error;
-
     fn try_from(reader: TransactionReader<'_>) -> Result<Self, Self::Error> {
+        Transaction::try_from(&reader)
+    }
+}
+
+impl<'a> TryFrom<&'a TransactionReader<'_>> for Transaction {
+    type Error = anyhow::Error;
+
+    fn try_from(reader: &'a TransactionReader<'_>) -> Result<Self, Self::Error> {
         let block_hash = to_opt(reader.block_hash()).context("read field block_hash")?;
         let block_number = to_opt(reader.block_number()).context("read field block_number")?;
         let from = to_nested_opt(reader.from()).context("read field from")?;
@@ -294,8 +315,15 @@ impl Transaction {
 
 impl TryFrom<TraceReader<'_>> for Trace {
     type Error = anyhow::Error;
-
     fn try_from(reader: TraceReader<'_>) -> Result<Self, Self::Error> {
+        Trace::try_from(&reader)
+    }
+}
+
+impl<'a> TryFrom<&'a TraceReader<'_>> for Trace {
+    type Error = anyhow::Error;
+
+    fn try_from(reader: &'a TraceReader<'_>) -> Result<Self, Self::Error> {
         let from = to_nested_opt(reader.from()).context("read field from")?;
         let to = to_nested_opt(reader.to()).context("read field to")?;
         let call_type = to_nested_opt(reader.call_type()).context("read field call_type")?;
