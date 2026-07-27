@@ -264,12 +264,14 @@ We deliberately use a **single target** rather than a `[floor, ceiling]` dead-ba
   most requests *complete their assigned range without server truncation* (rare gaps, smooth
   delivery), at the cost of slightly more requests than aiming at the ceiling would.
 
-If `anchor.size_bytes` is ~0 (e.g. an empty bounded range), `factor` explodes and `projected`
-is bounded only by the hole's end (`upper_bound` for the frontier) unless `max_batch_size` is
-set — so by default a sparse region is fast-scanned in a single over-large request, and any
-server truncation is simply backfilled. This is the same "overestimate and work backwards"
-mechanism as §3, which is why a hard maximum block range is not *required* — though
-`max_batch_size` can still impose one when a caller wants to bound blocks per chunk.
+If `anchor.size_bytes` is 0 (an empty bounded range), the proportional controller has no
+signal, so the span instead grows geometrically from the anchor's span
+(`ZERO_DENSITY_GROWTH_FACTOR`, ×64). Genuinely empty regions still ramp to full span within
+a round trip or two, but a zero reading can no longer swallow the whole remaining hole in a
+single request — which mattered because each server truncation of such a request yields
+exactly one follow-up request, degenerating the scan into sequential round trips regardless
+of `concurrency`. `max_batch_size` can still impose a hard cap when a caller wants to bound
+blocks per chunk.
 
 ---
 
