@@ -178,6 +178,12 @@ pub struct TransactionReceipt {
     pub l1_blob_base_fee_scalar: Option<Quantity>,
 
     // Arbitrum fields
+    // Alias: stock nitro v3.11.2 marshals this field as `L1BlockNumber` on
+    // eth_getBlockReceipts (fixed in v3.11.3); providers still on v3.11.2
+    // (observed: chainstack's arbitrum head fleet, 2026-08-19) serve the
+    // miscased key, which otherwise reads as null and trips
+    // required_fields validation.
+    #[serde(alias = "L1BlockNumber")]
     pub l1_block_number: Option<Quantity>,
 }
 
