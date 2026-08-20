@@ -48,14 +48,14 @@ async fn main() -> anyhow::Result<()> {
                     if decoded_call.len() == 2 {
                         println!(
                             "Found DAU transfer {:?}. to: {}, amount: {:?}",
-                            &tx.hash,
+                            tx.hash,
                             decoded_call[0].as_address().unwrap(),
                             decoded_call[1].as_uint().unwrap()
                         );
                     } else if decoded_call.len() == 3 {
                         println!(
                             "Found DAU transfer {:?}. from: {}, to: {}, amount: {:?}",
-                            &tx.hash,
+                            tx.hash,
                             decoded_call[0].as_address().unwrap(),
                             decoded_call[1].as_address().unwrap(),
                             decoded_call[2].as_uint().unwrap()
