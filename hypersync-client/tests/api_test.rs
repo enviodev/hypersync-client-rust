@@ -886,7 +886,7 @@ async fn test_api_capnp_client() {
         field_selection,
         ..Default::default()
     };
-    println!("starting stream, query {:?}", &query);
+    println!("starting stream, query {:?}", query);
 
     let mut res = client.stream(query, StreamConfig::default()).await.unwrap();
 
