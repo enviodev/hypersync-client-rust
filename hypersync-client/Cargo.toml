@@ -1,6 +1,6 @@
 [package]
 name = "hypersync-client"
-version = "1.4.1"
+version = "1.4.2"
 edition = "2021"
 description = "client library for hypersync"
 license = "MPL-2.0"
@@ -18,7 +18,7 @@ parquet = { workspace = true, features = ["arrow", "async"] }
 anyhow = "1"
 url = { version = "2", features = ["serde"] }
 serde_json = "1"
-capnp = "0.23"
+capnp = "0.27"
 serde = { version = "1", features = ["derive"] }
 futures = "0.3"
 arrayvec = { version = "0.7", features = ["serde"] }
@@ -44,7 +44,7 @@ bincode = "1"
 nohash-hasher = "0.2.0"
 alloy-primitives = "1.1"
 
-hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.3" }
+hypersync-net-types = { path = "../hypersync-net-types", version = "0.12.4" }
 hypersync-format = { path = "../hypersync-format", version = "0.7.0" }
 hypersync-schema = { path = "../hypersync-schema", version = "0.4.0" }
 reqwest-eventsource = "0.6"
