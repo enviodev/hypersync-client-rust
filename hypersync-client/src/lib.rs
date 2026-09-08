@@ -284,7 +284,7 @@ impl Client {
     /// # }
     /// ```
     pub async fn collect(&self, query: Query, config: StreamConfig) -> Result<QueryResponse> {
-        check_simple_stream_params(&config)?;
+        let config = check_simple_stream_params(config)?;
 
         let mut recv = stream::stream_arrow(self, query, config)
             .await
@@ -369,7 +369,7 @@ impl Client {
         mut query: Query,
         config: StreamConfig,
     ) -> Result<EventResponse> {
-        check_simple_stream_params(&config)?;
+        let config = check_simple_stream_params(config)?;
 
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
         event_join_strategy.add_join_fields_to_selection(&mut query.field_selection);
@@ -1126,7 +1126,7 @@ impl Client {
         query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<QueryResponse>>> {
-        check_simple_stream_params(&config)?;
+        let config = check_simple_stream_params(config)?;
 
         let (tx, rx): (_, mpsc::Receiver<Result<QueryResponse>>) =
             mpsc::channel(config.concurrency);
@@ -1190,7 +1190,7 @@ impl Client {
         mut query: Query,
         config: StreamConfig,
     ) -> Result<mpsc::Receiver<Result<EventResponse>>> {
-        check_simple_stream_params(&config)?;
+        let config = check_simple_stream_params(config)?;
 
         let event_join_strategy = InternalEventJoinStrategy::from(&query.field_selection);
 
@@ -1953,7 +1953,13 @@ impl Client {
     }
 }
 
-fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
+/// Validate a [`StreamConfig`] for the simple-type functions (`collect`, `collect_events`,
+/// `stream`, `stream_events`) and normalise it for the typed decoder.
+///
+/// The typed decoder expects binary columns to still be `Binary`, so `hex_output` is forced to
+/// [`HexOutput::NoEncode`]. Hex encoding is irrelevant for these functions anyway: the simple
+/// types own their bytes and render them as hex when displayed.
+fn check_simple_stream_params(mut config: StreamConfig) -> Result<StreamConfig> {
     if config.event_signature.is_some() {
         return Err(anyhow!(
             "config.event_signature can't be passed to simple type function. User is expected to \
@@ -1967,7 +1973,9 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
         ));
     }
 
-    Ok(())
+    config.hex_output = HexOutput::NoEncode;
+
+    Ok(config)
 }
 
 /// Used to indicate whether or not a retry should be attempted.
@@ -2000,6 +2008,37 @@ struct ArrowImplResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn simple_stream_params_force_no_encode_hex_output() {
+        for hex_output in [
+            HexOutput::Prefixed,
+            HexOutput::NonPrefixed,
+            HexOutput::NoEncode,
+        ] {
+            let config = StreamConfig {
+                hex_output,
+                ..Default::default()
+            };
+            let config = check_simple_stream_params(config).unwrap();
+            assert_eq!(config.hex_output, HexOutput::NoEncode);
+        }
+    }
+
+    #[test]
+    fn simple_stream_params_reject_event_signature_and_column_mapping() {
+        let config = StreamConfig {
+            event_signature: Some("Transfer(address,address,uint256)".to_owned()),
+            ..Default::default()
+        };
+        assert!(check_simple_stream_params(config).is_err());
+
+        let config = StreamConfig {
+            column_mapping: Some(ColumnMapping::default()),
+            ..Default::default()
+        };
+        assert!(check_simple_stream_params(config).is_err());
+    }
     #[test]
     fn test_get_delay() {
         assert_eq!(
