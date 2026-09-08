@@ -1953,6 +1953,11 @@ impl Client {
     }
 }
 
+/// Validate a [`StreamConfig`] for the simple-type functions (`collect`, `collect_events`,
+/// `stream`, `stream_events`).
+///
+/// These functions decode raw binary Arrow columns into simple types, so the Arrow-only options
+/// (`event_signature`, `column_mapping`, `hex_output`) are rejected rather than silently ignored.
 fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
     if config.event_signature.is_some() {
         return Err(anyhow!(
@@ -1964,6 +1969,13 @@ fn check_simple_stream_params(config: &StreamConfig) -> Result<()> {
         return Err(anyhow!(
             "config.column_mapping can't be passed to single type function. User is expected to \
              map values manually."
+        ));
+    }
+    if config.hex_output != HexOutput::NoEncode {
+        return Err(anyhow!(
+            "config.hex_output must be HexOutput::NoEncode for simple type functions. The simple \
+             types hold raw bytes and format them as hex themselves; hex_output only applies to \
+             collect_arrow, collect_parquet and stream_arrow."
         ));
     }
 
@@ -2000,6 +2012,33 @@ struct ArrowImplResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn simple_stream_params_reject_hex_output() {
+        for hex_output in [HexOutput::Prefixed, HexOutput::NonPrefixed] {
+            let config = StreamConfig {
+                hex_output,
+                ..Default::default()
+            };
+            assert!(check_simple_stream_params(&config).is_err());
+        }
+        assert!(check_simple_stream_params(&StreamConfig::default()).is_ok());
+    }
+
+    #[test]
+    fn simple_stream_params_reject_event_signature_and_column_mapping() {
+        let config = StreamConfig {
+            event_signature: Some("Transfer(address,address,uint256)".to_owned()),
+            ..Default::default()
+        };
+        assert!(check_simple_stream_params(&config).is_err());
+
+        let config = StreamConfig {
+            column_mapping: Some(ColumnMapping::default()),
+            ..Default::default()
+        };
+        assert!(check_simple_stream_params(&config).is_err());
+    }
     #[test]
     fn test_get_delay() {
         assert_eq!(
