@@ -134,14 +134,26 @@ impl Default for SerializationFormat {
 }
 
 /// Config for hypersync event streaming.
+///
+/// `column_mapping`, `event_signature` and `hex_output` only affect the Arrow output path
+/// (`collect_arrow`, `collect_parquet`, `stream_arrow`). The simple-type functions (`collect`,
+/// `collect_events`, `stream`, `stream_events`) always work on raw binary columns: they reject
+/// `column_mapping` and `event_signature`, and ignore `hex_output`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StreamConfig {
     /// Column mapping for stream function output.
     /// It lets you map columns you want into the DataTypes you want.
+    ///
+    /// Arrow output path only. The simple-type functions return an error if this is set.
     pub column_mapping: Option<ColumnMapping>,
     /// Event signature used to populate decode logs. Decode logs would be empty if set to None.
+    ///
+    /// Arrow output path only. The simple-type functions return an error if this is set.
     pub event_signature: Option<String>,
     /// Determines formatting of binary columns numbers into utf8 hex.
+    ///
+    /// Arrow output path only. The simple-type functions ignore this and always decode from
+    /// binary columns, since their output types hold raw bytes and render hex themselves.
     #[serde(default)]
     pub hex_output: HexOutput,
     /// Initial, deliberately-overestimated batch size, used for the first wave of
@@ -196,7 +208,10 @@ pub struct StreamConfig {
     pub reverse: bool,
 }
 
-/// Determines format of Binary column
+/// Determines format of Binary column in Arrow output.
+///
+/// Only used by `collect_arrow`, `collect_parquet` and `stream_arrow`. Has no effect on the
+/// simple-type functions.
 #[derive(Default, Clone, Copy, Debug, Serialize, Deserialize, PartialEq, JsonSchema)]
 pub enum HexOutput {
     /// Binary column won't be formatted as hex
