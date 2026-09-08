@@ -4,7 +4,7 @@
 FROM rust:1.94-slim-trixie@sha256:cf09adf8c3ebaba10779e5c23ff7fe4df4cccdab8a91f199b0c142c53fef3e1a AS codegen
 
 # Must stay compatible with the `capnp` runtime dependency in Cargo.toml.
-ARG CAPNPC_VERSION=0.23.2
+ARG CAPNPC_VERSION=0.27.0
 # The capnp compiler version affects the generated schema blobs, so pin it too.
 ARG CAPNPROTO_VERSION=1.1.0-2
 

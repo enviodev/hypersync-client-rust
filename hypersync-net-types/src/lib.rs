@@ -197,7 +197,7 @@ pub trait CapnpReader<O: capnp::traits::Owned> {
 
 impl<O, T> CapnpBuilder<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
 where
-    O: capnp::traits::Owned,
+    O: capnp::traits::Owned + 'static,
     T: CapnpBuilder<O>,
 {
     fn populate_builder<'a>(
@@ -220,7 +220,7 @@ where
 
 impl<O, T> CapnpReader<hypersync_net_types_capnp::selection::Owned<O>> for Selection<T>
 where
-    O: capnp::traits::Owned,
+    O: capnp::traits::Owned + 'static,
     T: CapnpReader<O>,
 {
     fn from_reader<'a>(
