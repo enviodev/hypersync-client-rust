@@ -57,6 +57,17 @@ const WAIT_ON_RATE_LIMIT: bool = true;
 /// batch-size tuning genuinely can't help.
 const WARN_THRESHOLD: u32 = 100;
 
+/// Cap on how much larger a zero-density projection may be than the span of the
+/// chunk it anchored on. A zero-density (empty) anchor previously projected the
+/// whole remaining hole in one request; each server truncation then yields
+/// exactly one follow-up request, so the scan degenerates to sequential round
+/// trips regardless of the configured concurrency. Growing geometrically instead
+/// keeps `concurrency` requests in flight — the factor is large so genuinely
+/// empty regions still ramp to full span within a round trip or two, costing
+/// almost nothing over the previous single over-large request. Nonzero-density
+/// projections are untouched: `target / density` is already proportional.
+const ZERO_DENSITY_GROWTH_FACTOR: u64 = 64;
+
 /// `concurrency == 0` is an error; `1` is sequential; `>= 2` uses the scheduler.
 fn check_concurrency(concurrency: usize) -> Result<()> {
     if concurrency == 0 {
@@ -226,8 +237,9 @@ struct Scheduler {
     max_buffered_adaptive: bool,
     /// Largest response body seen so far, driving the adaptive cap.
     max_observed_response: u64,
-    /// Bytes/block of the most recent completed response, used for projection.
-    last_density: Option<f64>,
+    /// (bytes/block, span in blocks) of the most recent completed response, used
+    /// for projection.
+    last_measurement: Option<(f64, u64)>,
 
     /// Running entity counts (delivered so far) for the `max_num_*` limits.
     num_blocks: usize,
@@ -282,7 +294,7 @@ impl Scheduler {
             max_buffered_bytes,
             max_buffered_adaptive,
             max_observed_response: 0,
-            last_density: None,
+            last_measurement: None,
             num_blocks: 0,
             num_transactions: 0,
             num_logs: 0,
@@ -296,9 +308,10 @@ impl Scheduler {
         }
     }
 
-    /// Density (bytes/block) used to size the next request from `[hole_start,
-    /// hole_end)`: the nearest completed neighbour, else the last reading.
-    fn anchor_density(&self, hole_start: u64, hole_end: u64) -> Option<f64> {
+    /// Density (bytes/block) and span (blocks) of the completed chunk used to size
+    /// the next request from `[hole_start, hole_end)`: the nearest completed
+    /// neighbour, else the last reading.
+    fn anchor_measurement(&self, hole_start: u64, hole_end: u64) -> Option<(f64, u64)> {
         let anchor = if self.reverse {
             self.completed.range(hole_end..).next()
         } else {
@@ -306,22 +319,23 @@ impl Scheduler {
         };
         if let Some((&start, chunk)) = anchor {
             let blocks = chunk.next_block.saturating_sub(start);
-            return Some(if blocks > 0 {
-                chunk.size_bytes as f64 / blocks as f64
-            } else {
-                0.0
-            });
+            if blocks > 0 {
+                return Some((chunk.size_bytes as f64 / blocks as f64, blocks));
+            }
+            return Some((0.0, 1));
         }
-        self.last_density
+        self.last_measurement
     }
 
     /// Projected block span (pre hole-clamp), aimed at `response_bytes_target`.
     fn project_blocks(&self, hole_start: u64, hole_end: u64) -> u64 {
         let target = self.config.response_bytes_target as f64;
-        let mut projected = match self.anchor_density(hole_start, hole_end) {
-            Some(d) if d > 0.0 => (target / d).round() as u64,
-            // Zero density (e.g. an empty range) — scan as far as the hole allows.
-            Some(_) => u64::MAX,
+        let mut projected = match self.anchor_measurement(hole_start, hole_end) {
+            Some((density, _)) if density > 0.0 => (target / density).round() as u64,
+            // Zero density (e.g. an empty range) — grow geometrically from the
+            // anchor span instead of swallowing the whole remaining hole (see
+            // ZERO_DENSITY_GROWTH_FACTOR).
+            Some((_, anchor_span)) => anchor_span.saturating_mul(ZERO_DENSITY_GROWTH_FACTOR),
             // Nothing measured yet — first wave uses the configured batch size.
             None => self.config.batch_size,
         };
@@ -633,7 +647,7 @@ impl Scheduler {
 
         let blocks = covered - fr.start;
         if blocks > 0 {
-            self.last_density = Some(outcome.size_bytes as f64 / blocks as f64);
+            self.last_measurement = Some((outcome.size_bytes as f64 / blocks as f64, blocks));
         }
 
         if truncated {
@@ -1227,10 +1241,59 @@ mod tests {
 
     #[tokio::test]
     async fn forward_sparse_region_is_scanned() {
-        // Zero-byte (empty) responses => density 0 => projection scans the whole
-        // remaining hole; coverage must still be complete.
+        // Zero-byte (empty) responses => density 0 => spans grow geometrically
+        // (MAX_SPAN_GROWTH_FACTOR per completed anchor); coverage must still be
+        // complete.
         let (chunks, _) = run_core_test(false, false, cfg(4), 0, 50_000, cover_full(0), None).await;
         assert_partition(&chunks, 0, 50_000, false);
+    }
+
+    /// Build a scheduler with one completed chunk of `span` blocks and `bytes`
+    /// total bytes, then project the next span for the hole above it.
+    fn project_after_chunk(span: u64, bytes: u64) -> u64 {
+        let fetcher: Arc<dyn Fetcher> = Arc::new(MockFetcher {
+            cover: Box::new(cover_full(0)),
+        });
+        let mut sched = Scheduler::new(false, false, cfg(4), fetcher, None);
+        seed(&mut sched, false, 0, 10_000_000);
+        sched.completed.insert(
+            0,
+            CompletedChunk {
+                next_block: span,
+                size_bytes: bytes,
+                resp: ArrowResponse {
+                    archive_height: None,
+                    next_block: span,
+                    total_execution_time: 0,
+                    data: ArrowResponseData::default(),
+                    rollback_guard: None,
+                },
+            },
+        );
+        sched.project_blocks(span, 10_000_000)
+    }
+
+    #[test]
+    fn projection_zero_density_is_growth_capped() {
+        // An empty anchor no longer projects the whole remaining hole: the span
+        // grows by ZERO_DENSITY_GROWTH_FACTOR per completed anchor.
+        assert_eq!(
+            project_after_chunk(1_000, 0),
+            1_000 * ZERO_DENSITY_GROWTH_FACTOR
+        );
+    }
+
+    #[test]
+    fn projection_nonzero_density_is_pure_proportional() {
+        // 400_000 target / 1 byte-per-block projects 400_000 blocks, untouched
+        // by any growth cap.
+        assert_eq!(project_after_chunk(1_000, 1_000), 400_000);
+    }
+
+    #[test]
+    fn projection_dense_is_unchanged() {
+        // 100 bytes/block => 4_000 projected blocks.
+        assert_eq!(project_after_chunk(1_000, 100_000), 4_000);
     }
 
     #[tokio::test]
