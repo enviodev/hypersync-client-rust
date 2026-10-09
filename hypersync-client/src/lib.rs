@@ -2079,12 +2079,16 @@ mod tests {
         let listener = socket.listen(0)?.into_std()?;
         let addr = listener.local_addr()?;
         // Filled with blocking connects: the paused clock would expire a
-        // timeout before a loopback handshake had the chance to complete.
+        // timeout before a loopback handshake had the chance to complete. It
+        // has to end on a timed out connect, or the address refuses instead of
+        // dropping and the request below would fail without any timeout.
         let mut fillers = Vec::new();
-        while let Ok(stream) =
-            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(50))
-        {
-            fillers.push(stream);
+        loop {
+            match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(50)) {
+                Ok(stream) => fillers.push(stream),
+                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
+                Err(e) => return Err(e.into()),
+            }
         }
 
         let request_timeout = Duration::from_secs(60);
@@ -2093,13 +2097,16 @@ mod tests {
             .api_token("00000000-0000-0000-0000-000000000000")
             .http_req_timeout_millis(request_timeout.as_millis() as u64)
             .build()?;
-        // The paused clock jumps to whichever timeout fires first.
+        // The paused clock jumps to whichever timeout fires first, so the
+        // elapsed time names the timer.
         let start = tokio::time::Instant::now();
         let res = client.health_check(None).await;
+        let elapsed = start.elapsed();
         assert!(
-            res.is_err() && start.elapsed() < request_timeout,
-            "{res:?} after {:?}",
-            start.elapsed()
+            res.is_err()
+                && elapsed >= CONNECT_TIMEOUT
+                && elapsed < CONNECT_TIMEOUT + Duration::from_secs(1),
+            "{res:?} after {elapsed:?}"
         );
         Ok(())
     }
