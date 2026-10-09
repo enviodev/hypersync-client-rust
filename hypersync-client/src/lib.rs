@@ -58,6 +58,8 @@ pub use types::{
 use crate::parse_response::read_query_response;
 use crate::simple_types::InternalEventJoinStrategy;
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Debug)]
 struct HttpClientWrapper {
     /// Mutable state that needs to be refreshed periodically
@@ -85,12 +87,20 @@ struct HttpClientWrapperInner {
 }
 
 impl HttpClientWrapper {
-    fn new(user_agent: String, api_token: String, timeout: Duration) -> Self {
-        let client = reqwest::Client::builder()
+    fn build_client(user_agent: &str) -> reqwest::Client {
+        reqwest::Client::builder()
             .no_gzip()
-            .user_agent(&user_agent)
+            .user_agent(user_agent)
+            // Without it a dead address holds the connection in SYN_SENT until
+            // the request timeout, or forever for the SSE height stream. Hyper
+            // splits it across the resolved addresses and moves on to the next.
+            .connect_timeout(CONNECT_TIMEOUT)
             .build()
-            .unwrap();
+            .unwrap()
+    }
+
+    fn new(user_agent: String, api_token: String, timeout: Duration) -> Self {
+        let client = Self::build_client(&user_agent);
 
         Self {
             inner: std::sync::Mutex::new(HttpClientWrapperInner {
@@ -110,11 +120,7 @@ impl HttpClientWrapper {
         // Check if client needs refresh due to age
         if inner.created_at.elapsed() > self.max_connection_age {
             // Recreate client to force new DNS lookup for failover scenarios
-            inner.client = reqwest::Client::builder()
-                .no_gzip()
-                .user_agent(&self.user_agent)
-                .build()
-                .unwrap();
+            inner.client = Self::build_client(&self.user_agent);
             inner.created_at = Instant::now();
         }
 
@@ -2061,6 +2067,39 @@ mod tests {
             Duration::from_secs(30),
             "max delay is 30s"
         );
+    }
+
+    // https://github.com/enviodev/hyperindex/issues/1691
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_unreachable_address_fails_at_connect_timeout() -> anyhow::Result<()> {
+        // Linux drops SYNs once the accept queue is full, like a blackholed address.
+        let socket = tokio::net::TcpSocket::new_v4()?;
+        socket.bind("127.0.0.1:0".parse()?)?;
+        let listener = socket.listen(0)?;
+        let addr = listener.local_addr()?;
+        let mut fillers = Vec::new();
+        while let Ok(Ok(stream)) = tokio::time::timeout(
+            Duration::from_millis(500),
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await
+        {
+            fillers.push(stream);
+        }
+
+        let client = Client::builder()
+            .url(format!("http://{addr}"))
+            .api_token("00000000-0000-0000-0000-000000000000")
+            .http_req_timeout_millis(60_000)
+            .build()?;
+        let res = tokio::time::timeout(
+            CONNECT_TIMEOUT + Duration::from_secs(2),
+            client.health_check(None),
+        )
+        .await;
+        assert!(matches!(res, Ok(Err(_))), "{res:?}");
+        Ok(())
     }
 
     #[tokio::test]
