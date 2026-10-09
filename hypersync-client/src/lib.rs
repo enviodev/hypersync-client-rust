@@ -2071,34 +2071,36 @@ mod tests {
 
     // https://github.com/enviodev/hyperindex/issues/1691
     #[cfg(target_os = "linux")]
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn test_unreachable_address_fails_at_connect_timeout() -> anyhow::Result<()> {
         // Linux drops SYNs once the accept queue is full, like a blackholed address.
         let socket = tokio::net::TcpSocket::new_v4()?;
         socket.bind("127.0.0.1:0".parse()?)?;
-        let listener = socket.listen(0)?;
+        let listener = socket.listen(0)?.into_std()?;
         let addr = listener.local_addr()?;
+        // Filled with blocking connects: the paused clock would expire a
+        // timeout before a loopback handshake had the chance to complete.
         let mut fillers = Vec::new();
-        while let Ok(Ok(stream)) = tokio::time::timeout(
-            Duration::from_millis(500),
-            tokio::net::TcpStream::connect(addr),
-        )
-        .await
+        while let Ok(stream) =
+            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(50))
         {
             fillers.push(stream);
         }
 
+        let request_timeout = Duration::from_secs(60);
         let client = Client::builder()
             .url(format!("http://{addr}"))
             .api_token("00000000-0000-0000-0000-000000000000")
-            .http_req_timeout_millis(60_000)
+            .http_req_timeout_millis(request_timeout.as_millis() as u64)
             .build()?;
-        let res = tokio::time::timeout(
-            CONNECT_TIMEOUT + Duration::from_secs(2),
-            client.health_check(None),
-        )
-        .await;
-        assert!(matches!(res, Ok(Err(_))), "{res:?}");
+        // The paused clock jumps to whichever timeout fires first.
+        let start = tokio::time::Instant::now();
+        let res = client.health_check(None).await;
+        assert!(
+            res.is_err() && start.elapsed() < request_timeout,
+            "{res:?} after {:?}",
+            start.elapsed()
+        );
         Ok(())
     }
 
