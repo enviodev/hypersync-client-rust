@@ -25,6 +25,7 @@ pub mod metrics;
 mod parquet_out;
 mod parse_response;
 pub mod preset_query;
+mod payment;
 mod rate_limit;
 mod rayon_async;
 pub mod simple_types;
@@ -50,6 +51,7 @@ pub use metrics::{
     RequestKind, RequestStats, StreamMetrics, StreamObserver, StreamSummary, NUM_SIZE_BUCKETS,
     SIZE_BUCKET_LABELS,
 };
+pub use payment::PaymentRequiredInfo;
 pub use rate_limit::RateLimitInfo;
 pub use types::{
     ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, RateLimitResponse,
@@ -797,6 +799,11 @@ impl Client {
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(HyperSyncResponseError::RateLimited { rate_limit });
         }
+        if status == StatusCode::PAYMENT_REQUIRED {
+            return Err(HyperSyncResponseError::PaymentRequired(
+                PaymentRequiredInfo::from_response(res).await,
+            ));
+        }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
 
@@ -875,6 +882,11 @@ impl Client {
             if status == StatusCode::TOO_MANY_REQUESTS {
                 return Err(HyperSyncResponseError::RateLimited { rate_limit });
             }
+            if status == StatusCode::PAYMENT_REQUIRED {
+                return Err(HyperSyncResponseError::PaymentRequired(
+                    PaymentRequiredInfo::from_response(res).await,
+                ));
+            }
             if status.is_success() {
                 let bytes = res.bytes().await.context("read response body bytes")?;
 
@@ -944,6 +956,11 @@ impl Client {
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(HyperSyncResponseError::RateLimited { rate_limit });
         }
+        if status == StatusCode::PAYMENT_REQUIRED {
+            return Err(HyperSyncResponseError::PaymentRequired(
+                PaymentRequiredInfo::from_response(res).await,
+            ));
+        }
         if !status.is_success() {
             let text = res.text().await.context("read text to see error")?;
 
@@ -982,7 +999,8 @@ impl Client {
                 Ok(res) => return Ok(res),
                 Err(
                     e @ (HyperSyncResponseError::Other(_)
-                    | HyperSyncResponseError::RateLimited { .. }),
+                    | HyperSyncResponseError::RateLimited { .. }
+                    | HyperSyncResponseError::PaymentRequired(_)),
                 ) => return Err(e),
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     let block_range = if let Some(to_block) = query.to_block {
@@ -1067,6 +1085,13 @@ impl Client {
                         "failed to get arrow data from server, retrying... The error was: {e:?}"
                     );
                     err = err.context(format!("{e:?}"));
+                }
+                Err(HyperSyncResponseError::PaymentRequired(info)) => {
+                    // Retrying can't help until the balance is topped up or a
+                    // payment challenge is paid.
+                    return Err(anyhow::anyhow!(HyperSyncResponseError::PaymentRequired(
+                        info
+                    )));
                 }
                 Err(HyperSyncResponseError::PayloadTooLarge) => {
                     // This shouldn't happen since get_arrow_impl handles it, but just in case
@@ -1994,6 +2019,10 @@ pub enum HyperSyncResponseError {
         /// Rate limit information from the 429 response headers.
         rate_limit: RateLimitInfo,
     },
+    /// Server responded with 402 Payment Required: no credits left on the
+    /// token's package, or no API token sent. Not retried.
+    #[error("hypersync payment required: {0}")]
+    PaymentRequired(PaymentRequiredInfo),
     /// Any other server error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
