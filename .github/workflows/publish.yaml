@@ -2,6 +2,10 @@ name: Publish to crates.io
 
 permissions:
   contents: write
+  # Lets the job mint a GitHub OIDC token, which crates-io-auth-action exchanges
+  # for a short-lived crates.io token. Each crate has a Trusted Publisher entry
+  # on crates.io pinning this repo + this workflow file.
+  id-token: write
 
 on:
   workflow_dispatch:
@@ -62,10 +66,14 @@ jobs:
           fi
           echo "No existing tag or release found for ${TAG}. Proceeding."
 
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
       - name: Publish to crates.io
         env:
           VERBOSE: true
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           cargo publish -p ${{ inputs.crate_name }}
 
