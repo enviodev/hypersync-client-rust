@@ -67,12 +67,17 @@ jobs:
           toolchain: stable
           override: true
       - uses: Swatinem/rust-cache@v2
+      # Package all publishable crates in one invocation so they resolve against
+      # each other's local packages. Packaging them one at a time resolves
+      # workspace deps from crates.io, which fails whenever a PR bumps a crate
+      # and its dependent together before the new version is published.
       - name: Verify publishable crates package correctly
         run: |
-          cargo package -p hypersync-format
-          cargo package -p hypersync-schema
-          cargo package -p hypersync-net-types
-          cargo package -p hypersync-client
+          cargo package \
+            -p hypersync-format \
+            -p hypersync-schema \
+            -p hypersync-net-types \
+            -p hypersync-client
 
   check_capnp_generated:
     runs-on: ubuntu-latest
