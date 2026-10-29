@@ -34,7 +34,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-hypersync-client = "1"
+hypersync-client = "2"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 ```
