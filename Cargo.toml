@@ -17,5 +17,5 @@ members = [
 ]
 
 [workspace.dependencies]
-arrow = "57"
-parquet = "57"
+arrow = "59"
+parquet = "59"
