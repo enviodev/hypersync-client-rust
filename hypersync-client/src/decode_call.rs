@@ -1,4 +1,4 @@
-use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::Function;
 use anyhow::{Context, Result};
 use hypersync_format::Data;
@@ -41,62 +41,49 @@ impl CallDecoder {
 
     /// Parse input data and return result
     ///
-    /// Returns Ok(None) if signature not found.
+    /// Returns Ok(None) if the data is shorter than a selector or the signature is not found.
     pub fn decode_input(&self, data: &Data) -> Result<Option<Vec<DynSolValue>>> {
+        let Some((selector, args)) = data.split_first_chunk::<4>() else {
+            return Ok(None);
+        };
         let function_key = FunctionKey {
-            signature: data[0..4].to_vec(),
+            signature: selector.to_vec(),
         };
         let function = match self.map.get(&function_key) {
             Some(function) => function,
             None => return Ok(None),
         };
         let decoded = function
-            .abi_decode_input(data.as_ref())
+            .abi_decode_input(args)
             .context("decoding input data")?;
         Ok(Some(decoded))
     }
 
     /// Parse output data and return result
     ///
-    /// Decodes the output field from a trace
-    /// and returns the decoded values in a `Vec<DynSolValue>`. If the function
-    /// signature is not found or the decoding fails, it returns `Ok(None)` as
-    /// the result to match the behavior of `decode_input`
+    /// Decodes return data (e.g. a trace's output) using the output types of
+    /// `function_signature`, e.g. `"balanceOf(address)(uint256)"`. The signature
+    /// is parsed on each call and does not need to be registered with this decoder.
+    ///
+    /// Returns `Ok(None)` if the data does not decode, and an error if the
+    /// signature can't be parsed.
     pub fn decode_output(
         &self,
         data: &Data,
         function_signature: &str,
     ) -> Result<Option<Vec<DynSolValue>>> {
-        // Parse the provided function signature into a Function object
         let function = Function::parse(function_signature).context("parsing function signature")?;
+        let output_types = function
+            .outputs
+            .iter()
+            .map(|param| param.resolve())
+            .collect::<Result<Vec<_>, _>>()
+            .context("resolving output types")?;
 
-        //Extract the output types of the function
-        let output_types = function.outputs;
-
-        // Convert the output types into the corresponding DynSolType representations,
-        let output_types: Vec<DynSolType> = output_types
-            .into_iter()
-            .map(|param| param.ty.parse::<DynSolType>())
-            .collect::<Result<_, _>>() // Parse each type as DynSolType
-            .context("parsing output types")?;
-
-        // Create a tuple type from the output parameters
-        let tuple_type = DynSolType::Tuple(output_types);
-
-        // Attempt to decode the data using the constructed tuple type
-        match tuple_type.abi_decode(data.as_ref()) {
-            // If decoding succeeds, return the decoded values as a tuple or single value
-            Ok(decoded) => {
-                if let DynSolValue::Tuple(values) = decoded {
-                    Ok(Some(values)) // Return the decoded values as a Vec if it's a tuple
-                } else {
-                    Ok(Some(vec![decoded])) // Return a single value wrapped in a Vec
-                }
-            }
-            // If decoding fails, return None (to match the behavior of decode_input)
-            Err(_) => {
-                Ok(None) // Return None to signal that decoding failed
-            }
+        // Return data is a parameter sequence, not an offset-prefixed tuple.
+        match DynSolType::Tuple(output_types).abi_decode_sequence(data.as_ref()) {
+            Ok(DynSolValue::Tuple(values)) => Ok(Some(values)),
+            _ => Ok(None),
         }
     }
 }
@@ -112,7 +99,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref()).unwrap();
+        let expected = function.abi_decode_input(&input[4..]).unwrap();
 
         let decoder =
             CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
@@ -129,7 +116,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref()).unwrap();
+        let expected = function.abi_decode_input(&input[4..]).unwrap();
 
         let decoder = CallDecoder::from_signatures(&[
             "transfer(address dst, uint256 wad)",
@@ -140,6 +127,38 @@ mod tests {
 
         for (expected, got) in expected.iter().zip(got.iter()) {
             assert_eq!(expected, got, "Checking that decodes are the same");
+        }
+    }
+
+    #[test]
+    fn test_decode_input_values_skip_selector() {
+        let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
+        let input = Data::decode_hex(input).unwrap();
+
+        let decoder =
+            CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
+        let got = decoder.decode_input(&input).unwrap().unwrap();
+
+        let expected_dst: alloy_primitives::Address = "0xdc4bde73fa35b7478a574f78d5dfd57a0b2e2281"
+            .parse()
+            .unwrap();
+        let expected_wad = alloy_primitives::U256::from(0x4710ca26d3eeae0a_u64);
+        assert_eq!(
+            got,
+            vec![
+                DynSolValue::Address(expected_dst),
+                DynSolValue::Uint(expected_wad, 256)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_decode_input_shorter_than_selector() {
+        let decoder =
+            CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
+        for input in ["0x", "0xa9"] {
+            let input = Data::decode_hex(input).unwrap();
+            assert!(decoder.decode_input(&input).unwrap().is_none());
         }
     }
 
@@ -189,6 +208,30 @@ mod tests {
             matches!(result[1], DynSolValue::Uint(..)),
             "Second value should be a uint"
         );
+    }
+
+    #[test]
+    fn test_decode_output_dynamic_value() {
+        // ABI encoding of a single `bytes` return value holding 32 zero bytes:
+        // offset (0x20), length (0x20), data.
+        let output = format!("0x{:064x}{:064x}{:064x}", 32, 32, 0);
+        let output = Data::decode_hex(&output).unwrap();
+
+        let decoder = CallDecoder::from_signatures(&["f()"]).unwrap();
+        let result = decoder
+            .decode_output(&output, "f()(bytes)")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(result, vec![DynSolValue::Bytes(vec![0u8; 32])]);
+    }
+
+    #[test]
+    fn test_decode_output_invalid_output_type_is_error() {
+        let decoder = CallDecoder::from_signatures(&["f()"]).unwrap();
+        assert!(decoder
+            .decode_output(&Data::default(), "f()(uint7)")
+            .is_err());
     }
 
     #[test]
