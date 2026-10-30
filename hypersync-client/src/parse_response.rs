@@ -68,8 +68,13 @@ fn checked_slice(buffer: &Buffer, offset: usize, len: usize) -> Option<Buffer> {
 
 fn block_data(buffer: &Buffer, block: &Block) -> Result<Buffer> {
     let offset = usize::try_from(block.offset()).context("block offset")?;
-    let len = usize::try_from(block.metaDataLength()).context("block metadata length")?
-        + usize::try_from(block.bodyLength()).context("block body length")?;
+    let meta_len = usize::try_from(block.metaDataLength()).context("block metadata length")?;
+    // arrow indexes the continuation marker and metadata length without checking.
+    ensure!(meta_len >= 8, "block metadata is too short");
+    let len = usize::try_from(block.bodyLength())
+        .context("block body length")?
+        .checked_add(meta_len)
+        .context("block length overflows")?;
     checked_slice(buffer, offset, len).context("block is out of bounds")
 }
 
@@ -108,7 +113,10 @@ fn read_chunks(message: &Message, data: &[u8]) -> Result<Vec<RecordBatch>> {
 
     let message_range = message.bytes.as_ptr_range();
     let mut chunks = Vec::new();
-    for block in footer.recordBatches().iter().flatten() {
+    let blocks = footer
+        .recordBatches()
+        .context("footer has no record batches")?;
+    for block in blocks.iter() {
         let chunk = decoder
             .read_record_batch(block, &block_data(&buffer, block)?)
             .context("read chunk")?;
@@ -332,6 +340,41 @@ mod tests {
         );
     }
 
+    /// `valid` with its first record batch block's metadata length set to `meta_len`.
+    fn with_block_meta_len(valid: &[u8], meta_len: i32) -> Vec<u8> {
+        let footer_len = read_footer_length(valid[valid.len() - 10..].try_into().unwrap()).unwrap();
+        let footer_start = valid.len() - 10 - footer_len;
+        let footer = root_as_footer(&valid[footer_start..valid.len() - 10]).unwrap();
+        let block = footer.recordBatches().unwrap().get(0);
+        let mut needle = block.offset().to_le_bytes().to_vec();
+        needle.extend(block.metaDataLength().to_le_bytes());
+        let pos = footer_start
+            + valid[footer_start..]
+                .windows(needle.len())
+                .position(|w| w == needle)
+                .unwrap();
+        let mut out = valid.to_vec();
+        out[pos + 8..pos + 12].copy_from_slice(&meta_len.to_le_bytes());
+        out
+    }
+
+    /// An IPC file whose footer has a schema but no record batch list.
+    fn without_record_batches() -> Vec<u8> {
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let schema = arrow::ipc::convert::schema_to_fb_offset(&mut fbb, &batch(1).schema());
+        let mut footer = arrow::ipc::FooterBuilder::new(&mut fbb);
+        footer.add_version(arrow::ipc::MetadataVersion::V5);
+        footer.add_schema(schema);
+        let footer = footer.finish();
+        fbb.finish(footer, None);
+        let footer = fbb.finished_data();
+        let mut out = b"ARROW1\0\0".to_vec();
+        out.extend_from_slice(footer);
+        out.extend((footer.len() as i32).to_le_bytes());
+        out.extend(b"ARROW1");
+        out
+    }
+
     #[test]
     fn malformed_ipc_returns_error() {
         let valid = ipc_file(&[batch(100)], Some(CompressionType::ZSTD));
@@ -343,6 +386,9 @@ mod tests {
             b"ARROW1".to_vec(),
             valid[valid.len() / 2..].to_vec(),
             bad_footer_len,
+            with_block_meta_len(&valid, 0),
+            with_block_meta_len(&valid, 7),
+            without_record_batches(),
         ];
 
         let errors: Vec<String> = cases
@@ -360,6 +406,9 @@ mod tests {
                 "ipc file too short",
                 "block is out of bounds",
                 "footer length out of bounds",
+                "block metadata is too short",
+                "block metadata is too short",
+                "footer has no record batches",
             ],
         );
     }
