@@ -1,4 +1,4 @@
-use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt};
+use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_json_abi::Function;
 use anyhow::{Context, Result};
 use hypersync_format::Data;
@@ -61,46 +61,19 @@ impl CallDecoder {
 
     /// Parse output data and return result
     ///
-    /// Decodes the output field from a trace
-    /// and returns the decoded values in a `Vec<DynSolValue>`. If the function
-    /// signature is not found or the decoding fails, it returns `Ok(None)` as
-    /// the result to match the behavior of `decode_input`
+    /// Decodes return data (e.g. a trace's output) using the output types of
+    /// `function_signature`, e.g. `"balanceOf(address)(uint256)"`. The signature
+    /// is parsed on each call and does not need to be registered with this decoder.
+    ///
+    /// Returns `Ok(None)` if the data does not decode, and an error if the
+    /// signature can't be parsed.
     pub fn decode_output(
         &self,
         data: &Data,
         function_signature: &str,
     ) -> Result<Option<Vec<DynSolValue>>> {
-        // Parse the provided function signature into a Function object
         let function = Function::parse(function_signature).context("parsing function signature")?;
-
-        //Extract the output types of the function
-        let output_types = function.outputs;
-
-        // Convert the output types into the corresponding DynSolType representations,
-        let output_types: Vec<DynSolType> = output_types
-            .into_iter()
-            .map(|param| param.ty.parse::<DynSolType>())
-            .collect::<Result<_, _>>() // Parse each type as DynSolType
-            .context("parsing output types")?;
-
-        // Create a tuple type from the output parameters
-        let tuple_type = DynSolType::Tuple(output_types);
-
-        // Attempt to decode the data using the constructed tuple type
-        match tuple_type.abi_decode(data.as_ref()) {
-            // If decoding succeeds, return the decoded values as a tuple or single value
-            Ok(decoded) => {
-                if let DynSolValue::Tuple(values) = decoded {
-                    Ok(Some(values)) // Return the decoded values as a Vec if it's a tuple
-                } else {
-                    Ok(Some(vec![decoded])) // Return a single value wrapped in a Vec
-                }
-            }
-            // If decoding fails, return None (to match the behavior of decode_input)
-            Err(_) => {
-                Ok(None) // Return None to signal that decoding failed
-            }
-        }
+        Ok(function.abi_decode_output(data.as_ref()).ok())
     }
 }
 
@@ -224,6 +197,22 @@ mod tests {
             matches!(result[1], DynSolValue::Uint(..)),
             "Second value should be a uint"
         );
+    }
+
+    #[test]
+    fn test_decode_output_dynamic_value() {
+        // ABI encoding of a single `bytes` return value holding 32 zero bytes:
+        // offset (0x20), length (0x20), data.
+        let output = format!("0x{:064x}{:064x}{:064x}", 32, 32, 0);
+        let output = Data::decode_hex(&output).unwrap();
+
+        let decoder = CallDecoder::from_signatures(&["f()"]).unwrap();
+        let result = decoder
+            .decode_output(&output, "f()(bytes)")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(result, vec![DynSolValue::Bytes(vec![0u8; 32])]);
     }
 
     #[test]
