@@ -41,17 +41,20 @@ impl CallDecoder {
 
     /// Parse input data and return result
     ///
-    /// Returns Ok(None) if signature not found.
+    /// Returns Ok(None) if the data is shorter than a selector or the signature is not found.
     pub fn decode_input(&self, data: &Data) -> Result<Option<Vec<DynSolValue>>> {
+        let Some((selector, args)) = data.split_first_chunk::<4>() else {
+            return Ok(None);
+        };
         let function_key = FunctionKey {
-            signature: data[0..4].to_vec(),
+            signature: selector.to_vec(),
         };
         let function = match self.map.get(&function_key) {
             Some(function) => function,
             None => return Ok(None),
         };
         let decoded = function
-            .abi_decode_input(data.as_ref())
+            .abi_decode_input(args)
             .context("decoding input data")?;
         Ok(Some(decoded))
     }
@@ -112,7 +115,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref()).unwrap();
+        let expected = function.abi_decode_input(&input[4..]).unwrap();
 
         let decoder =
             CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
@@ -129,7 +132,7 @@ mod tests {
             alloy_json_abi::Function::parse("transfer(address dst, uint256 wad)").unwrap();
         let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
         let input = Data::decode_hex(input).unwrap();
-        let expected = function.abi_decode_input(input.as_ref()).unwrap();
+        let expected = function.abi_decode_input(&input[4..]).unwrap();
 
         let decoder = CallDecoder::from_signatures(&[
             "transfer(address dst, uint256 wad)",
@@ -140,6 +143,38 @@ mod tests {
 
         for (expected, got) in expected.iter().zip(got.iter()) {
             assert_eq!(expected, got, "Checking that decodes are the same");
+        }
+    }
+
+    #[test]
+    fn test_decode_input_values_skip_selector() {
+        let input = "0xa9059cbb000000000000000000000000dc4bde73fa35b7478a574f78d5dfd57a0b2e22810000000000000000000000000000000000000000000000004710ca26d3eeae0a";
+        let input = Data::decode_hex(input).unwrap();
+
+        let decoder =
+            CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
+        let got = decoder.decode_input(&input).unwrap().unwrap();
+
+        let expected_dst: alloy_primitives::Address = "0xdc4bde73fa35b7478a574f78d5dfd57a0b2e2281"
+            .parse()
+            .unwrap();
+        let expected_wad = alloy_primitives::U256::from(0x4710ca26d3eeae0a_u64);
+        assert_eq!(
+            got,
+            vec![
+                DynSolValue::Address(expected_dst),
+                DynSolValue::Uint(expected_wad, 256)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_decode_input_shorter_than_selector() {
+        let decoder =
+            CallDecoder::from_signatures(&["transfer(address dst, uint256 wad)"]).unwrap();
+        for input in ["0x", "0xa9"] {
+            let input = Data::decode_hex(input).unwrap();
+            assert!(decoder.decode_input(&input).unwrap().is_none());
         }
     }
 
