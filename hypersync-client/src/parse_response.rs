@@ -69,7 +69,10 @@ fn checked_slice(buffer: &Buffer, offset: usize, len: usize) -> Option<Buffer> {
 fn block_data(buffer: &Buffer, block: &Block) -> Result<Buffer> {
     let offset = usize::try_from(block.offset()).context("block offset")?;
     let meta_len = usize::try_from(block.metaDataLength()).context("block metadata length")?;
-    // arrow indexes the continuation marker and metadata length without checking.
+    // arrow indexes the continuation marker and metadata length without checking. This only
+    // keeps those reads in bounds: the server is trusted, and other corrupted lengths (e.g. a
+    // compressed buffer's uncompressed-length prefix) can still make arrow allocate unbounded
+    // memory, as they could with FileReader.
     ensure!(meta_len >= 8, "block metadata is too short");
     let len = usize::try_from(block.bodyLength())
         .context("block body length")?
