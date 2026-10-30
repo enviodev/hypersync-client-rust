@@ -997,7 +997,10 @@ fn map_batch(
             .collect::<Result<Vec<_>>>()
             .context("reverse the arrays")?;
 
-        batch = RecordBatch::try_new(batch.schema(), cols).unwrap();
+        let options =
+            arrow::array::RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
+        batch = RecordBatch::try_new_with_options(batch.schema(), cols, &options)
+            .context("rebuild reversed batch")?;
     }
 
     if let Some(map) = column_mapping {
@@ -1047,6 +1050,23 @@ fn reverse_array(array: &dyn Array) -> Result<ArrayRef> {
 mod tests {
     use super::*;
     use crate::metrics::StreamMetrics;
+
+    #[test]
+    fn map_batch_keeps_row_count_without_columns() {
+        // e.g. a decoded batch of a param-less event like `Ping()`.
+        let options = arrow::array::RecordBatchOptions::new().with_row_count(Some(3));
+        let batch = RecordBatch::try_new_with_options(
+            Arc::new(arrow::datatypes::Schema::empty()),
+            vec![],
+            &options,
+        )
+        .unwrap();
+        let mapping = BTreeMap::from([("x".to_owned(), crate::DataType::UInt64)]);
+
+        let mapped = map_batch(Some(&mapping), HexOutput::Prefixed, batch, true).unwrap();
+
+        assert_eq!(mapped.num_rows(), 3);
+    }
 
     /// `(from, to) -> (next_block, size_bytes, archive_height)`.
     type CoverFn = Box<dyn Fn(u64, u64) -> (u64, u64, Option<u64>) + Send + Sync>;
