@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use arrow::array::RecordBatch;
 use hypersync_net_types::Query;
 use parquet::{
@@ -177,6 +177,7 @@ async fn run_writer(mut rx: mpsc::Receiver<RecordBatch>, path: PathBuf) -> Resul
         Some(batch) => batch,
         None => return Ok(()),
     };
+    check_writable(&first_batch)?;
 
     let file = tokio::io::BufWriter::new(
         tokio::fs::File::create(&path)
@@ -198,10 +199,51 @@ async fn run_writer(mut rx: mpsc::Receiver<RecordBatch>, path: PathBuf) -> Resul
         .context("write first batch")?;
 
     while let Some(batch) = rx.recv().await {
+        check_writable(&batch)?;
         writer.write(&batch).await.context("write batch")?;
     }
 
     writer.close().await.context("finish writer")?;
 
     Ok(())
+}
+
+/// Parquet stores row counts per column chunk, so rows without columns (e.g.
+/// decoded logs of a param-less event like `Ping()`) would be silently dropped.
+fn check_writable(batch: &RecordBatch) -> Result<()> {
+    if batch.num_columns() == 0 && batch.num_rows() > 0 {
+        bail!(
+            "can't write {} rows with no columns to parquet; event signatures without params \
+             have nothing to decode, so omit event_signature and use the logs file instead",
+            batch.num_rows()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{array::RecordBatchOptions, datatypes::Schema};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_run_writer_rejects_rows_without_columns() {
+        let options = RecordBatchOptions::new().with_row_count(Some(3));
+        let batch =
+            RecordBatch::try_new_with_options(Arc::new(Schema::empty()), vec![], &options).unwrap();
+        let dir = std::env::temp_dir().join(format!("hs-parquet-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let (tx, rx) = mpsc::channel(1);
+        tx.send(batch).await.unwrap();
+        drop(tx);
+
+        let res = run_writer(rx, dir.join("decoded_logs.parquet")).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert!(res.is_err());
+    }
 }

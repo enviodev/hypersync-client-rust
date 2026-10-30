@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use arrow::{
     array::{
         Array, ArrayRef, AsArray, BinaryArray, BinaryBuilder, BooleanBuilder, RecordBatch,
-        StringArray, StringBuilder,
+        RecordBatchOptions, StringArray, StringBuilder,
     },
     datatypes::{DataType, Field, Schema},
 };
@@ -65,8 +65,9 @@ pub fn hex_encode_batch(batch: &RecordBatch, prefixed: bool) -> RecordBatch {
         .collect::<(Vec<_>, Vec<_>)>();
 
     let schema = Arc::new(Schema::new(fields));
+    let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
 
-    RecordBatch::try_new(schema, cols).unwrap()
+    RecordBatch::try_new_with_options(schema, cols, &options).unwrap()
 }
 
 pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> {
@@ -82,18 +83,28 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
 
     let event = sig.resolve().context("resolve signature into event")?;
 
+    // Anonymous events have no selector in topic0, so their indexed params start there.
+    let topic_names: &[&str] = if sig.anonymous {
+        &["topic0", "topic1", "topic2", "topic3"]
+    } else {
+        &["topic1", "topic2", "topic3"]
+    };
+
     let topic_cols = event
         .indexed()
         .par_iter()
-        .zip(["topic1", "topic2", "topic3"].par_iter())
+        .zip(topic_names.par_iter())
         .map(|(decoder, topic_name)| {
             let col = batch
                 .column_by_name(topic_name)
                 .context("get column")?
-                .as_binary_opt()
+                .as_binary_opt::<i32>()
                 .context("column as binary")?;
+            if is_hashed_in_topic(decoder) {
+                return Ok::<_, anyhow::Error>(Arc::new(col.clone()) as ArrayRef);
+            }
             let col = decode_col(col, decoder).context("decode column")?;
-            Ok::<_, anyhow::Error>(col)
+            Ok(col)
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -144,20 +155,6 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let mut decoded_cols = Vec::with_capacity(event.body().len());
-
-        for (i, ty) in event.body().iter().enumerate() {
-            decoded_cols.push(
-                decode_body_col(
-                    decoded_tuples
-                        .iter()
-                        .map(|t| t.as_ref().map(|t| t.get(i).unwrap())),
-                    ty,
-                )
-                .context("decode body column")?,
-            );
-        }
-
         event
             .body()
             .par_iter()
@@ -177,7 +174,23 @@ pub fn decode_logs_batch(sig: &str, batch: &RecordBatch) -> Result<RecordBatch> 
     let mut cols = topic_cols;
     cols.extend_from_slice(&body_cols);
 
-    Ok(RecordBatch::try_new(schema, cols).unwrap())
+    // The row count is needed for events without params, which have no columns.
+    let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
+    RecordBatch::try_new_with_options(schema, cols, &options).context("build decoded batch")
+}
+
+/// Indexed params that aren't value types are stored in the topic as the
+/// keccak256 hash of their encoding, so they can't be decoded.
+fn is_hashed_in_topic(ty: &DynSolType) -> bool {
+    !matches!(
+        ty,
+        DynSolType::Bool
+            | DynSolType::Int(_)
+            | DynSolType::Uint(_)
+            | DynSolType::FixedBytes(_)
+            | DynSolType::Address
+            | DynSolType::Function
+    )
 }
 
 fn decode_body_col<'a, I: ExactSizeIterator<Item = Option<&'a DynSolValue>>>(
@@ -390,15 +403,11 @@ fn signature_input_to_field(
         return Err(anyhow!("duplicate param name: {}", input.name));
     }
 
-    let ty = DynSolType::parse(&input.ty).context("parse solidity type")?;
-
-    if &ty != resolved_type {
-        return Err(anyhow!(
-            "Internal error: Parsed type doesn't match resolved type. This should never happen."
-        ));
-    }
-
-    let dt = simple_type_to_data_type(&ty).context("convert simple type to arrow datatype")?;
+    let dt = if input.indexed && is_hashed_in_topic(resolved_type) {
+        DataType::Binary
+    } else {
+        simple_type_to_data_type(resolved_type).context("convert simple type to arrow datatype")?
+    };
 
     Ok(Field::new(input.name.clone(), dt, true))
 }
@@ -448,6 +457,120 @@ mod tests {
                 Field::new("amount1Out", DataType::Binary, true),
             ])
         );
+    }
+
+    fn word(v: u64) -> Vec<u8> {
+        alloy_primitives::U256::from(v).to_be_bytes::<32>().to_vec()
+    }
+
+    /// A raw logs batch with one row, as returned by HyperSync.
+    fn logs_batch(topics: [Option<Vec<u8>>; 4], data: Vec<u8>) -> RecordBatch {
+        let mut fields = Vec::new();
+        let mut cols: Vec<ArrayRef> = Vec::new();
+        for (i, topic) in topics.into_iter().enumerate() {
+            fields.push(Field::new(format!("topic{i}"), DataType::Binary, true));
+            cols.push(Arc::new(BinaryArray::from(vec![topic.as_deref()])));
+        }
+        fields.push(Field::new("data", DataType::Binary, true));
+        cols.push(Arc::new(BinaryArray::from(vec![Some(data.as_slice())])));
+        RecordBatch::try_new(Arc::new(Schema::new(fields)), cols).unwrap()
+    }
+
+    fn binary_value(batch: &RecordBatch, name: &str) -> Vec<u8> {
+        batch
+            .column_by_name(name)
+            .unwrap()
+            .as_binary::<i32>()
+            .value(0)
+            .to_vec()
+    }
+
+    #[test]
+    fn test_decode_logs_batch_no_params() {
+        let sig = Event::parse("Ping()").unwrap();
+        let batch = logs_batch([Some(sig.selector().to_vec()), None, None, None], vec![]);
+
+        let decoded = decode_logs_batch("Ping()", &batch).unwrap();
+
+        assert_eq!(decoded.num_rows(), 1);
+        assert_eq!(decoded.num_columns(), 0);
+    }
+
+    #[test]
+    fn test_decode_logs_batch_anonymous() {
+        let sig = "E(uint256 indexed a, uint256 indexed b, uint256 indexed c, uint256 indexed d) \
+                   anonymous";
+        let batch = logs_batch(
+            [Some(word(1)), Some(word(2)), Some(word(3)), Some(word(4))],
+            vec![],
+        );
+
+        let decoded = decode_logs_batch(sig, &batch).unwrap();
+
+        assert_eq!(binary_value(&decoded, "a"), word(1));
+        assert_eq!(binary_value(&decoded, "b"), word(2));
+        assert_eq!(binary_value(&decoded, "c"), word(3));
+        assert_eq!(binary_value(&decoded, "d"), word(4));
+    }
+
+    #[test]
+    fn test_decode_logs_batch_indexed_dynamic_is_hash() {
+        let sig = "E(string indexed name, bytes indexed blob, uint256 value)";
+        let event = Event::parse(sig).unwrap();
+        let name_hash = alloy_primitives::keccak256("").to_vec();
+        let blob_hash = alloy_primitives::keccak256([1u8, 2, 3]).to_vec();
+        let batch = logs_batch(
+            [
+                Some(event.selector().to_vec()),
+                Some(name_hash.clone()),
+                Some(blob_hash.clone()),
+                None,
+            ],
+            word(7),
+        );
+
+        let decoded = decode_logs_batch(sig, &batch).unwrap();
+
+        assert_eq!(
+            decoded
+                .schema()
+                .field_with_name("name")
+                .unwrap()
+                .data_type(),
+            &DataType::Binary
+        );
+        assert_eq!(binary_value(&decoded, "name"), name_hash);
+        assert_eq!(binary_value(&decoded, "blob"), blob_hash);
+        assert_eq!(binary_value(&decoded, "value"), word(7));
+    }
+
+    #[test]
+    fn test_decode_logs_batch_indexed_tuple_is_hash() {
+        let sig = "E((uint256,address) indexed pair)";
+        let event = Event::parse(sig).unwrap();
+        let hash = alloy_primitives::keccak256([9u8]).to_vec();
+        let batch = logs_batch(
+            [
+                Some(event.selector().to_vec()),
+                Some(hash.clone()),
+                None,
+                None,
+            ],
+            vec![],
+        );
+
+        let decoded = decode_logs_batch(sig, &batch).unwrap();
+
+        assert_eq!(binary_value(&decoded, "pair"), hash);
+    }
+
+    #[test]
+    fn test_hex_encode_batch_no_columns() {
+        let sig = Event::parse("Ping()").unwrap();
+        let batch = logs_batch([Some(sig.selector().to_vec()), None, None, None], vec![]);
+        let decoded = decode_logs_batch("Ping()", &batch).unwrap();
+
+        assert_eq!(hex_encode_batch(&decoded, true).num_rows(), 1);
     }
 
     #[test]

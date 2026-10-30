@@ -6,8 +6,8 @@ use arrow::{
     array::{
         Array, ArrayRef, ArrowPrimitiveType, AsArray, BinaryArray, Decimal128Array,
         Decimal256Array, Decimal256Builder, Float32Array, Float64Array, Int32Array, Int64Array,
-        PrimitiveArray, PrimitiveBuilder, RecordBatch, StringArray, StringBuilder, UInt32Array,
-        UInt64Array,
+        PrimitiveArray, PrimitiveBuilder, RecordBatch, RecordBatchOptions, StringArray,
+        StringBuilder, UInt32Array, UInt64Array,
     },
     compute,
     datatypes::{i256, DataType as ArrowDataType, Field, Schema},
@@ -109,8 +109,9 @@ pub fn apply_to_batch(
         .collect::<Result<(Vec<_>, Vec<_>)>>()?;
 
     let schema = Arc::new(Schema::new(fields));
+    let options = RecordBatchOptions::new().with_row_count(Some(batch.num_rows()));
 
-    Ok(RecordBatch::try_new(schema, cols).unwrap())
+    RecordBatch::try_new_with_options(schema, cols, &options).context("build mapped batch")
 }
 
 pub fn map_l1_fee_scalar(col: &dyn Array, target_data_type: DataType) -> Result<ArrayRef> {
