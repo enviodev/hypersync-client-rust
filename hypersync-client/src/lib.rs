@@ -55,7 +55,7 @@ pub use types::{
     ArrowResponse, ArrowResponseData, EventResponse, QueryResponse, RateLimitResponse,
 };
 
-use crate::parse_response::read_query_response;
+use crate::parse_response::{read_query_response, Message};
 use crate::simple_types::InternalEventJoinStrategy;
 
 #[derive(Debug)]
@@ -878,11 +878,9 @@ impl Client {
             if status.is_success() {
                 let bytes = res.bytes().await.context("read response body bytes")?;
 
-                let mut opts = capnp::message::ReaderOptions::new();
-                opts.nesting_limit(i32::MAX).traversal_limit_in_words(None);
-                let message_reader = capnp::serialize_packed::read_message(bytes.as_ref(), opts)
-                    .context("create message reader")?;
-                let query_response = message_reader
+                let message = Message::read_packed(bytes.as_ref())?;
+                let reader = message.reader();
+                let query_response = reader
                     .get_root::<hypersync_net_types_capnp::cached_query_response::Reader>()
                     .context("get cached_query_response root")?;
                 match query_response.get_either().which().context("get either")? {
@@ -891,7 +889,8 @@ impl Client {
                 ) => {
                     let res = tokio::task::block_in_place(|| {
                         let res = query_response?;
-                        read_query_response(&res).context("parse query response cached")
+                        read_query_response(&res, &message)
+                            .context("parse query response cached")
                     })?;
                     return Ok(ArrowImplResponse {
                         response: res,
