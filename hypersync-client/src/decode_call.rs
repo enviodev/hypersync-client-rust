@@ -1,4 +1,4 @@
-use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
+use alloy_dyn_abi::{DynSolType, DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::Function;
 use anyhow::{Context, Result};
 use hypersync_format::Data;
@@ -73,7 +73,18 @@ impl CallDecoder {
         function_signature: &str,
     ) -> Result<Option<Vec<DynSolValue>>> {
         let function = Function::parse(function_signature).context("parsing function signature")?;
-        Ok(function.abi_decode_output(data.as_ref()).ok())
+        let output_types = function
+            .outputs
+            .iter()
+            .map(|param| param.resolve())
+            .collect::<Result<Vec<_>, _>>()
+            .context("resolving output types")?;
+
+        // Return data is a parameter sequence, not an offset-prefixed tuple.
+        match DynSolType::Tuple(output_types).abi_decode_sequence(data.as_ref()) {
+            Ok(DynSolValue::Tuple(values)) => Ok(Some(values)),
+            _ => Ok(None),
+        }
     }
 }
 
@@ -213,6 +224,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, vec![DynSolValue::Bytes(vec![0u8; 32])]);
+    }
+
+    #[test]
+    fn test_decode_output_invalid_output_type_is_error() {
+        let decoder = CallDecoder::from_signatures(&["f()"]).unwrap();
+        assert!(decoder
+            .decode_output(&Data::default(), "f()(uint7)")
+            .is_err());
     }
 
     #[test]
