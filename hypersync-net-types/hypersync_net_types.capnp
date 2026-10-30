@@ -39,6 +39,7 @@ struct Selection(T) {
 struct BlockFilter {
     hash @0 :List(Data);
     miner @1 :List(Data);
+    number @2 :List(UInt64);
 }
 
 

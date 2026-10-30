@@ -23,6 +23,10 @@ pub struct BlockFilter {
     /// Empty means match all.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub miner: Vec<Address>,
+    /// Number of a block, any blocks that have one of these numbers will be returned.
+    /// Empty means match all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub number: Vec<u64>,
 }
 
 impl BlockFilter {
@@ -177,6 +181,21 @@ impl BlockFilter {
         self.miner = converted_addresses;
         Ok(self)
     }
+
+    /// Filter blocks by any of the provided block numbers.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hypersync_net_types::BlockFilter;
+    ///
+    /// // Match every 1000th block of a range
+    /// let filter = BlockFilter::all().and_number((20_000_000..20_100_000).step_by(1000));
+    /// ```
+    pub fn and_number<I: IntoIterator<Item = u64>>(mut self, numbers: I) -> Self {
+        self.number = numbers.into_iter().collect();
+        self
+    }
 }
 
 impl CapnpReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter {
@@ -214,7 +233,17 @@ impl CapnpReader<hypersync_net_types_capnp::block_filter::Owned> for BlockFilter
             }
         }
 
-        Ok(Self { hash, miner })
+        let number = if reader.has_number() {
+            reader.get_number()?.iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(Self {
+            hash,
+            miner,
+            number,
+        })
     }
 }
 
@@ -236,6 +265,13 @@ impl CapnpBuilder<hypersync_net_types_capnp::block_filter::Owned> for BlockFilte
             let mut miner_list = builder.reborrow().init_miner(self.miner.len() as u32);
             for (i, miner) in self.miner.iter().enumerate() {
                 miner_list.set(i as u32, miner.as_slice());
+            }
+        }
+
+        if !self.number.is_empty() {
+            let mut number_list = builder.reborrow().init_number(self.number.len() as u32);
+            for (i, number) in self.number.iter().enumerate() {
+                number_list.set(i as u32, *number);
             }
         }
 
@@ -483,12 +519,23 @@ mod tests {
             )
             .unwrap()],
             miner: vec![Address::decode_hex("0xdadB0d80178819F2319190D340ce9A924f783711").unwrap()],
+            number: vec![0, 100, u64::MAX],
         };
         let query = Query::new()
             .where_blocks(block_filter)
             .select_block_fields(BlockField::all());
 
         test_query_serde(query, "block selection with rest defaults");
+    }
+
+    #[test]
+    fn test_block_filter_number_json() {
+        let selection: BlockSelection =
+            serde_json::from_value(serde_json::json!({ "number": [10, 20] })).unwrap();
+        assert_eq!(
+            selection,
+            BlockSelection::from(BlockFilter::all().and_number([10, 20]))
+        );
     }
 
     #[test]
